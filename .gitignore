@@ -1,0 +1,19 @@
+# 完整原始数据和本地运行产物不得进入 Git
+*.csv
+*.CSV
+data/raw/
+data/output/
+
+# Python / local environment
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Frontend and editor artifacts
+node_modules/
+dist/
+.vscode/
