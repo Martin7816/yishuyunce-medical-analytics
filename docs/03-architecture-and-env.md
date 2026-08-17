@@ -184,10 +184,10 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 
 ## 8. 与后续 Issue 的交接
 
+- #12：具体版本表、依赖归属、组长电脑固定样例复现和 VM 启停/故障处理见 [M0/M1 开发、运行与组长电脑复现手册](04-development-and-runbook.md)。
 - #9：固定业务结果表字段、`data_version`、事务刷新和校验；不创建原始明细表。
 - #10：只查询 MySQL 服务结果，固定正常、空数据、非法请求和数据库失败响应。
 - #11：只消费 API，完成加载、正常、空数据和错误四态。
-- #12：记录 VM 中 Java/Hadoop/Hive/Spark/MySQL 的版本、端口、配置和组长电脑启动步骤；Windows PATH 不作为目标运行环境。
 - #13：按本文启动顺序补充 HDFS 原始数据、Spark 全量结果、MySQL/API/页面的一致性证据。
 
 ## 9. 当前完成边界
