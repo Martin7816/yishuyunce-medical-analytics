@@ -45,7 +45,7 @@
 
 ## 2. 从原始字段到服务结果
 
-只保留支持本指标所必需的字段，不为后续医院、费用、住院时长或 AI 功能提前建设宽表。原始 CSV 由本机 PySpark 作为正式输入；如上传 HDFS，仅作为可选只读副本和课堂检查材料，不改变正式输入事实。完整 CSV、个人绝对路径、密码、Token 和大型中间结果不得进入 Git。固定样例是从真实文件抽取的可提交验证材料，不能替代全量数据。
+只保留支持本指标所必需的字段，不为后续医院、费用、住院时长或 AI 功能提前建设宽表。原始 CSV 上传到 HDFS 原始层后作为只读事实使用；完整 CSV、个人绝对路径、密码、Token 和大型中间结果不得进入 Git。固定样例是从真实文件抽取的可提交验证材料，不能替代全量数据。
 
 ### 2.1 原始字段与逻辑清洗记录
 
@@ -57,7 +57,7 @@
 | 逻辑清洗记录 | — | `diagnosis_name` | `STRING NOT NULL` | 清洗后仍为空的记录不生成清洗记录；不做大小写折叠、同义词合并或代码映射 |
 | 逻辑清洗记录 | — | `diagnosis_code` | `STRING NULL` | 原值保留；代码缺失不删除诊断记录 |
 
-“逻辑清洗记录”是本机 PySpark 任务内部的最小数据形状，不单独创建 MySQL 明细表，也不把清洗后的住院明细提交 Git。CSV 行列数无法按表头解析时任务直接失败，不生成部分清洗结果；诊断名称超过服务表允许长度或无法编码时同样失败，不静默截断。
+“逻辑清洗记录”是 Spark 任务内部的最小数据形状，不单独创建 MySQL 明细表，也不把清洗后的住院明细提交 Git。CSV 行列数无法按表头解析时任务直接失败，不生成部分清洗结果；诊断名称超过服务表允许长度或无法编码时同样失败，不静默截断。
 
 ### 2.2 聚合结果与服务结果
 
@@ -144,7 +144,7 @@ ORDER BY `rank` ASC;
 
 ### 5.2 当前批次刷新
 
-服务结果发布程序必须先在本机 PySpark 侧生成并核验完整候选结果，再进入 MySQL。候选结果至少要满足：行数 1—10、`rank` 连续、名称唯一、数量为正整数、排序正确；所有行使用同一个 `data_version`、`generated_at` 和 `unit`。之后按 [`data/sql/001-mvp-disease-top10-service.sql`](../data/sql/001-mvp-disease-top10-service.sql) 的模板执行：
+服务结果发布程序必须先在 Spark/HDFS 侧生成并核验完整候选结果，再进入 MySQL。候选结果至少要满足：行数 1—10、`rank` 连续、名称唯一、数量为正整数、排序正确；所有行使用同一个 `data_version`、`generated_at` 和 `unit`。之后按 [`data/sql/001-mvp-disease-top10-service.sql`](../data/sql/001-mvp-disease-top10-service.sql) 的模板执行：
 
 1. `START TRANSACTION`；
 2. 删除当前已提交结果；
@@ -185,7 +185,7 @@ python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
 ## 7. 对下游的交接
 
 - **#9 数据表与字段契约**：使用 `disease_case_count_top10_result` 及其 DDL；按当前批次事务刷新，保存 `data_version` 和 `generated_at`，失败时不得发布半成品。
-- **#10 API 契约**：只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据；Route 不复制清洗、聚合或另一套排序。
+- **#10 API 契约**：见 [`docs/05-api.md`](05-api.md)；只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据；Route 不复制清洗、聚合或另一套排序。
 - **#11 页面原型**：病例量显示为住院出院记录数；名称、排名和数量按服务结果顺序展示，不能写成患者人数。
 - **#13 端到端验收**：用固定样本和全量版本分别核对数据任务、服务结果、API 和图表；任何一层出现不同排序或数量都按公共契约问题处理。
 

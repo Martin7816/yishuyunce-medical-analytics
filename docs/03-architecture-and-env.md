@@ -70,7 +70,8 @@ M1 采用以下单向链路：
 | 本机 PySpark | M1 正式计算必须 | 唯一执行 #7 清洗、分组、计数、排序 | 本地 CSV → TOP10 结果工件 | 本机 PySpark 3.4.0 已通过固定样例；脚本见 `data/src/run_sparcs_top10_pyspark.py` |
 | HDFS | 可选支撑层 | 保存原始副本或课堂展示材料，不是正式输入唯一来源 | 本地 CSV → HDFS raw 副本 | `hdfs dfsadmin -report` 已显示 3 个 Live datanodes，均 `Normal`，无缺失/损坏块 |
 | Python 标准库核对 | M0 必须，非正式计算 | 独立核对字段、缺失和固定样本 TOP10 | 固定样本 → JSON 核对摘要 | `python data/src/verify_sparcs_mvp.py` 已通过固定样本，`status=PASS` |
-| Hive | 可选支撑层，不做指标计算 | 登记 HDFS 副本元数据、执行课堂检查 SQL | HDFS 副本 → 元数据/检查查询 | VM 中 Hive 3.1.3 已确认；不阻塞本机 PySpark 正式计算 |
+| Hive | M1 支撑层，不做指标计算 | 登记 HDFS 外部表、检查原始层和课堂 SQL 访问 | HDFS → 元数据/检查查询 | VM 中 Hive 3.1.3 已确认；MySQL 修复后需按教师命令完成 schema/HiveServer2 验收 |
+| Spark | M1 正式计算必须 | 唯一执行 #7 清洗、分组、计数、排序 | HDFS raw → TOP10 结果工件 | VM 中 `spark-submit` 已确认；正式任务和全量运行证据由后续开发补齐 |
 | MySQL | M1 服务层必须 | 保存小型服务结果、版本和刷新追溯 | TOP10 工件 → `disease_case_count_top10_result` | MySQL 8.0.30 已在 hadoop001 启动并成功进入客户端；表 DDL 和刷新契约见 [`docs/02-metrics-and-data-contract.md`](02-metrics-and-data-contract.md) |
 | Flask | M1 必须 | 提供受控只读 API 和统一错误语义 | MySQL → JSON | 路径、响应和失败码由 #10 固定；不在 Route 重算指标 |
 | Vue + ECharts | M1 展示必须 | 展示排名、名称、病例量和四种页面状态 | Flask → 图表页面 | 页面和四态由后续 Issue 验收；不得写死正式结果 |
@@ -193,8 +194,8 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 - #9：已固定 `disease_case_count_top10_result` 的字段、`data_version`、事务刷新和校验；不创建原始明细表。实际 Spark 结果装载由下游数据任务完成。
 - #10：只查询 MySQL 服务结果，固定正常、空数据、非法请求和数据库失败响应。
 - #11：只消费 API，完成加载、正常、空数据和错误四态。
-- #13：按本文启动顺序补充本机 PySpark 全量结果、可选 HDFS 副本、MySQL/API/页面的一致性证据。
+- #13：按本文启动顺序补充 HDFS 原始数据、Spark 全量结果、MySQL/API/页面的一致性证据。
 
 ## 9. 当前完成边界
 
-本文已冻结组件职责、唯一计算位置、本机输入与可选 HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了本机 PySpark 3.4.0 固定样例证据。全量任务、HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收；VM Spark 不属于本项目必需组件。
+本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。Spark 正式任务、HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
