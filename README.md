@@ -21,7 +21,8 @@
 
 1. [项目概况](docs/00-project-overview.md)：项目做什么、不做什么、第一轮目标和五人分工；
 2. [业务术语](CONTEXT.md)：病例量、住院出院记录、主诊断描述和住院记录群体；
-3. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
+3. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
+4. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
 
 项目任务与决策依赖见 GitHub [Wayfinder 地图](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/3)。
 
@@ -32,7 +33,7 @@
 - 数据中的一行代表一次住院出院记录，不等于唯一患者；
 - 完整原始数据、密码、Token、API Key、`.env` 和个人绝对路径不得提交 Git。
 
-环境、目录和启动命令将在 M0 固定后补充。本 README 必须始终反映 `main` 的真实可运行状态，不提前写未实现功能。
+架构边界已经固定；实际依赖版本、端口和组长电脑复现由 Issue #12 补充。本 README 必须始终反映 `main` 的真实可运行状态，不提前写未实现功能。
 
 ## 配置与依赖的归属
 
