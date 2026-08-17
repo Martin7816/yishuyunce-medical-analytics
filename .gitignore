@@ -3,6 +3,8 @@
 *.CSV
 data/raw/
 data/output/
+!data/fixtures/
+!data/fixtures/*.csv
 
 # Python / local environment
 __pycache__/

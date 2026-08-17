@@ -122,7 +122,9 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
         "diagnosis_nonempty_distinct": len(diagnosis_counts),
         "diagnosis_top": [
             {"name": name, "case_count": count}
-            for name, count in diagnosis_counts.most_common(top_n)
+            for name, count in sorted(
+                diagnosis_counts.items(), key=lambda item: (-item[1], item[0])
+            )[:top_n]
         ],
         "numeric_anomalies": {
             name: [
