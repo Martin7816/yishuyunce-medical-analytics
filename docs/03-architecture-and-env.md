@@ -73,7 +73,7 @@ HDFS 原始层（raw，原始事实）
 | Python 标准库核对 | M0 必须，非正式计算 | 独立核对字段、缺失和固定样本 TOP10 | 固定样本 → JSON 核对摘要 | `python data/src/verify_sparcs_mvp.py` 已通过固定样本，`status=PASS` |
 | Hive | M1 支撑层，不做指标计算 | 登记 HDFS 外部表、检查原始层和课堂 SQL 访问 | HDFS → 元数据/检查查询 | VM 中 Hive 3.1.3 已确认；MySQL 修复后需按教师命令完成 schema/HiveServer2 验收 |
 | Spark | M1 正式计算必须 | 唯一执行 #7 清洗、分组、计数、排序 | HDFS raw → TOP10 结果工件 | VM 中 `spark-submit` 已确认；正式任务和全量运行证据由后续开发补齐 |
-| MySQL | M1 服务层必须 | 保存小型服务结果、版本和刷新追溯 | TOP10 工件 → 服务结果表 | MySQL 8.0.30 已在 hadoop001 启动并成功进入客户端；表契约由 #9 固定 |
+| MySQL | M1 服务层必须 | 保存小型服务结果、版本和刷新追溯 | TOP10 工件 → `disease_case_count_top10_result` | MySQL 8.0.30 已在 hadoop001 启动并成功进入客户端；表 DDL 和刷新契约见 [`docs/02-metrics-and-data-contract.md`](02-metrics-and-data-contract.md) |
 | Flask | M1 必须 | 提供受控只读 API 和统一错误语义 | MySQL → JSON | 路径、响应和失败码由 #10 固定；不在 Route 重算指标 |
 | Vue + ECharts | M1 展示必须 | 展示排名、名称、病例量和四种页面状态 | Flask → 图表页面 | 页面和四态由后续 Issue 验收；不得写死正式结果 |
 | Pandas | M1 不需要 | 可用于临时探索，不产正式服务结果 | 小样本 → 临时分析 | 缺少 Pandas 不阻塞 M1；正式口径仍只认 Spark |
@@ -98,15 +98,7 @@ Hive 的元数据库可以使用 MySQL 中独立的 `hive` 逻辑库；该库只
 
 ### 4.3 MySQL 服务结果边界
 
-业务结果库只保存当前可服务的小结果批次。逻辑上至少需要：
-
-- `data_version`：输入指纹与指标规则版本；
-- `rank`：1—10 的稳定排名；
-- `diagnosis_name`：清洗后的主诊断描述；
-- `case_count`：病例量整数；
-- `generated_at`：结果生成时间。
-
-正式表名、字段类型、唯一性、刷新事务和 API 映射由 #9 固定；本文不提前创造第二份契约。
+业务结果库只保存 `disease_case_count_top10_result` 当前已经校验并发布的一个完整批次，不保存原始住院明细和历史批次。正式表名、字段类型、唯一性、刷新事务和服务读取查询统一见 [`docs/02-metrics-and-data-contract.md`](02-metrics-and-data-contract.md) 及 [`data/sql/001-mvp-disease-top10-service.sql`](../data/sql/001-mvp-disease-top10-service.sql)；本文只说明它在整体链路中的存储位置，不另写第二份字段契约。
 
 ## 5. 启动顺序与配置归属
 
@@ -179,17 +171,17 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 | Hive/HS2 不可用 | 不影响 Spark 唯一计算；需要 Hive 展示时标记该支撑层阻塞 | 直接使用 Spark 读取 HDFS raw，禁止 Pandas/Hive 另算 TOP10 |
 | Spark 未安装或任务失败 | 不刷新 MySQL 服务结果 | 固定样本/Mock 只用于开发，正式结果待 Spark 恢复 |
 | MySQL 不可用 | Flask 返回明确依赖失败，不现场计算 | 使用 Mock 做接口开发，不替代真实验收 |
-| 结果为空但请求合法 | API 返回明确空数据结构，页面进入空数据态 | 不填充假数据 |
+| 结果为空但请求合法 | 由 #10 明确 API 的空结果语义；M1 不发布零有效诊断的空批次 | 不填充假数据 |
 | Flask/前端地址错误 | API 或页面显示错误态，修正配置后重试 | Mock 只验证界面结构 |
 
 ## 8. 与后续 Issue 的交接
 
-- #9：固定业务结果表字段、`data_version`、事务刷新和校验；不创建原始明细表。
+- #12：具体版本表、依赖归属、组长电脑固定样例复现和 VM 启停/故障处理见 [M0/M1 开发、运行与组长电脑复现手册](04-development-and-runbook.md)。
+- #9：已固定 `disease_case_count_top10_result` 的字段、`data_version`、事务刷新和校验；不创建原始明细表。实际 Spark 结果装载由下游数据任务完成。
 - #10：只查询 MySQL 服务结果，固定正常、空数据、非法请求和数据库失败响应。
 - #11：只消费 API，完成加载、正常、空数据和错误四态。
-- #12：记录 VM 中 Java/Hadoop/Hive/Spark/MySQL 的版本、端口、配置和组长电脑启动步骤；Windows PATH 不作为目标运行环境。
 - #13：按本文启动顺序补充 HDFS 原始数据、Spark 全量结果、MySQL/API/页面的一致性证据。
 
 ## 9. 当前完成边界
 
-本 Issue 已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。Spark 正式任务、HiveServer2 完整复验、MySQL 业务结果表、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
+本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。Spark 正式任务、HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
