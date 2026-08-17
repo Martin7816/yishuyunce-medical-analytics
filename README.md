@@ -23,8 +23,9 @@
 
 1. [项目概况](docs/00-project-overview.md)：项目做什么、不做什么、第一轮目标和五人分工；
 2. [业务术语](CONTEXT.md)：病例量、住院出院记录、主诊断描述和住院记录群体；
-3. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
-4. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
+3. [TOP10 指标与数据契约](docs/02-metrics-and-data-contract.md)：统计范围、清洗、排序、结果字段和复核命令；
+4. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
+5. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
 
 项目任务与决策依赖见 GitHub [Wayfinder 地图](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/3)。
 

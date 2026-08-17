@@ -24,6 +24,12 @@ DEFAULT_INSPECTOR = REPO_ROOT / "data" / "src" / "inspect_sparcs_mvp.py"
 DIAGNOSIS_FIELD = "CCSR Diagnosis Description"
 
 
+def normalize_diagnosis(value: str) -> str:
+    """按指标契约只清理诊断名称首尾空白，不做大小写或语义改写。"""
+
+    return value.strip()
+
+
 def independently_summarize(csv_path: Path, top_n: int = 10) -> dict[str, Any]:
     """只使用标准库独立计算记录数、缺失数和 TOP10。"""
 
@@ -38,16 +44,24 @@ def independently_summarize(csv_path: Path, top_n: int = 10) -> dict[str, Any]:
             diagnosis_index = header.index(DIAGNOSIS_FIELD)
         except ValueError as exc:
             raise ValueError(f"找不到诊断字段: {DIAGNOSIS_FIELD}") from exc
+        try:
+            discharge_year_index = header.index("Discharge Year")
+        except ValueError as exc:
+            raise ValueError("找不到统计范围字段: Discharge Year") from exc
 
         rows = 0
         malformed_rows = 0
+        out_of_scope_rows = 0
         counts: Counter[str] = Counter()
         for row in reader:
             rows += 1
             if len(row) != len(header):
                 malformed_rows += 1
                 continue
-            diagnosis = row[diagnosis_index].strip()
+            if normalize_diagnosis(row[discharge_year_index]) != "2021":
+                out_of_scope_rows += 1
+                continue
+            diagnosis = normalize_diagnosis(row[diagnosis_index])
             if diagnosis:
                 counts[diagnosis] += 1
 
@@ -60,10 +74,34 @@ def independently_summarize(csv_path: Path, top_n: int = 10) -> dict[str, Any]:
     return {
         "rows": rows,
         "malformed_rows": malformed_rows,
+        "out_of_scope_rows": out_of_scope_rows,
         "diagnosis_nonempty_rows": sum(counts.values()),
         "diagnosis_nonempty_distinct": len(counts),
         "top10": top,
     }
+
+
+def verify_contract_examples() -> dict[str, Any]:
+    """验证空白、大小写保留、重复分组和并列排序的最小规则样例。"""
+
+    raw_values = ["", "   ", " LIVEBORN ", "LIVEBORN", "liveborn", "ASTHMA", "ASTHMA"]
+    counts: Counter[str] = Counter()
+    for raw_value in raw_values:
+        diagnosis = normalize_diagnosis(raw_value)
+        if diagnosis:
+            counts[diagnosis] += 1
+
+    actual = [
+        {"name": name, "case_count": count}
+        for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    expected = [
+        {"name": "ASTHMA", "case_count": 2},
+        {"name": "LIVEBORN", "case_count": 2},
+        {"name": "liveborn", "case_count": 1},
+    ]
+    assert_equal("contract_examples", "top", expected, actual)
+    return {"status": "PASS", "input_values": len(raw_values), "groups": len(actual)}
 
 
 def run_inspector(inspector: Path, csv_path: Path) -> dict[str, Any]:
@@ -96,6 +134,7 @@ def verify_one(
     for name in (
         "rows",
         "malformed_rows",
+        "out_of_scope_rows",
         "diagnosis_nonempty_distinct",
     ):
         assert_equal(scope, name, independent[name], inspected[name])
@@ -105,6 +144,7 @@ def verify_one(
         for name in (
             "rows",
             "malformed_rows",
+            "out_of_scope_rows",
             "diagnosis_nonempty_rows",
             "diagnosis_nonempty_distinct",
             "top10",
@@ -115,6 +155,7 @@ def verify_one(
         "input": csv_path.name,
         "rows": independent["rows"],
         "malformed_rows": independent["malformed_rows"],
+        "out_of_scope_rows": independent["out_of_scope_rows"],
         "diagnosis_nonempty_rows": independent["diagnosis_nonempty_rows"],
         "diagnosis_nonempty_distinct": independent["diagnosis_nonempty_distinct"],
         "top10": independent["top10"],
@@ -149,6 +190,7 @@ def main() -> None:
     expected_document = json.loads(args.expected.read_text(encoding="utf-8"))
     sample_expected = expected_document["sample"]
     check_required_values(args.sample, sample_expected["required_values"])
+    contract_examples = verify_contract_examples()
     checks = [verify_one("sample", args.sample, args.inspector, sample_expected)]
 
     if args.full_source:
@@ -161,7 +203,13 @@ def main() -> None:
             )
         )
 
-    print(json.dumps({"status": "PASS", "checks": checks}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"status": "PASS", "contract_examples": contract_examples, "checks": checks},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
