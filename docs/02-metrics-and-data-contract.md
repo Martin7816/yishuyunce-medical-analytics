@@ -1,11 +1,11 @@
 # 疾病病例量 TOP10 指标与数据契约
 
-> 文档版本：V1.0
+> 文档版本：V1.1
 > 更新日期：2026-08-17
-> 状态：`FROZEN`（Issue #7）
+> 状态：`FROZEN`（Issue #7、#9）
 > 适用范围：M1“疾病病例量 TOP10”真实数据闭环
 
-本文是数据任务、服务结果、API、页面和独立核对共同使用的唯一 TOP10 口径。后续联调只修正文档、代码或测试中的错误；如果要改变统计范围、清洗方式、去重方式或排序规则，必须先更新 Issue 并说明对下游结果的影响。
+本文是数据任务、服务结果、API、页面和独立核对共同使用的唯一 TOP10 口径与字段契约。后续联调只修正文档、代码或测试中的错误；如果要改变统计范围、清洗方式、去重方式、排序规则或服务结果结构，必须先更新 Issue 并说明对下游结果的影响。
 
 ## 1. 已冻结的指标定义
 
@@ -45,23 +45,46 @@
 
 ## 2. 从原始字段到服务结果
 
-只保留支持本指标所必需的字段，不为后续医院、费用、住院时长或 AI 功能提前建设宽表。
+只保留支持本指标所必需的字段，不为后续医院、费用、住院时长或 AI 功能提前建设宽表。原始 CSV 上传到 HDFS 原始层后作为只读事实使用；完整 CSV、个人绝对路径、密码、Token 和大型中间结果不得进入 Git。固定样例是从真实文件抽取的可提交验证材料，不能替代全量数据。
+
+### 2.1 原始字段与逻辑清洗记录
+
+| 层级 | 原始字段 | 内部字段 | 类型/空值 | 处理和用途 |
+|---|---|---|---|---|
+| 原始输入 | `Discharge Year` | `discharge_year` | 原始文本；清洗后 `INT`，有效记录不可空 | 去首尾空白后必须等于 `2021`；缺失或其他年份计入质量统计，不进入本指标 |
+| 原始输入 | `CCSR Diagnosis Description` | `diagnosis_name` | 原始文本可空；清洗后非空字符串 | 只清理首尾 Unicode 空白；作为唯一分组来源；空值/空白记录排除 |
+| 原始输入 | `CCSR Diagnosis Code` | `diagnosis_code` | 文本，可空 | 仅用于追溯和质量核对，不参与分组、合并或展示 |
+| 逻辑清洗记录 | — | `diagnosis_name` | `STRING NOT NULL` | 清洗后仍为空的记录不生成清洗记录；不做大小写折叠、同义词合并或代码映射 |
+| 逻辑清洗记录 | — | `diagnosis_code` | `STRING NULL` | 原值保留；代码缺失不删除诊断记录 |
+
+“逻辑清洗记录”是 Spark 任务内部的最小数据形状，不单独创建 MySQL 明细表，也不把清洗后的住院明细提交 Git。CSV 行列数无法按表头解析时任务直接失败，不生成部分清洗结果；诊断名称超过服务表允许长度或无法编码时同样失败，不静默截断。
+
+### 2.2 聚合结果与服务结果
 
 | 层级 | 字段 | 类型/约束 | 用途 |
 |---|---|---|---|
-| 原始输入 | `Discharge Year` | 文本读取后按整数条件检查 | 确定 2021 统计范围 |
-| 原始输入 | `CCSR Diagnosis Description` | 文本，可缺失 | 唯一分组来源 |
-| 原始输入 | `CCSR Diagnosis Code` | 文本，可缺失 | 追溯和质量核对，不用于分组 |
-| 清洗记录 | `diagnosis_name` | 非空字符串 | 首尾空白清理后的分组名称 |
-| 聚合结果 | `diagnosis_name` | 同一 `data_version` 内唯一 | 分组键 |
-| 聚合结果 | `case_count` | 非负整数，正式排行中大于 0 | 有效住院出院记录数 |
-| 服务结果 | `rank` | 整数，1 至 10 | 稳定排序后的名次 |
-| 服务结果 | `diagnosis_name` | 非空字符串 | 页面和 API 展示名称 |
-| 服务结果 | `case_count` | 整数 | 病例量，单位是住院出院记录数 |
-| 服务结果 | `unit` | 非空字符串，固定为 `discharge_records` | 明确数量单位，中文含义为住院出院记录数 |
-| 服务结果 | `data_version` | 非空字符串 | 结果与原始数据版本的追溯关联 |
+| 聚合结果 | `diagnosis_name` | `STRING NOT NULL`，同一版本内唯一 | 清洗后的分组键 |
+| 聚合结果 | `case_count` | `BIGINT NOT NULL`，大于 0 | 有效住院出院记录数 |
+| 服务结果 | `rank` | `TINYINT UNSIGNED NOT NULL`，1—10 连续 | 稳定排序后的名次；当前批次主键 |
+| 服务结果 | `diagnosis_name` | `VARCHAR(255) NOT NULL`，`utf8mb4_bin` | 页面和 API 的展示名称；同一版本内唯一 |
+| 服务结果 | `case_count` | `BIGINT UNSIGNED NOT NULL`，大于 0 | 病例量，单位是住院出院记录数 |
+| 服务结果 | `unit` | `VARCHAR(32) NOT NULL`，固定为 `discharge_records` | 明确数量单位 |
+| 服务结果 | `data_version` | `VARCHAR(255) NOT NULL`，`ascii_bin` | 输入文件指纹/数据批次标识；同一批次所有行相同 |
+| 服务结果 | `generated_at` | `DATETIME(6) NOT NULL`，统一按 UTC 记录 | 本批结果生成时间；同一批次所有行相同 |
 
-服务结果中 `(data_version, rank)` 必须唯一，同一版本内 `diagnosis_name` 也必须唯一。第一轮不输出患者数、患者 ID、诊断代码、原始住院明细或费用等字段。API 和页面应直接消费这些结果，不重新清洗、分组或排序。
+M1 的 MySQL 服务表固定为 `disease_case_count_top10_result`，完整 DDL 和刷新模板位于 [`data/sql/001-mvp-disease-top10-service.sql`](../data/sql/001-mvp-disease-top10-service.sql)。表只保存当前已经校验并发布的一个完整批次，不创建历史批次表、原始明细表或重复指标表。这样 API 只需按 `rank ASC` 读取一张小结果表；`PRIMARY KEY(rank)`、`UNIQUE(data_version, rank)` 和 `UNIQUE(data_version, diagnosis_name)` 共同保证当前结果不会混入重复名次、重复名称或多个版本。
+
+第一轮服务结果明确不包含患者 ID、患者数、原始住院明细、诊断代码、医院维度、费用/成本、住院时长、年龄性别分层、分类模型标签或 AI 字段；`diagnosis_code` 只在清洗过程用于追溯，不能被 API 或页面当作结果字段。后续确有验收价值的扩展必须另建 Issue，并说明对当前契约的影响。
+
+后端按以下只读查询读取结果，不在 Route 中重新清洗、分组、排序或回读 HDFS：
+
+```sql
+SELECT `rank`, `diagnosis_name`, `case_count`, `unit`, `data_version`, `generated_at`
+FROM `disease_case_count_top10_result`
+ORDER BY `rank` ASC;
+```
+
+后端将结果视为“可用”的条件是：查询得到 1—10 行、`rank` 从 1 连续递增、所有行只有一个 `data_version` 和一个 `generated_at`，且名称唯一、单位为 `discharge_records`。M1 不发布“零个有效诊断”的空批次；若输入没有可排行记录，发布任务失败并保留旧批次（首次发布则保持未初始化），避免后端把“尚未发布”误判为合法空结果。合法空数据状态由 #10 在明确查询场景后单独定义。
 
 ## 3. 文本标准化与边界示例
 
@@ -105,7 +128,35 @@
 | 9 | NONINFECTIOUS GASTROENTERITIS | 1 |
 | 10 | PARALYSIS (OTHER THAN CEREBRAL PALSY) | 1 |
 
-## 5. 可复查证据
+## 5. 固定样例映射与刷新约定
+
+### 5.1 raw → cleaned → aggregate → service result
+
+固定样例使用 `fixture:sparcs_mvp_sample:v1` 作为 `data_version`，服务结果的 `generated_at` 只用于固定契约验证；真实任务运行时必须生成新的 UTC 时间，不得把样例时间写入全量结果。完整的服务结果期望值保存在 [`data/fixtures/sparcs_mvp_expected_top10.json`](../data/fixtures/sparcs_mvp_expected_top10.json) 的 `service_result` 节点。
+
+| 输入或情况 | 清洗结果 | 聚合结果 | 服务结果处理 |
+|---|---|---|---|
+| `CCSR Diagnosis Description = " LIVEBORN "` | `diagnosis_name = "LIVEBORN"` | 与其他 `LIVEBORN` 记录合并计数 | 按稳定排序生成一个名称和一个 `rank` |
+| 诊断值为空、空字符串或全是空白 | 不生成清洗记录 | 不进入分组；原始行计入质量统计 | 不出现在服务表 |
+| 两行名称相同（包括样例中的重复记录） | 两条有效清洗记录 | 合并为 `case_count = 2`，不去重 | 只保留一个疾病名称行，数量为 2 |
+| 诊断名称超过 `VARCHAR(255)` 或含无法编码内容 | 不截断、不替换 | 当前任务失败 | 不刷新服务表，保留旧批次 |
+| 第 10 名出现并列 | 全量分组后按 `(-case_count, diagnosis_name)` 排序 | 先确定稳定名次 | 严格取前 10 行，不扩展并列项 |
+
+### 5.2 当前批次刷新
+
+服务结果发布程序必须先在 Spark/HDFS 侧生成并核验完整候选结果，再进入 MySQL。候选结果至少要满足：行数 1—10、`rank` 连续、名称唯一、数量为正整数、排序正确；所有行使用同一个 `data_version`、`generated_at` 和 `unit`。之后按 [`data/sql/001-mvp-disease-top10-service.sql`](../data/sql/001-mvp-disease-top10-service.sql) 的模板执行：
+
+1. `START TRANSACTION`；
+2. 删除当前已提交结果；
+3. 一次性插入候选批次的全部行；
+4. 在事务内检查行数、连续排名、单一版本和单一生成时间；
+5. 全部通过才 `COMMIT`，任何异常、约束冲突或数量不一致都 `ROLLBACK`。
+
+InnoDB 的事务可见性保证 API 不会读到删除后、插入前的半批数据；刷新失败时旧批次继续可读。成功刷新后只保留新当前批次，重复发布同一个 `data_version` 的结果仍得到同样的当前表内容，因此刷新是幂等的。数据版本变化时不得把新旧行混插，也不能沿用旧版本的服务结果。
+
+M1 不保留历史批次和原始明细；如果后续确实需要审计历史，再单独提出范围变更 Issue，不在本轮提前增加表和字段。
+
+## 6. 可复查证据
 
 固定样本来自同一份真实 CSV 的脱敏字段子集，包含 16 行、1 条缺失诊断、15 条非空诊断、12 个非空诊断值，以及重复分组、并列和其他字段特殊值。它不含完整原始数据，也不能替代全量结果。
 
@@ -115,7 +166,15 @@
 python data/src/verify_sparcs_mvp.py
 ```
 
-应得到 `status=PASS`，并同时通过独立计数、侦察脚本、固定期望结果和规则边界示例。拥有本地完整 CSV 时，再执行：
+应得到 `status=PASS`，并同时通过独立计数、侦察脚本、固定期望结果和规则边界示例。随后执行服务结果契约检查：
+
+```powershell
+python data/src/verify_service_result_contract.py
+```
+
+该命令重新读取固定样例，独立生成 TOP10，再检查服务结果的字段集合、类型、排名连续性、排序、单位、版本一致性和生成时间一致性，应得到 `status=PASS`。因此固定样例不是只检查“算出了什么”，还检查“后端将读取什么”。
+
+拥有本地完整 CSV 时，再执行：
 
 ```powershell
 python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
@@ -123,10 +182,10 @@ python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
 
 全量核对基线是 2,101,588 行、0 条解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 `docs/01-data-and-feasibility.md` 第 4 节一致。核对脚本只读本地文件，不把完整数据写入仓库。
 
-## 6. 对下游的交接
+## 7. 对下游的交接
 
-- **#9 数据表与字段契约**：按本文件生成最小服务结果；保存 `data_version`，刷新时不得混合不同版本，失败时不得发布半成品。
-- **#10 API 契约**：只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version`；Route 不复制清洗、聚合或另一套排序。
+- **#9 数据表与字段契约**：使用 `disease_case_count_top10_result` 及其 DDL；按当前批次事务刷新，保存 `data_version` 和 `generated_at`，失败时不得发布半成品。
+- **#10 API 契约**：只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据；Route 不复制清洗、聚合或另一套排序。
 - **#11 页面原型**：病例量显示为住院出院记录数；名称、排名和数量按服务结果顺序展示，不能写成患者人数。
 - **#13 端到端验收**：用固定样本和全量版本分别核对数据任务、服务结果、API 和图表；任何一层出现不同排序或数量都按公共契约问题处理。
 

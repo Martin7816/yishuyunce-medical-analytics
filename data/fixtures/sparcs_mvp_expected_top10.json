@@ -54,6 +54,93 @@
       "Birth Weight": ["UNKN"]
     }
   },
+  "service_result": {
+    "data_version": "fixture:sparcs_mvp_sample:v1",
+    "generated_at": "2026-08-17T00:00:00Z",
+    "unit": "discharge_records",
+    "rows": [
+      {
+        "rank": 1,
+        "diagnosis_name": "COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER",
+        "case_count": 2,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 2,
+        "diagnosis_name": "LIVEBORN",
+        "case_count": 2,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 3,
+        "diagnosis_name": "TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER",
+        "case_count": 2,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 4,
+        "diagnosis_name": "ACUTE MYOCARDIAL INFARCTION",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 5,
+        "diagnosis_name": "ASTHMA",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 6,
+        "diagnosis_name": "CORONAVIRUS DISEASE 2019 (COVID-19)",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 7,
+        "diagnosis_name": "DIABETES MELLITUS WITH COMPLICATION",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 8,
+        "diagnosis_name": "MULTIPLE SCLEROSIS",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 9,
+        "diagnosis_name": "NONINFECTIOUS GASTROENTERITIS",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 10,
+        "diagnosis_name": "PARALYSIS (OTHER THAN CEREBRAL PALSY)",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      }
+    ]
+  },
   "full_scan": {
     "rows": 2101588,
     "malformed_rows": 0,
