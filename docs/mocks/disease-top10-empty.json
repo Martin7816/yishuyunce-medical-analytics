@@ -1,0 +1,12 @@
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "metric": "disease_case_count_top10",
+    "unit": "discharge_records",
+    "data_version": "fixture:sparcs_mvp_empty:v1",
+    "generated_at": "2026-08-17T00:00:00.000000Z",
+    "items": []
+  },
+  "trace_id": "00000000-0000-4000-8000-000000000002"
+}

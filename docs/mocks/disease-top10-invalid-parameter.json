@@ -1,0 +1,9 @@
+{
+  "code": "INVALID_QUERY_PARAMETER",
+  "message": "This endpoint does not accept query parameters.",
+  "data": null,
+  "trace_id": "00000000-0000-4000-8000-000000000003",
+  "details": {
+    "parameters": ["limit"]
+  }
+}
