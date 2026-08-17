@@ -27,7 +27,8 @@
 4. [MVP 服务结果表 DDL](data/sql/001-mvp-disease-top10-service.sql)：MySQL 表结构和事务刷新模板；
 5. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
 6. [开发、运行与复现手册](docs/04-development-and-runbook.md)：版本基线、依赖归属、组长电脑复现和 VM 启停命令；
-7. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
+7. [疾病病例量 TOP10 API 契约](docs/05-api.md)：接口路径、请求响应、空数据、错误语义和验收要求；
+8. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
 
 项目任务与决策依赖见 GitHub [Wayfinder 地图](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/3)。
 

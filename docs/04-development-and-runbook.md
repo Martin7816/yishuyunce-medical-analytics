@@ -27,7 +27,7 @@ Windows/VM 本地暂存
 | M0 固定样例 | `VERIFIED` | 纯 Python 标准库读取样本、独立计数、TOP10 和契约边界 |
 | VM 环境基线 | `VERIFIED` | 三台 CentOS 7 64 位虚拟机、Hadoop/HDFS、MySQL，以及 Hive 和 `spark-submit` 的既有实机记录 |
 | Spark 全量任务 | `HANDOFF` | 正式任务由下游数据 Issue 提供；当前 `main` 没有可执行的 Spark 作业 |
-| Flask API | `HANDOFF` | 由 #10 固定表名、字段和错误语义后再维护后端依赖 |
+| Flask API | `HANDOFF` | #10 已在 `docs/05-api.md` 固定目标路径和默认端口；后端依赖与实际命令待落位 |
 | Vue/ECharts 页面 | `HANDOFF` | 由 #11 固定页面四态和 API 地址后再维护前端依赖 |
 | 全链路一致性 | `HANDOFF` | 由 #13 按固定样例和全量版本复验 |
 
@@ -117,7 +117,7 @@ spark-submit --version
 | HiveServer2 | `hadoop001:10000` | Hive 表/查询检查 | 启动后用 `ss -lntp` 复核；不承担 TOP10 正式计算 |
 | MySQL TCP | `hadoop001:3306` | 教师配置中的 MySQL 监听端口 | 使用 MySQL 启动后复核；本机连接优先记录 socket |
 | MySQL Unix socket | `/opt/module/mysql/mysql.sock` | `hadoop001` 本地客户端连接 | 已在实际配置中确认 |
-| Flask | 未固定 | #10 固定 API 合同后再确定 | 当前 `main` 无后端 |
+| Flask | `127.0.0.1:5000`（目标） | 由 #10 的 `docs/05-api.md` 固定 | 当前 `main` 无后端 |
 | Vue/Vite | 未固定 | #11 固定页面启动方式后再确定 | 当前 `main` 无前端 |
 
 M1 不单独固定 Spark Standalone 端口：正式计算由 `spark-submit` 按数据任务配置提交，当前架构没有把一套额外的 Spark Master 服务加入必要链路。
@@ -239,7 +239,7 @@ ss -lntp | grep ':10000'
 
 #### Spark 和业务服务
 
-当前 `main` 尚未提交正式 Spark 作业、MySQL 业务结果表、Flask API 或 Vue 页面，所以这里不提供带占位符却看似可运行的启动命令。下游完成后必须按下面的顺序接入：
+当前 `main` 尚未提交正式 Spark 作业、MySQL 业务结果表、Flask API 或 Vue 页面，所以这里不提供带占位符却看似可运行的启动命令。#10 已在 `docs/05-api.md` 固定 Flask 目标地址为 `127.0.0.1:5000`；后端代码落位后仍需把实际启动命令和健康检查输出补到本手册。下游完成后必须按下面的顺序接入：
 
 ```text
 Spark 正式任务读取 HDFS raw
@@ -275,7 +275,7 @@ HiveServer2 应根据启动时记录的 PID 或服务管理方式停止，停止
 | HDFS 报告节点不足或块异常 | 停止正式全量任务，先恢复三节点和 HDFS 健康状态；不能切换到另一份未登记原始数据 |
 | HiveServer2 不可用 | 只影响 Hive 检查层；Spark 正式计算仍不能改由 Hive/Pandas 另算，页面/API也不填假数据 |
 | 完整原始 CSV 不存在 | 运行固定样例或独立核对；不能声称已完成全量结果 |
-| Flask/MySQL 依赖未安装 | 当前 `main` 没有后端，不能用主机偶然安装的 Flask 版本当项目依赖；等待 #10 的清单 |
+| Flask/MySQL 依赖未安装 | 当前 `main` 没有后端，不能用主机偶然安装的 Flask 版本当项目依赖；等待 #10 按 `docs/05-api.md` 提交清单 |
 
 ## 7. 组长电脑复现记录
 
@@ -305,7 +305,7 @@ python data/src/verify_sparcs_mvp.py
 ## 8. 交接清单
 
 - #9：提交业务服务结果表、`data_version`、刷新事务和 MySQL 连接字段后，更新后端配置示例。
-- #10：提交 Flask 依赖、API 端口、健康检查和失败响应后，补齐后端启动与停止命令。
+- #10：按 `docs/05-api.md` 提交 Flask 依赖、API 端口 `5000`、健康检查和失败响应后，补齐后端启动与停止命令。
 - #11：提交 `package.json`、前端环境变量和页面端口后，补齐前端启动命令。
 - #13：按本手册顺序运行固定样例和全量版本，留下 HDFS、Spark、MySQL、API 和页面一致性证据。
 

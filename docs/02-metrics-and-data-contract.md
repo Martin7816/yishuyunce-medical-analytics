@@ -185,7 +185,7 @@ python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
 ## 7. 对下游的交接
 
 - **#9 数据表与字段契约**：使用 `disease_case_count_top10_result` 及其 DDL；按当前批次事务刷新，保存 `data_version` 和 `generated_at`，失败时不得发布半成品。
-- **#10 API 契约**：只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据；Route 不复制清洗、聚合或另一套排序。
+- **#10 API 契约**：见 [`docs/05-api.md`](05-api.md)；只查询已经生成的服务结果，沿用 `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据；Route 不复制清洗、聚合或另一套排序。
 - **#11 页面原型**：病例量显示为住院出院记录数；名称、排名和数量按服务结果顺序展示，不能写成患者人数。
 - **#13 端到端验收**：用固定样本和全量版本分别核对数据任务、服务结果、API 和图表；任何一层出现不同排序或数量都按公共契约问题处理。
 
