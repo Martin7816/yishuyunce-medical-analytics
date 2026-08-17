@@ -3,6 +3,7 @@
   "sample": {
     "rows": 16,
     "malformed_rows": 0,
+    "out_of_scope_rows": 0,
     "diagnosis_nonempty_rows": 15,
     "diagnosis_nonempty_distinct": 12,
     "top10": [
@@ -56,6 +57,7 @@
   "full_scan": {
     "rows": 2101588,
     "malformed_rows": 0,
+    "out_of_scope_rows": 0,
     "diagnosis_nonempty_rows": 2099954,
     "diagnosis_nonempty_distinct": 477,
     "top10": [

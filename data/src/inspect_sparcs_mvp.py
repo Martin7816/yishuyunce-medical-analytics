@@ -70,8 +70,11 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
         raise ValueError("CSV 表头存在重复列名")
     if diagnosis_field not in header:
         raise ValueError(f"找不到诊断字段: {diagnosis_field}")
+    if "Discharge Year" not in header:
+        raise ValueError("找不到统计范围字段: Discharge Year")
 
     diagnosis_index = header.index(diagnosis_field)
+    discharge_year_index = header.index("Discharge Year")
     missing = Counter()
     kinds = {name: Counter() for name in header}
     diagnosis_counts: Counter[str] = Counter()
@@ -79,6 +82,7 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
     sample_rows: list[list[str]] = []
     row_count = 0
     malformed_rows = 0
+    out_of_scope_rows = 0
 
     for row in rows:
         row_count += 1
@@ -95,6 +99,10 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
                 missing[name] += 1
             elif name in EXPECTED_NUMERIC and kind not in EXPECTED_NUMERIC[name]:
                 anomaly_values[name][stripped] += 1
+
+        if clean(row[discharge_year_index]) != "2021":
+            out_of_scope_rows += 1
+            continue
 
         diagnosis = clean(row[diagnosis_index])
         if diagnosis:
@@ -118,6 +126,7 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
         "columns": len(header),
         "rows": row_count,
         "malformed_rows": malformed_rows,
+        "out_of_scope_rows": out_of_scope_rows,
         "diagnosis_field": diagnosis_field,
         "diagnosis_nonempty_distinct": len(diagnosis_counts),
         "diagnosis_top": [
