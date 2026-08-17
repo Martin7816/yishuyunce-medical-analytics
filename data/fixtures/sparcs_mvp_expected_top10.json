@@ -1,0 +1,104 @@
+{
+  "source": "sparcs_mvp_sample.csv",
+  "sample": {
+    "rows": 16,
+    "malformed_rows": 0,
+    "diagnosis_nonempty_rows": 15,
+    "diagnosis_nonempty_distinct": 12,
+    "top10": [
+      {
+        "name": "COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER",
+        "case_count": 2
+      },
+      {
+        "name": "LIVEBORN",
+        "case_count": 2
+      },
+      {
+        "name": "TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER",
+        "case_count": 2
+      },
+      {
+        "name": "ACUTE MYOCARDIAL INFARCTION",
+        "case_count": 1
+      },
+      {
+        "name": "ASTHMA",
+        "case_count": 1
+      },
+      {
+        "name": "CORONAVIRUS DISEASE 2019 (COVID-19)",
+        "case_count": 1
+      },
+      {
+        "name": "DIABETES MELLITUS WITH COMPLICATION",
+        "case_count": 1
+      },
+      {
+        "name": "MULTIPLE SCLEROSIS",
+        "case_count": 1
+      },
+      {
+        "name": "NONINFECTIOUS GASTROENTERITIS",
+        "case_count": 1
+      },
+      {
+        "name": "PARALYSIS (OTHER THAN CEREBRAL PALSY)",
+        "case_count": 1
+      }
+    ],
+    "required_values": {
+      "Length of Stay": ["120 +"],
+      "Zip Code - 3 digits": ["OOS"],
+      "Birth Weight": ["UNKN"]
+    }
+  },
+  "full_scan": {
+    "rows": 2101588,
+    "malformed_rows": 0,
+    "diagnosis_nonempty_rows": 2099954,
+    "diagnosis_nonempty_distinct": 477,
+    "top10": [
+      {
+        "name": "LIVEBORN",
+        "case_count": 199014
+      },
+      {
+        "name": "SEPTICEMIA",
+        "case_count": 138035
+      },
+      {
+        "name": "CORONAVIRUS DISEASE 2019 (COVID-19)",
+        "case_count": 82597
+      },
+      {
+        "name": "HEART FAILURE",
+        "case_count": 58562
+      },
+      {
+        "name": "COMPLICATIONS SPECIFIED DURING CHILDBIRTH",
+        "case_count": 40711
+      },
+      {
+        "name": "DIABETES MELLITUS WITH COMPLICATION",
+        "case_count": 40529
+      },
+      {
+        "name": "ALCOHOL-RELATED DISORDERS",
+        "case_count": 39326
+      },
+      {
+        "name": "SCHIZOPHRENIA SPECTRUM AND OTHER PSYCHOTIC DISORDERS",
+        "case_count": 37204
+      },
+      {
+        "name": "OSTEOARTHRITIS",
+        "case_count": 35562
+      },
+      {
+        "name": "CARDIAC DYSRHYTHMIAS",
+        "case_count": 33849
+      }
+    ]
+  }
+}
