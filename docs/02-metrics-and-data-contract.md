@@ -99,7 +99,7 @@ ORDER BY `rank` ASC;
 | `liveborn` | `liveborn` | 因不做大小写折叠，与 `LIVEBORN` 保持不同名称 |
 | `CORONAVIRUS DISEASE 2019 (COVID-19)` | 原样保留 | 不改写括号、连字符或疾病描述 |
 
-首尾空白清理必须在 Spark 正式任务、独立核对和后续服务结果生成中使用同一语义；不能由 API 或前端重新猜测。
+首尾空白清理必须在本机 PySpark 正式任务、独立核对和后续服务结果生成中使用同一语义；不能由 API 或前端重新猜测。
 
 ## 4. 重复、并列与 TOP10 边界
 
