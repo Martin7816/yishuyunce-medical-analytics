@@ -3,11 +3,38 @@
 from __future__ import annotations
 
 from flask import Blueprint, current_app, g, jsonify, request
+from werkzeug.exceptions import MethodNotAllowed
+from werkzeug.exceptions import MethodNotAllowed
 
 from ..errors import InvalidRequestError, ResultNotReadyError
 
 
 analytics_bp = Blueprint("analytics", __name__)
+
+
+def _request_has_body() -> bool:
+    """Detect GET body data, including chunked requests without a length."""
+    if request.headers.get("Transfer-Encoding"):
+        return True
+    if request.content_length is not None:
+        return request.content_length > 0
+    if request.environ.get("wsgi.input_terminated"):
+        return bool(request.get_data(cache=True))
+    return False
+
+
+@analytics_bp.before_request
+def enforce_read_only_request_contract() -> None:
+    """Keep every analytics snapshot endpoint strictly GET-only."""
+    # Flask adds HEAD and OPTIONS automatically to GET routes. They are not
+    # part of the frozen API contract and must not execute a snapshot read.
+    if request.method != "GET":
+        raise MethodNotAllowed(valid_methods=["GET"])
+    if _request_has_body():
+        raise InvalidRequestError(
+            "INVALID_REQUEST_FORMAT",
+            "This GET endpoint does not accept a request body.",
+        )
 
 
 def _ok(data: dict):
@@ -23,6 +50,30 @@ def _reject_unknown(allowed: set[str]) -> None:
             "INVALID_QUERY_PARAMETER",
             "One or more query parameters are not supported.",
             {"parameters": unknown},
+        )
+
+
+def _request_has_body() -> bool:
+    """Detect request data even when a client uses chunked transfer encoding."""
+
+    if request.headers.get("Transfer-Encoding"):
+        return True
+    if request.content_length is not None:
+        return request.content_length > 0
+    if request.environ.get("wsgi.input_terminated"):
+        return bool(request.get_data(cache=True))
+    return False
+
+
+def _reject_non_get_or_body() -> None:
+    """Keep snapshot reads strictly GET-only and body-free."""
+
+    if request.method != "GET":
+        raise MethodNotAllowed(valid_methods=["GET"])
+    if _request_has_body():
+        raise InvalidRequestError(
+            "INVALID_REQUEST_FORMAT",
+            "This GET endpoint does not accept a request body.",
         )
 
 
@@ -86,8 +137,13 @@ def hospital_profile(facility_id: str):
     return _ok(_get("hospitals", f"profile:{facility_id}"))
 
 
-@analytics_bp.get("/api/v1/diseases")
+@analytics_bp.route(
+    "/api/v1/diseases",
+    methods=["GET"],
+    provide_automatic_options=False,
+)
 def diseases_index():
+    _reject_non_get_or_body()
     _reject_unknown(set())
     return _ok(_get("diseases", "index"))
 
@@ -98,10 +154,22 @@ def diseases_index():
     provide_automatic_options=False,
 )
 def disease_profile(diagnosis_code: str):
+    _reject_non_get_or_body()
     _reject_unknown(set())
     index = _get("diseases", "index")
     _validate_option("diagnoses", diagnosis_code, index)
-    return _ok(_get("diseases", f"profile:{diagnosis_code}"))
+    try:
+        payload = _get("diseases", f"profile:{diagnosis_code}")
+    except ResultNotReadyError:
+        # The enum is published by the index, but this concrete profile may
+        # still be absent while the data task is being published. Keep that
+        # distinction as a legal 200 empty result; a missing index remains a
+        # real RESULT_NOT_READY dependency failure.
+        payload = dict(index)
+        payload["filters"] = {"diagnosis_code": diagnosis_code}
+        payload["metrics"] = []
+        payload["sections"] = []
+    return _ok(payload)
 
 
 def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):

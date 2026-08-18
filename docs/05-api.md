@@ -22,6 +22,48 @@
 
 预测请求只接受 `age_group`、`gender`、`race`、`ethnicity`、`hospital_service_area`、`facility_id`、`admission_type`、`emergency_indicator`。AI 请求只接受 `{"message":"..."}`。两者均拒绝额外字段；预测接口专门返回 `LEAKAGE_FIELD_FORBIDDEN` 拦截目标或出院后字段。
 
+## 1.1 运营驾驶舱接口（Issue #44）
+
+### 请求
+
+```text
+GET /api/v1/dashboard/overview
+```
+
+该接口不接受查询参数或请求体，严格 GET-only；`HEAD`、`OPTIONS`、`POST`、`PUT`、`PATCH`、`DELETE` 均返回 `405 METHOD_NOT_ALLOWED`。路由只调用统一的 `AnalyticsSnapshotService.get("dashboard", "overview")`，不读取 CSV、不执行 SQL、不重新聚合、排序或改写单位。
+
+### 成功响应
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "医疗运营驾驶舱",
+    "description": "统计边界说明",
+    "data_version": "sparcs_2021_20231012_sha256_<input-sha256>",
+    "generated_at": "2026-08-18T10:30:00.000000Z",
+    "metrics": [{"key": "record_count", "label": "住院出院记录", "value": 2101588, "unit": "条"}],
+    "sections": [{"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "50-69岁", "value": 612884}]}]
+  },
+  "trace_id": "00000000-0000-4000-8000-000000000001"
+}
+```
+
+`metrics` 固定按 `record_count`、`facility_count`、`avg_los`、`avg_charges`、`avg_costs`、`emergency_rate`、`surgical_rate`、`severe_rate` 返回；`sections` 固定为 `age`、`payment`、`disease_top10`、`hospital_top10`、`severity`。正式结果的 `data_version`、`generated_at` 来自同一已发布快照，`X-Trace-ID` 必须与 `trace_id` 相同。
+
+### 错误与空结果
+
+| 场景 | HTTP / code |
+|---|---|
+| 未知 query 参数或非法请求体 | `400 INVALID_QUERY_PARAMETER` / `400 INVALID_REQUEST_FORMAT` |
+| 未冻结 HTTP 方法 | `405 METHOD_NOT_ALLOWED` |
+| 合法模块尚未发布 | `503 RESULT_NOT_READY` |
+| MySQL 连接或查询失败 | `503 DATABASE_UNAVAILABLE` |
+| 配置缺失或快照结构损坏 | `500 SERVER_MISCONFIGURED` / `500 SERVICE_RESULT_INVALID` |
+
+错误响应仍使用 `code`、`message`、`data=null`、`trace_id` 信封，不返回 SQL、连接串、密钥、绝对路径或堆栈。运营驾驶舱无筛选参数；其他完整分析接口的合法但未发布筛选返回 `200`，保留版本/时间并将 `metrics`、`sections` 置空。fixture 版本只用于联调，不能作为真实全量结论。
+
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
 > 当前状态：`FROZEN`
