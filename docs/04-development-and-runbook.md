@@ -27,8 +27,8 @@ Windows/VM 本地暂存
 | M0 固定样例 | `VERIFIED` | 纯 Python 标准库读取样本、独立计数、TOP10 和契约边界 |
 | VM 环境基线 | `VERIFIED` | 三台 CentOS 7 64 位虚拟机、Hadoop/HDFS、MySQL，以及 Hive 和 `spark-submit` 的既有实机记录 |
 | Spark 全量任务 | `VERIFIED` | 本机 PySpark 3.4.0 已读取真实全量 CSV 并生成服务结果工件；脚本见 `data/src/run_sparcs_top10_pyspark.py` |
-| MySQL 服务结果发布 | `HANDOFF` | `data/src/publish_top10_mysql.py` 已提供校验和事务替换；VM 实际装载仍待执行 |
-| Flask API | `HANDOFF` | #10 的 PR #29 已合并；默认配置仍使用 fixture，真实验收需设置 `TOP10_DATA_SOURCE=mysql` |
+| MySQL 服务结果发布 | `VERIFIED` | #31 已通过真实 `--apply`、提交后查询和失败回滚复验；当前批次为 10 行 |
+| Flask API | `VERIFIED` | #10 的 PR #29 已合并；本机 `.env` 已切到 MySQL 并完成真实 HTTP 200 响应核对，默认示例仍可使用 fixture |
 | Vue/ECharts 页面 | `HANDOFF` | 由 #11 固定页面四态和 API 地址后再维护前端依赖 |
 | 全链路一致性 | `HANDOFF` | 由 #13 按固定样例和全量版本复验 |
 
@@ -259,7 +259,7 @@ ss -lntp | grep ':10000'
 
 #### Spark 和业务服务
 
-当前 `main` 已有本机 PySpark 正式计算脚本、MySQL 服务结果发布脚本和 #10 Flask API；真实 MySQL 装载与 API 真数据验收仍待本 Issue 完成。默认 API 数据源为 fixture，真实验收必须设置 `TOP10_DATA_SOURCE=mysql`。下游完成后必须按下面的顺序接入：
+当前 `main` 已有本机 PySpark 正式计算脚本、MySQL 服务结果发布脚本和 #10 Flask API；#31 已完成真实 MySQL 装载、回滚保护和 API 真数据验收。本机默认 `.env` 已设置 `TOP10_DATA_SOURCE=mysql`，未配置 `.env` 时仍回退到 fixture。下游完成后必须按下面的顺序接入：
 
 ```text
 本机 Spark 正式任务读取受控 CSV
@@ -317,7 +317,7 @@ python data/src/verify_sparcs_mvp.py
 - 仓库没有真实 `.env`、完整原始 CSV 或个人绝对路径；
 - VM 三节点配置文件保留在本机 VMware 目录，来宾设置为 CentOS 7 64 位，未把虚拟磁盘或配置路径写入项目。
 
-2026-08-18 的真实全量复现记录：本机 PySpark 3.4.0 读取完整数据并通过 `--expected` 核对，输出 2,101,588 行、477 个诊断分组和 10 行服务结果；`verify_service_result_contract.py --result ... --expected-scope full_scan` 与 `publish_top10_mysql.py` 的 dry-run 均为 `PASS`。由于当前 VM 的 SSH 连接不可达，MySQL `--apply` 尚未执行。
+2026-08-18 的真实全量复现记录：本机 PySpark 3.4.0 读取完整数据并通过 `--expected` 核对，输出 2,101,588 行、477 个诊断分组和 10 行服务结果；`verify_service_result_contract.py --result ... --expected-scope full_scan`、`publish_top10_mysql.py --apply` 和提交后 MySQL 查询均为 `PASS`。故意写入超出 `BIGINT UNSIGNED` 的值触发 MySQL 1264 后，事务回滚且旧批次仍为 10 行；#10 实际 HTTP `GET /api/v1/diseases/top10` 返回 200，`data_version` 与 MySQL 一致。
 
 ### 7.2 已有 VM 证据与限制
 
