@@ -219,10 +219,15 @@ def _summary_aggregation(frame: DataFrame, group: str | None = None) -> DataFram
     return frame.groupBy(group).agg(*aggregations) if group else frame.agg(*aggregations)
 
 
-def _summary_metrics_from_row(row: Any) -> list[dict[str, Any]]:
+def _summary_metrics_from_row(
+    row: Any,
+    *,
+    count_key: str = "record_count",
+    count_label: str = "住院出院记录",
+) -> list[dict[str, Any]]:
     denominator = row["record_count"]
     return [
-        metric("record_count", "住院出院记录", _rounded(denominator, integer=True), "条"),
+        metric(count_key, count_label, _rounded(denominator, integer=True), "条"),
         metric("avg_los", "平均住院时长", _rounded(row["avg_los"]), "天"),
         metric("avg_charges", "平均收费", _rounded(row["avg_charges"]), "美元"),
         metric("avg_costs", "平均成本", _rounded(row["avg_costs"]), "美元"),
@@ -233,12 +238,61 @@ def _summary_metrics_from_row(row: Any) -> list[dict[str, Any]]:
 
 
 def grouped_summary_metrics(
-    frame: DataFrame, group: str
+    frame: DataFrame,
+    group: str,
+    *,
+    count_key: str = "record_count",
+    count_label: str = "住院出院记录",
 ) -> dict[str, list[dict[str, Any]]]:
     return {
-        str(row[group]): _summary_metrics_from_row(row)
+        str(row[group]): _summary_metrics_from_row(
+            row, count_key=count_key, count_label=count_label
+        )
         for row in _summary_aggregation(frame, group).collect()
     }
+
+
+def facility_ranking_rows(
+    frame: DataFrame, limit: int | None = 10
+) -> list[dict[str, Any]]:
+    """Rank facilities by string id while retaining a display name.
+
+    A facility name is not a stable identifier: the source contains multiple
+    facilities with the same display name.  Grouping by ``facility_id`` keeps
+    the ranking aligned with the profile entity keys and the published option
+    list.  ``min`` gives a deterministic label if one id appears with more
+    than one trimmed name.
+    """
+
+    nonempty_id = F.length(F.col("facility_id")) > 0
+    display_name = F.when(
+        F.length(F.col("facility")) > 0, F.col("facility")
+    )
+    grouped = (
+        frame.where(nonempty_id)
+        .groupBy("facility_id")
+        .agg(
+            F.count("*").alias("value"),
+            F.min(display_name).alias("facility"),
+        )
+    )
+    ordered = grouped.orderBy(
+        F.desc("value"),
+        F.asc(F.coalesce(F.col("facility"), F.col("facility_id"))),
+        F.asc("facility_id"),
+    )
+    if limit is not None:
+        ordered = ordered.limit(limit)
+
+    output = []
+    for row in ordered.collect():
+        output.append(
+            {
+                "name": str(row["facility"] or row["facility_id"]),
+                "value": _rounded(row["value"], integer=True),
+            }
+        )
+    return output
 
 
 def metric(key: str, label: str, value: int | float, unit: str) -> dict[str, Any]:
@@ -254,7 +308,12 @@ def section(
     return {"key": key, "title": title, "type": kind, "items": items}
 
 
-def summary_metrics(frame: DataFrame) -> list[dict[str, Any]]:
+def summary_metrics(
+    frame: DataFrame,
+    *,
+    count_key: str = "record_count",
+    count_label: str = "住院出院记录",
+) -> list[dict[str, Any]]:
     """Build reusable metrics with field-valid averages and record denominators."""
 
     aggregate = frame.agg(
@@ -282,8 +341,8 @@ def summary_metrics(frame: DataFrame) -> list[dict[str, Any]]:
     denominator = aggregate["record_count"]
     return [
         metric(
-            "record_count",
-            "住院出院记录",
+            count_key,
+            count_label,
             _rounded(denominator, integer=True),
             "条",
         ),
@@ -490,7 +549,11 @@ def _legacy_build_records(
                 f"profile:{option['value']}",
                 option["label"],
                 "医疗机构运营画像。",
-                summary_metrics(subset),
+                summary_metrics(
+                    subset,
+                    count_key="case_count",
+                    count_label="病例量",
+                ),
                 [
                     section(
                         "diseases",
@@ -772,7 +835,7 @@ def build_records(
     common = summary_metrics(scoped)
     overall = {
         name: rows(scoped, name, limit=None)
-        for name in ("age", "payment", "diagnosis", "facility", "severity")
+        for name in ("age", "payment", "diagnosis", "severity")
     }
     dashboard_frame = frame.where(F.coalesce(F.col("in_scope"), F.lit(False)))
     dashboard = build_dashboard_record(dashboard_frame)
@@ -780,15 +843,27 @@ def build_records(
 
     facility_options_frame = (
         scoped.where(F.length(F.col("facility_id")) > 0)
-        .select("facility_id", "facility")
-        .dropDuplicates(["facility_id"])
+        .groupBy("facility_id")
+        .agg(
+            F.min(
+                F.when(
+                    F.length(F.col("facility")) > 0, F.col("facility")
+                )
+            ).alias("facility")
+        )
+        .orderBy(F.asc("facility_id"))
     )
     facility_options = [
         {"value": row.facility_id, "label": row.facility or row.facility_id}
-        for row in facility_options_frame.orderBy("facility_id").limit(500).collect()
+        for row in facility_options_frame.collect()
     ]
     facility_count = len(facility_options)
-    facility_summaries = grouped_summary_metrics(scoped, "facility_id")
+    facility_summaries = grouped_summary_metrics(
+        scoped,
+        "facility_id",
+        count_key="case_count",
+        count_label="病例量",
+    )
     facility_diseases = grouped_rows(scoped, "facility_id", "diagnosis", limit=5)
     facility_types = grouped_rows(scoped, "facility_id", "medical_surgical")
     records.append(
@@ -798,7 +873,7 @@ def build_records(
             "医院运营分析",
             "医院排行与双院对比。",
             [metric("facility_count", "可分析医疗机构", facility_count, "家")],
-            [section("ranking", "医院病例量排行", overall["facility"][:10])],
+            [section("ranking", "医院病例量排行", facility_ranking_rows(scoped))],
             {"facilities": facility_options},
         )
     )
@@ -810,7 +885,7 @@ def build_records(
                 f"profile:{facility_id}",
                 option["label"],
                 "医疗机构运营画像。",
-                facility_summaries[facility_id],
+                facility_summaries.get(facility_id, []),
                 [
                     section("diseases", "主要疾病 TOP5", facility_diseases.get(facility_id, [])),
                     section("medical_surgical", "内外科结构", facility_types.get(facility_id, [])),
