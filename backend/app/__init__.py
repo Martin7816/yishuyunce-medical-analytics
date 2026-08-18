@@ -55,12 +55,16 @@ def create_app(
     if config_override:
         app.config.update(config_override)
 
-    selected_repository = repository or build_repository(app.config)
+    selected_repository = (
+        repository if repository is not None else build_repository(app.config)
+    )
     app.extensions["disease_top10_service"] = DiseaseTop10Service(
         selected_repository
     )
-    selected_analytics_repository = analytics_repository or build_analytics_repository(
-        app.config
+    selected_analytics_repository = (
+        analytics_repository
+        if analytics_repository is not None
+        else build_analytics_repository(app.config)
     )
     app.extensions["analytics_snapshot_service"] = AnalyticsSnapshotService(
         selected_analytics_repository
@@ -68,14 +72,20 @@ def create_app(
     model_path = app.config.get("HIGH_COST_MODEL_PATH")
     if not model_path and app.config.get("ANALYTICS_DATA_SOURCE") == "fixture":
         model_path = app.config["APP_ROOT"] / "fixtures" / "high_cost_model.json"
-    app.extensions["high_cost_model_service"] = high_cost_model_service or HighCostModelService(
-        model_path
+    app.extensions["high_cost_model_service"] = (
+        high_cost_model_service
+        if high_cost_model_service is not None
+        else HighCostModelService(model_path)
     )
-    selected_ai_client = ai_client or DeepSeekChatClient(
-        app.config.get("DEEPSEEK_API_KEY"),
-        app.config["DEEPSEEK_BASE_URL"],
-        app.config["DEEPSEEK_MODEL"],
-        app.config["DEEPSEEK_TIMEOUT_SECONDS"],
+    selected_ai_client = (
+        ai_client
+        if ai_client is not None
+        else DeepSeekChatClient(
+            app.config.get("DEEPSEEK_API_KEY"),
+            app.config["DEEPSEEK_BASE_URL"],
+            app.config["DEEPSEEK_MODEL"],
+            app.config["DEEPSEEK_TIMEOUT_SECONDS"],
+        )
     )
     app.extensions["ai_assistant_service"] = AIAssistantService(
         app.extensions["analytics_snapshot_service"], selected_ai_client
