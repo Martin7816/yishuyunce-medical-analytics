@@ -172,7 +172,7 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 - 组长电脑的 Conda 环境 `csupy311` 可导入 PySpark `3.4.0`；固定样例经本机 PySpark local 模式运行并通过独立标准库脚本核对。
 - VM 中 Java 1.8.0_212、Hadoop 3.3.4、Hive 3.1.3、MySQL 8.0.30 已确认；VM 未安装 Spark，`spark-submit` 未找到符合本次修订后的边界。
 - MySQL 因残留 Socket 锁文件曾启动失败；确认 PID 9024 实际为 `rsyslogd` 后清理临时锁文件，已能进入 MySQL 8.0.30 客户端。该问题不涉及数据库数据目录。
-- 本机 PySpark TOP10 固定样例和真实全量任务均已落位并通过独立基线核对；Hive schema/HiveServer2 复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面仍属于下游 Issue，不在本 Issue 中冒充完成。
+- 本机 PySpark TOP10 固定样例和真实全量任务均已落位并通过独立基线核对；#31 已完成 MySQL 业务结果实际装载和失败回滚复验，#10 已完成 MySQL 真数据 API 实测；Hive schema/HiveServer2 完整复验和 Vue 页面仍属于下游 Issue。
 
 ## 7. 故障与降级
 
@@ -198,4 +198,4 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 
 ## 9. 当前完成边界
 
-本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。本机 Spark 正式任务已完成真实全量工件；HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
+本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。本机 Spark 正式任务、MySQL 业务结果实际装载和 Flask 真数据 API 已完成实测；HiveServer2 完整复验和 Vue 页面继续由对应 Issue 实现和验收。
