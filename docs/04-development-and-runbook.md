@@ -241,6 +241,20 @@ python data/src/publish_analytics_snapshot_mysql.py `
 
 发布前必须先执行 `data/sql/002-analysis-snapshot.sql` 并授予发布账号目标表的 `SELECT, INSERT, DELETE` 权限；`--apply` 会在一个事务中替换整批快照并校验行数、版本和时间戳。真实 CSV 不提交仓库，完整执行记录见 `evidence/43/README.md`。
 
+### 4.3 医院运营分析快照（Issue #47）
+
+医院模块沿用统一清洗帧，按字符串 `facility_id` 生成 `hospitals/index` 和每个 `hospitals/profile:{facility_id}`。医院画像的病例量使用 `case_count`，平均住院时长和金额只对可解析的非负值求平均，急诊率、外科率和 Major/Extreme 重症率的分母为该机构纳入分析的住院出院记录；主要疾病严格取 TOP5，内外科结构按数量降序、名称升序排列。医院排行按机构编码聚合，不会把同名机构合并。
+
+生成全量快照后，使用不导入 PySpark 聚合实现的标准库脚本逐机构核对：
+
+```powershell
+python data/src/verify_hospital_snapshot.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --snapshot "<本地临时目录>\real-full.json"
+```
+
+固定边界样例、真实全量医院键清单与独立核对结果见 [`evidence/47/README.md`](../evidence/47/README.md)。
+
 ## 5. VM 启动、健康检查与停止
 
 ### 5.1 启动前检查

@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "module": "hospitals",
+  "raw_rows": 4,
+  "scoped_rows_with_facility": 3,
+  "facility_count": 2,
+  "profile_count": 2,
+  "empty_profile_count": 0,
+  "top5": [
+    {"name": "Hospital A", "value": 2},
+    {"name": "Hospital B", "value": 1}
+  ],
+  "data_version": "dashboard_edge_sample_sha256_f579ecd89ffc88eff34754dad5132cbe41acd2e03a9c25fc71850c6421353ae8",
+  "generated_at": "2026-08-18T08:00:00.000000Z"
+}
