@@ -1,5 +1,23 @@
 # M0/M1 开发、运行与组长电脑复现手册
 
+> 终局更新（2026-08-18）：M1 TOP10 复现记录继续保留；完整产品新增的统一快照、模型、十页前端和 AI 启动以本节为准，冻结契约见 [07-terminal-product-contract.md](07-terminal-product-contract.md)。
+
+## 终局产品快速运行
+
+联调模式：复制 `backend/.env.example` 为未提交的 `backend/.env`，保持 `ANALYTICS_DATA_SOURCE=fixture`；后端执行 `python -m pip install -r backend/requirements.txt` 和 `python backend/run.py`，前端执行 `cd frontend; npm ci; npm run dev`，访问 `http://127.0.0.1:5173/overview`。联调版本以 `fixture:` 开头，不能作为真实验收证据。
+
+真实模式按顺序执行：
+
+1. `run_full_analytics_pyspark.py --input <CSV> --output <snapshot.json>`；
+2. `train_high_cost_model_pyspark.py --input <CSV> --artifact <model.json> --metrics <metrics.json>`；
+3. MySQL 执行 `data/sql/002-analysis-snapshot.sql`；
+4. `publish_analytics_snapshot_mysql.py --input <snapshot.json> --apply`；
+5. 设置 `ANALYTICS_DATA_SOURCE=mysql`、`HIGH_COST_MODEL_PATH=<model.json>`；
+6. 启动 Flask、Vue，并逐页核对同一 `data_version`；
+7. AI 演示前只在本机设置 `DEEPSEEK_API_KEY`，验证正常、超时、模型错误和断网场景。
+
+完整 CSV、快照工件、模型工件、真实 `.env` 和 API Key 均不提交 Git。前端通过 Vite `/api` 代理访问 Flask；部署时应保持同源或由反向代理提供 `/api/v1`。
+
 > 关联 Issue：#12
 >
 > 基线日期：2026-08-17

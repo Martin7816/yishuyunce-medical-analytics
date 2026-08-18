@@ -1,0 +1,162 @@
+{
+  "data_version": "fixture:sparcs_full_analytics:v1",
+  "generated_at": "2026-08-18T08:00:00.000000Z",
+  "records": [
+    {
+      "module_key": "dashboard",
+      "entity_key": "overview",
+      "payload": {
+        "title": "医疗运营驾驶舱",
+        "description": "从住院出院记录观察医疗机构、住院时长、费用与急诊结构。",
+        "metrics": [
+          {"key": "record_count", "label": "住院出院记录", "value": 2101588, "unit": "条"},
+          {"key": "facility_count", "label": "医疗机构", "value": 204, "unit": "家"},
+          {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"},
+          {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"},
+          {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"},
+          {"key": "emergency_rate", "label": "急诊记录比例", "value": 0.63, "unit": "%"},
+          {"key": "surgical_rate", "label": "外科记录比例", "value": 0.22, "unit": "%"},
+          {"key": "severe_rate", "label": "重症记录比例", "value": 0.28, "unit": "%"}
+        ],
+        "sections": [
+          {"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "0-17岁", "value": 301231}, {"name": "18-29岁", "value": 181248}, {"name": "30-49岁", "value": 426115}, {"name": "50-69岁", "value": 612884}, {"name": "70岁及以上", "value": 580110}]},
+          {"key": "payment", "title": "主要支付方式", "type": "bar", "items": [{"name": "Medicare", "value": 806214}, {"name": "Medicaid", "value": 472831}, {"name": "Private Insurance", "value": 435190}, {"name": "Other", "value": 387353}]},
+          {"key": "disease_top10", "title": "疾病病例量 TOP10", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}, {"name": "COVID-19", "value": 48621}, {"name": "HEART FAILURE", "value": 45204}]},
+          {"key": "hospital_top10", "title": "医院病例量 TOP10", "type": "bar", "items": [{"name": "North Shore University Hospital", "value": 51512}, {"name": "NewYork-Presbyterian", "value": 49218}, {"name": "Montefiore Medical Center", "value": 47106}, {"name": "NYU Langone Hospitals", "value": 43812}, {"name": "Strong Memorial Hospital", "value": 40774}]},
+          {"key": "severity", "title": "病情严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}
+        ]
+      }
+    },
+    {
+      "module_key": "hospitals",
+      "entity_key": "index",
+      "payload": {
+        "title": "医院运营分析",
+        "description": "比较医疗机构病例量、住院时长、费用与重症结构。",
+        "options": {"facilities": [{"value": "1", "label": "North Shore University Hospital"}, {"value": "2", "label": "NewYork-Presbyterian"}]},
+        "metrics": [{"key": "facility_count", "label": "可分析医疗机构", "value": 204, "unit": "家"}],
+        "sections": [{"key": "ranking", "title": "医院病例量排行", "type": "bar", "items": [{"name": "North Shore University Hospital", "value": 51512}, {"name": "NewYork-Presbyterian", "value": 49218}, {"name": "Montefiore Medical Center", "value": 47106}]}]
+      }
+    },
+    {
+      "module_key": "hospitals",
+      "entity_key": "profile:1",
+      "payload": {
+        "title": "North Shore University Hospital",
+        "description": "医疗机构运营画像。",
+        "metrics": [{"key": "case_count", "label": "病例量", "value": 51512, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.4, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 81242.3, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 24519.7, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.59, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.31, "unit": "%"}],
+        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 4210}, {"name": "SEPTICEMIA", "value": 2318}, {"name": "COVID-19", "value": 1996}, {"name": "HEART FAILURE", "value": 1832}, {"name": "OSTEOARTHRITIS", "value": 1618}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 37603}, {"name": "Surgical", "value": 13909}]}]
+      }
+    },
+    {
+      "module_key": "hospitals",
+      "entity_key": "profile:2",
+      "payload": {
+        "title": "NewYork-Presbyterian",
+        "description": "医疗机构运营画像。",
+        "metrics": [{"key": "case_count", "label": "病例量", "value": 49218, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 6.1, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 90281.6, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 27954.1, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.66, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.36, "unit": "%"}],
+        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 3891}, {"name": "SEPTICEMIA", "value": 2570}, {"name": "COVID-19", "value": 2114}, {"name": "HEART FAILURE", "value": 1972}, {"name": "RESPIRATORY FAILURE", "value": 1550}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 34880}, {"name": "Surgical", "value": 14338}]}]
+      }
+    },
+    {
+      "module_key": "diseases",
+      "entity_key": "index",
+      "payload": {
+        "title": "疾病画像分析",
+        "description": "按主要诊断类别查看住院出院记录群体画像。",
+        "options": {"diagnoses": [{"value": "NVS005", "label": "HEART FAILURE"}, {"value": "INF012", "label": "CORONAVIRUS DISEASE 2019 (COVID-19)"}]},
+        "metrics": [{"key": "diagnosis_count", "label": "有效诊断类别", "value": 477, "unit": "类"}],
+        "sections": [{"key": "top10", "title": "疾病病例量 TOP10", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}, {"name": "COVID-19", "value": 48621}, {"name": "HEART FAILURE", "value": 45204}]}]
+      }
+    },
+    {
+      "module_key": "diseases",
+      "entity_key": "profile:NVS005",
+      "payload": {
+        "title": "HEART FAILURE",
+        "description": "该诊断类别的住院出院记录群体画像。",
+        "metrics": [{"key": "case_count", "label": "病例量", "value": 45204, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 7.2, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 78620.4, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 23911.8, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.82, "unit": "%"}],
+        "sections": [{"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "30-49岁", "value": 2310}, {"name": "50-69岁", "value": 15821}, {"name": "70岁及以上", "value": 27073}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 3980}, {"name": "Moderate", "value": 16132}, {"name": "Major", "value": 19442}, {"name": "Extreme", "value": 5650}]}, {"key": "hospitals", "title": "主要收治医院", "type": "bar", "items": [{"name": "NewYork-Presbyterian", "value": 1972}, {"name": "North Shore University Hospital", "value": 1832}, {"name": "Montefiore Medical Center", "value": 1740}]}]
+      }
+    },
+    {
+      "module_key": "diseases",
+      "entity_key": "profile:INF012",
+      "payload": {
+        "title": "CORONAVIRUS DISEASE 2019 (COVID-19)",
+        "description": "该诊断类别的住院出院记录群体画像。",
+        "metrics": [{"key": "case_count", "label": "病例量", "value": 48621, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 8.1, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 84218.9, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 25117.2, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.77, "unit": "%"}],
+        "sections": [{"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "18-29岁", "value": 2910}, {"name": "30-49岁", "value": 9620}, {"name": "50-69岁", "value": 19114}, {"name": "70岁及以上", "value": 16977}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 5650}, {"name": "Moderate", "value": 18111}, {"name": "Major", "value": 18730}, {"name": "Extreme", "value": 6130}]}]
+      }
+    },
+    {
+      "module_key": "cohorts",
+      "entity_key": "age=*|gender=*|admission=*",
+      "payload": {
+        "title": "住院记录群体分析",
+        "description": "使用有限白名单条件观察住院出院记录群体，不代表唯一患者。",
+        "options": {"age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"], "gender": ["F", "M", "U"], "admission_type": ["Emergency", "Elective", "Newborn", "Urgent", "Trauma", "Not Available"]},
+        "filters": {},
+        "metrics": [{"key": "record_count", "label": "符合条件的记录", "value": 2101588, "unit": "条"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.63, "unit": "%"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"}],
+        "sections": [{"key": "diseases", "title": "主要疾病", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}]
+      }
+    },
+    {
+      "module_key": "costs",
+      "entity_key": "diagnosis=*|facility=*|severity=*",
+      "payload": {
+        "title": "医疗费用与成本分析",
+        "description": "使用分位数和中位数描述右偏的收费与成本分布。",
+        "options": {"severity": ["Minor", "Moderate", "Major", "Extreme"]},
+        "filters": {},
+        "metrics": [{"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "median_charges", "label": "收费中位数", "value": 38210.5, "unit": "美元"}, {"key": "p90_charges", "label": "收费P90", "value": 162403.2, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"}, {"key": "charge_cost_gap", "label": "平均收费成本差", "value": 51527.42, "unit": "美元"}, {"key": "daily_charges", "label": "平均单日收费", "value": 12954.77, "unit": "美元/天"}],
+        "sections": [{"key": "quantiles", "title": "收费分位数", "type": "bar", "items": [{"name": "P25", "value": 18122.4}, {"name": "P50", "value": 38210.5}, {"name": "P75", "value": 82450.3}, {"name": "P90", "value": 162403.2}]}, {"key": "severity", "title": "不同严重程度平均收费", "type": "bar", "items": [{"name": "Minor", "value": 31810.2}, {"name": "Moderate", "value": 59210.7}, {"name": "Major", "value": 103214.5}, {"name": "Extreme", "value": 211840.9}]}]
+      }
+    },
+    {
+      "module_key": "risks",
+      "entity_key": "age=*|diagnosis=*",
+      "payload": {
+        "title": "病情严重程度与风险分析",
+        "description": "群体统计画像不代表因果关系或个人医疗判断。",
+        "options": {"age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"]},
+        "filters": {},
+        "metrics": [{"key": "high_risk_count", "label": "Major/Extreme记录", "value": 696524, "unit": "条"}, {"key": "high_risk_rate", "label": "高风险记录比例", "value": 0.33, "unit": "%"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}],
+        "sections": [{"key": "severity", "title": "严重程度分布", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}, {"key": "mortality", "title": "死亡风险分布", "type": "bar", "items": [{"name": "Minor", "value": 1018332}, {"name": "Moderate", "value": 521220}, {"name": "Major", "value": 398014}, {"name": "Extreme", "value": 164022}]}, {"key": "disposition", "title": "高风险记录离院去向", "type": "bar", "items": [{"name": "Home or Self Care", "value": 291440}, {"name": "Skilled Nursing Home", "value": 168320}, {"name": "Home Health Services", "value": 115012}, {"name": "Expired", "value": 41218}]}]
+      }
+    },
+    {
+      "module_key": "payments",
+      "entity_key": "payment=*|age=*",
+      "payload": {
+        "title": "支付方式分析",
+        "description": "核心支付维度使用 Payment Typology 1。",
+        "options": {"payment_type": ["Medicare", "Medicaid", "Private Health Insurance", "Blue Cross/Blue Shield", "Self-Pay"], "age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"]},
+        "filters": {},
+        "metrics": [{"key": "record_count", "label": "记录数", "value": 2101588, "unit": "条"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "median_charges", "label": "收费中位数", "value": 38210.5, "unit": "美元"}],
+        "sections": [{"key": "payment", "title": "主支付方式结构", "type": "bar", "items": [{"name": "Medicare", "value": 806214}, {"name": "Medicaid", "value": 472831}, {"name": "Private Health Insurance", "value": 331420}, {"name": "Blue Cross/Blue Shield", "value": 103770}, {"name": "Self-Pay", "value": 49220}]}, {"key": "charges", "title": "不同支付方式平均收费", "type": "bar", "items": [{"name": "Medicare", "value": 75122.8}, {"name": "Medicaid", "value": 68120.4}, {"name": "Private Health Insurance", "value": 81210.6}, {"name": "Self-Pay", "value": 57221.3}]}]
+      }
+    },
+    {
+      "module_key": "data_quality",
+      "entity_key": "summary",
+      "payload": {
+        "title": "数据质量与任务管理",
+        "description": "只读展示当前分析批次和存储检查，不在网页执行任务。",
+        "metrics": [{"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"}, {"key": "valid_diagnosis_rows", "label": "有效诊断记录", "value": 2099954, "unit": "条"}, {"key": "parse_errors", "label": "解析异常", "value": 0, "unit": "条"}, {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}],
+        "sections": [{"key": "storage", "title": "存储与服务检查", "type": "status", "items": [{"name": "HDFS", "value": "CHECK_REQUIRED"}, {"name": "Hive", "value": "CHECK_REQUIRED"}, {"name": "MySQL", "value": "CHECK_REQUIRED"}, {"name": "PySpark任务", "value": "FIXTURE_ONLY"}]}, {"key": "fields", "title": "关键字段完整性", "type": "bar", "items": [{"name": "诊断", "value": 0.9992}, {"name": "医院", "value": 0.995}, {"name": "费用", "value": 1.0}, {"name": "住院时长", "value": 1.0}]}]
+      }
+    },
+    {
+      "module_key": "high_cost_model",
+      "entity_key": "metrics",
+      "payload": {
+        "title": "高费用病例分类模型",
+        "description": "使用入院时可得类别字段预测高费用记录，仅供运营分析。",
+        "options": {"model_version": "fixture:high_cost_logistic_regression:v1", "threshold_amount": 82450.3, "feature_names": ["age_group", "gender", "race", "ethnicity", "hospital_service_area", "facility_id", "admission_type", "emergency_indicator"]},
+        "metrics": [{"key": "train_rows", "label": "训练集", "value": 1681270, "unit": "条"}, {"key": "test_rows", "label": "测试集", "value": 420318, "unit": "条"}, {"key": "accuracy", "label": "Accuracy", "value": 0.79, "unit": "%"}, {"key": "precision", "label": "Precision", "value": 0.67, "unit": "%"}, {"key": "recall", "label": "Recall", "value": 0.58, "unit": "%"}, {"key": "f1", "label": "F1", "value": 0.62, "unit": "%"}, {"key": "auc", "label": "AUC", "value": 0.82, "unit": "%"}],
+        "sections": [{"key": "confusion", "title": "混淆矩阵", "type": "table", "items": [{"name": "TN", "value": 296120}, {"name": "FP", "value": 19038}, {"name": "FN", "value": 44110}, {"name": "TP", "value": 61050}]}]
+      }
+    }
+  ]
+}

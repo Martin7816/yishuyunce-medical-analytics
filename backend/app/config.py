@@ -18,8 +18,19 @@ except ImportError:
 class Config:
     APP_ROOT = Path(__file__).resolve().parent
 
-    TOP10_DATA_SOURCE = os.getenv("TOP10_DATA_SOURCE", "fixture")
+    # The source must be selected explicitly. Missing or unknown values fail
+    # closed instead of silently serving the development fixture.
+    TOP10_DATA_SOURCE = os.getenv("TOP10_DATA_SOURCE")
     TOP10_FIXTURE_STATE = os.getenv("TOP10_FIXTURE_STATE", "success")
+
+    # Fixture use must be explicit so an incomplete production environment
+    # cannot silently present demo aggregates as real analytics.
+    ANALYTICS_DATA_SOURCE = os.getenv("ANALYTICS_DATA_SOURCE")
+    HIGH_COST_MODEL_PATH = os.getenv("HIGH_COST_MODEL_PATH")
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    DEEPSEEK_TIMEOUT_SECONDS = int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "20"))
 
     MYSQL_HOST = os.getenv("MYSQL_HOST")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
