@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "mode": "dry-run",
+  "table": "disease_case_count_top10_result",
+  "rows": 10,
+  "data_version": "sparcs_mvp_sample_sha256_ae7da76c4a3e99e88890cd1ace4313e71b1bed79511d04cf5ab30f5261129940",
+  "generated_at": "2026-08-17T00:00:00.000000Z"
+}

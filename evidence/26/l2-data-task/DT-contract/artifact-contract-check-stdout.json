@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "input": "sparcs_mvp_sample.csv",
+  "data_version": "fixture:sparcs_mvp_sample:v1",
+  "rows": 10,
+  "unit": "discharge_records",
+  "result": "sample_service_result_artifact.json",
+  "result_data_version": "sparcs_mvp_sample_sha256_ae7da76c4a3e99e88890cd1ace4313e71b1bed79511d04cf5ab30f5261129940",
+  "result_rows": 10
+}
