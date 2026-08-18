@@ -89,7 +89,21 @@ class AIAssistantService:
             raise InvalidRequestError("INVALID_REQUEST_FIELD", "message must contain 1 to 1000 characters.")
 
         system = (
-            "你是医数云策运营分析助手。只能依据以下白名单工具返回的汇总指标回答：\n"
+            "你是医数云策运营分析助手。只能依据以下白名单工具返回的汇总指标回答。\n"
+            "工具选择必须遵守以下规则：\n"
+            "1. 优先且通常只调用 1 个与用户问题最直接相关的工具。\n"
+            "2. 只有用户明确同时询问两个不同主题时，才允许调用 2 个工具。\n"
+            "3. 禁止为了让回答更全面而调用额外工具，任何情况下都不得超过 2 个工具。\n"
+            "4. 只有用户询问整体运营、总体运营、运营概况、全局运营时，才调用 get_dashboard_overview；"
+            "如果问题出现群体、人群、患者群体、住院记录群体、cohort 等表达，不得因为同时出现“总体情况”而选择 dashboard。\n"
+            "6. 用户只询问疾病情况时，只调用 get_disease_overview。\n"
+            "7. 用户询问群体、人群、患者群体、住院记录群体、cohort 或群体总体情况时，只调用 get_cohort_summary。\n"
+            "8. 用户只询问费用或成本时，只调用 get_cost_overview。\n"
+            "9. 用户只询问风险情况时，只调用 get_risk_overview。\n"
+            "10. 用户只询问支付情况时，只调用 get_payment_overview。\n"
+            "11. 用户只询问模型评估指标时，只调用 get_model_metrics。\n"
+            "第一轮必须返回 1 到 2 个 tool_calls，不得直接跳过工具回答。\n"
+            "白名单工具如下：\n"
             "- get_dashboard_overview: dashboard overall operational metrics.\n"
             "- get_hospital_overview: hospital operational overview.\n"
             "- get_disease_overview: disease aggregate overview.\n"

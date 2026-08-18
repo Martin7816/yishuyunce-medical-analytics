@@ -124,19 +124,164 @@ evidence/79/question-tool-matrix.md
 安全红队：
 
 evidence/79/security-red-team.md
-9. 当前验收状态
+
+
+## 9. 真实 DeepSeek API 连通性
+
+
+使用本机 `backend/.env` 中的真实 `DEEPSEEK_API_KEY` 验证 DeepSeek API。
+
+
+实际结果：
+
+
+```text
+API_OK
+
+客户端返回字段：
+
+role
+content
+reasoning_content
+
+状态：PASS
+
+说明：
+
+API Key 可用；
+DeepSeek API 网络连通；
+当前 base URL 可用；
+当前 model 可用；
+未在命令、日志或 evidence 中输出真实 API Key。
+10. 真实 DeepSeek Q01～Q09 验证
+编号	问题类型	预期工具	最终实际工具	结果
+Q01	整体医疗运营	get_dashboard_overview	get_dashboard_overview	PASS
+Q02	医院运营	get_hospital_overview	get_hospital_overview	PASS
+Q03	疾病分布	get_disease_overview	get_disease_overview	PASS
+Q04	住院记录群体	get_cohort_summary	get_cohort_summary	PASS
+Q05	费用和成本	get_cost_overview	get_cost_overview	PASS
+Q06	风险指标	get_risk_overview	get_risk_overview	PASS
+Q07	支付方式	get_payment_overview	get_payment_overview	PASS
+Q08	模型评估指标	get_model_metrics	get_model_metrics	PASS
+Q09	整体运营 + 费用	get_dashboard_overview + get_cost_overview	get_dashboard_overview + get_cost_overview	PASS
+
+所有成功调用均返回：
+
+status = success
+data_version = fixture:sparcs_full_analytics:v1
+Q01 首次失败与修复
+
+Q01 首次真实调用时，DeepSeek 一次选择了 7 个工具：
+
+get_dashboard_overview
+get_hospital_overview
+get_disease_overview
+get_cost_overview
+get_risk_overview
+get_payment_overview
+get_model_metrics
+
+服务正确触发：
+
+The AI exceeded the two-tool-call limit.
+
+说明“两工具上限”安全拦截正常。
+
+随后加强 system prompt 路由规则：
+
+单主题优先且通常只调用 1 个工具；
+只有明确跨两个主题才调用 2 个；
+整体运营明确映射到 get_dashboard_overview；
+禁止为了让答案更全面而额外调用工具。
+
+复测 Q01：
+
+get_dashboard_overview
+
+状态：PASS
+
+Q04 首次失败与修复
+
+Q04 首次真实调用：
+
+问题：请概括当前住院记录群体的总体情况。
+预期：get_cohort_summary
+实际：get_dashboard_overview
+
+原因：
+
+“总体情况”与“整体运营”存在路由语义歧义
+
+随后加强路由规则：
+
+群体 / 人群 / 患者群体 / 住院记录群体 / cohort
+→ get_cohort_summary
+
+并明确：
+
+即使同时出现“总体情况”，也不得因此选择 dashboard
+
+复测实际工具：
+
+get_cohort_summary
+
+状态：PASS
+
+Q09 双工具验证
+
+实际调用：
+
+get_dashboard_overview
+get_cost_overview
+
+调用数量：
+
+2
+
+未超过上限。
+
+状态：PASS
+
+11. 修改后回归测试
+
+修改真实 DeepSeek 路由 prompt 后执行：
+
+python -m pytest backend/tests/test_ai_assistant.py -q
+
+结果：
+
+25 passed in 0.06s
+
+再次执行 Backend 全量回归：
+
+python -m pytest backend/tests -q
+
+结果：
+
+37 passed in 0.14s
+
+状态：PASS
+
+12. 当前验收状态
 FakeAIClient / 单元测试：PASS
-Backend 回归：PASS
+Backend 全量回归：PASS
 8 个白名单工具：PASS
-参数与调用数量边界：PASS
+真实 DeepSeek API 连通性：PASS
+真实 DeepSeek Q01～Q09：PASS
+单主题 1 工具路由：PASS
+双主题 2 工具路由：PASS
+>2 工具安全拦截：PASS
+参数安全边界：PASS
 模拟 timeout/network/upstream：PASS
-真实 DeepSeek API：NOT RUN
-真实 DeepSeek 红队：NOT RUN
-#79 最终验收结论：PENDING
+真实 DeepSeek 20 秒 timeout：PASS
+真实 DeepSeek 安全红队：PASS
+SQL / 患者级数据 / 诊断 / 治疗 / 因果边界：PASS
+Prompt Injection / Key 泄露 / 图表注入 / data_version 伪造：PASS
+#79 最终验收结论：PENDING（等待最终回归与提交检查）
 
-真实 DeepSeek API 尚未执行，因此当前不得将 #79 标记为最终 PASS 或关闭。
+真实 DeepSeek Q01～Q09 与核心安全红队均已完成；待最终代码回归、Git 差异检查和敏感信息检查通过后，再给出 #79 最终 PASS / FAIL 结论。
 
-10. 下一步
+13. 下一步
 
-配置本机真实 DeepSeek Key 后执行 Q01～Q09 和安全红队测试，并保存脱敏结果，再更新本记录。
-'@ | Set-Content -Path evidence\79\execution-record.md -Encoding UTF8
+执行最终 Backend 全量回归、Git 差异检查和敏感信息检查；全部通过后更新
+ #79 最终验收结论并提交本轮修复与验收记录。
