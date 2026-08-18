@@ -2,8 +2,8 @@
 
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
-> 当前状态：`CONFIRMED`  
-> 冻结条件：魏世轩确认字段与刷新状态、李佳明确认四态映射、胡钰炜确认边界测试后，在 Issue #10 中改为 `FROZEN`  
+> 当前状态：`FROZEN`
+> 冻结记录：2026-08-18，Issue #10 的字段、四态和边界语义已按 Resolution、真实服务结果和 `backend/tests/test_disease_top10_api.py` 复核；后续公共字段变更必须先说明上下游影响。
 > 上游依据：`02-metrics-and-data-contract.md` V1.1（Issue #7、#9，`FROZEN`）
 
 ## 1. 范围和基本原则
@@ -234,7 +234,7 @@ python -m pytest -q
 ## 13. Issue #10 Resolution（可直接粘贴）
 
 ```text
-Resolution: CONFIRMED
+Resolution: FROZEN
 
 - GET /api/v1/diseases/top10；v1 路径版本；不接受查询参数或请求体。
 - 成功响应固定返回 code、message、data、trace_id；业务字段为 metric、unit、data_version、generated_at、items，以及每项的 rank、diagnosis_name、case_count。
@@ -244,5 +244,5 @@ Resolution: CONFIRMED
 - Route 不复制清洗、聚合、排序或长 SQL，只通过 Service/Repository 查询已验证服务结果。
 - 固定 success/empty/error Mock 和代表性测试已提供。
 
-待魏世轩、李佳明、胡钰炜分别确认字段与刷新状态、四态映射、边界测试后，将状态从 CONFIRMED 更新为 FROZEN。公共字段变更必须先说明上下游影响。
+当前契约已冻结。真实服务结果、Flask API 和 Vue 页面必须继续使用本节字段、状态码和错误语义；发现冲突时先记录影响并回写对应 Issue。
 ```

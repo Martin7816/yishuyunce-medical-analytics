@@ -383,7 +383,7 @@ evidence/<issue>/<layer>/<case-id>/...
 
 ## Issue #25 页面正式接口适配记录
 
-本节记录 #25 的页面联调入口和证据要求。原有矩阵中的 `TBD` 仅表示当时尚未完成的前置阶段；#25 的实现以 #10 的正式契约为准。
+本节记录 #25 的正式接口适配、浏览器复核和下游交接结果。#25 使用 #10 已冻结的契约；Mock 证据只证明状态触发，不替代真实 API 证据。
 
 ### 已实现的正式边界
 
@@ -393,6 +393,14 @@ evidence/<issue>/<layer>/<case-id>/...
 - `200 + data.items=[]` 显示 empty；非 2xx 按稳定 `code` 显示安全错误和重试入口；请求未结束时显示 loading 且清空旧结果；
 - 长诊断名称坐标轴可省略，悬浮提示保留完整名称；窗口变化只触发图表 resize，不改变 API 顺序；
 - Mock 只有显式设置 `VITE_TOP10_MODE=mock` 才启用，不能作为真实 API 或全链路证据。
+
+### 实际联调结果
+
+- 后端 `python -m pytest -q backend/tests`：`12 passed`；
+- 使用本机 `backend/.env` 的 MySQL 模式启动 Flask 后，`GET http://127.0.0.1:5000/api/v1/diseases/top10` 返回 `HTTP 200`、`code=OK`、10 项，`unit=discharge_records`；
+- 真实批次为 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`，页面展示的 `data_version` 与 API 响应一致；
+- 前端执行 `npm ci` 后 `npm run build` 通过；正式模式页面截图和 DOM 复核均显示“正常”、10 项图表、病例量单位和真实批次；控制台无 error/warning；
+- 页面源码检查确认请求层只发 GET、无 body，`App.vue` 没有本地聚合、排序、截断或数据库连接。
 
 ### 可复查命令
 
@@ -408,6 +416,7 @@ python run.py
 
 ```powershell
 cd frontend
+npm ci
 npm run build
 npm run dev
 ```
@@ -420,15 +429,34 @@ $env:VITE_TOP10_MOCK_STATE='success'
 npm run dev
 ```
 
-在页面状态按钮中分别复现 `loading`、`success`、`empty`、`error`；错误态点击“重新加载”后应重新请求/加载并恢复 success。正式 success 证据必须同时保存 API 响应、页面截图和 `data_version`，并与 #31 的真实批次区分。
+页面上的状态按钮可以复现 `loading`、`success`、`empty`、`error`；错误态点击“重新加载”后恢复 success。正式 success 证据必须同时核对 API 响应、页面截图和 `data_version`，并与 Mock 批次区分。
+
+### #25 验收矩阵执行结果
+
+| 编号 | 检查项 | 实际动作与结果 | 证据 | 状态 |
+|---|---|---|---|---|
+| UI-01 | loading | Mock 点击 loading，显示加载提示且不保留旧图表 | 浏览器 DOM：`数据加载中……` | PASS |
+| UI-02 | 真实 success | MySQL API 返回 200/10 项，页面显示真实名称、数量、单位和版本 | API 响应 + 正式页面 DOM/截图 | PASS |
+| UI-03 | 合法 empty | Mock 点击 empty，显示“暂无可展示数据”，不显示空坐标轴 | 浏览器 DOM + Mock 状态 | PASS |
+| UI-04 | error 与 retry | Mock 点击 error 显示 `DATABASE_UNAVAILABLE`，点击重试恢复 success | 浏览器 DOM + 重试后的 success 状态 | PASS |
+| UI-05 | 字段与单位 | `rank`、名称、`case_count`、`unit`、`data_version` 和 `generated_at` 与响应一致；病例量文案为有效住院出院记录 | API 响应 + 页面 DOM | PASS |
+| UI-06 | 长名称、并列与窗口 | Tooltip 显示完整长名称；Mock 并列项顺序保持 API 顺序；390px/1280px 均无横向溢出，图表正常 resize | Tooltip DOM + 窗口尺寸复核：`scrollWidth` 等于 `clientWidth` | PASS |
+| UI-07 | 前端边界 | 检查请求层、页面源码和浏览器控制台；未发现重算、直连、假数据冒充或控制台错误 | `frontend/src/api/diseaseTop10.js`、`frontend/src/App.vue`、浏览器日志 | PASS |
+| UI-08 | 文档与交接 | 启动命令、Mock 步骤、真实批次和已知限制已记录，结果交给 #26 做 M1 最终验收 | 本节、`frontend/README.md`、#26 交接评论 | PASS |
 
 ### #25 交接检查
 
 | 检查项 | 证据位置 | 结论 |
 |---|---|---|
-| 请求方法和 URL | `frontend/src/api/diseaseTop10.js`、浏览器 Network | PASS（代码）；真实环境待复现 |
-| 四态与重试 | `frontend/src/App.vue`、Mock 状态步骤 | PASS（Mock）；真实环境待复现 |
-| 字段、单位和批次 | API 响应、页面截图 | 需使用 #31 实际 API 响应复核 |
-| 长名称、并列和窗口 | 页面截图 + API 响应对照 | 需在浏览器复核 |
-| 不重算、不直连、不冒充 Mock | 前端源码与 Network | PASS（代码检查） |
-| 下游 #26 交接 | #26 评论 | 待 PR 合并后补充 |
+| 请求方法和 URL | `frontend/src/api/diseaseTop10.js`、真实 API 请求 | PASS |
+| 四态与重试 | `frontend/src/App.vue`、浏览器 Mock 状态步骤 | PASS（Mock 状态触发）；真实 success 已单独复核 |
+| 字段、单位和批次 | 真实 API 响应、正式页面 DOM/截图 | PASS |
+| 长名称、并列和窗口 | Tooltip DOM、Mock 顺序、390px/1280px 尺寸复核 | PASS |
+| 不重算、不直连、不冒充 Mock | 前端源码、正式模式页面和控制台日志 | PASS |
+| 下游 #26 交接 | Issue #26 评论 | PASS（#26 继续负责 M1 最终全链路验收） |
+
+### 已知限制与下游边界
+
+- Mock 状态按钮只用于可控复现 loading/empty/error，不代表真实数据链路；
+- #25 不宣称 M1 全链路通过，真实数据与页面的一致性还由 #26 在其验收范围内复验；
+- 本 Issue 不增加筛选、登录、AI、自由查询或其他指标页面。
