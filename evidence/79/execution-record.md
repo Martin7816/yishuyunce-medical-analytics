@@ -262,7 +262,8 @@ python -m pytest backend/tests -q
 
 状态：PASS
 
-12. 当前验收状态
+## 12. 当前验收状态
+
 FakeAIClient / 单元测试：PASS
 Backend 全量回归：PASS
 8 个白名单工具：PASS
@@ -277,11 +278,11 @@ Backend 全量回归：PASS
 真实 DeepSeek 安全红队：PASS
 SQL / 患者级数据 / 诊断 / 治疗 / 因果边界：PASS
 Prompt Injection / Key 泄露 / 图表注入 / data_version 伪造：PASS
-#79 最终验收结论：PENDING（等待最终回归与提交检查）
+#79 工作分支验收结论：PASS
+#79 最终关闭状态：PENDING（等待 ai/deepseek-assistant 工作流 PR 合并 main，并在 #78 发布独立 Resolution）
 
-真实 DeepSeek Q01～Q09 与核心安全红队均已完成；待最终代码回归、Git 差异检查和敏感信息检查通过后，再给出 #79 最终 PASS / FAIL 结论。
+真实 DeepSeek Q01～Q09、核心安全红队、Backend 全量回归、Git 差异检查和敏感信息检查均已完成并通过，因此 #79 在当前 ai/deepseek-assistant 工作分支上的验收结论为 PASS；Issue 最终关闭仍等待工作流 PR 合并 main 及 #78 独立 Resolution。
 
-13. 下一步
+## 13. 下一步
 
-执行最终 Backend 全量回归、Git 差异检查和敏感信息检查；全部通过后更新
- #79 最终验收结论并提交本轮修复与验收记录。
+提交并推送本次最终验收结论；随后继续 #78～#81 的 ai/deepseek-assistant 工作流开发。待工作流 PR 完成并合并 main 后，再在 #78 发布 #79 的独立 Resolution，并按 Issue 关闭条件处理 #79。
