@@ -22,6 +22,52 @@
 
 预测请求只接受 `age_group`、`gender`、`race`、`ethnicity`、`hospital_service_area`、`facility_id`、`admission_type`、`emergency_indicator`。AI 请求只接受 `{"message":"..."}`。两者均拒绝额外字段；预测接口专门返回 `LEAKAGE_FIELD_FORBIDDEN` 拦截目标或出院后字段。
 
+## 医院运营分析 API（Issue #48）
+
+医院接口只读取统一快照服务，不读取 CSV/HDFS，不在路由中重新聚合、排序、换算单位或修补空值。`FixtureAnalyticsSnapshotRepository` 和 `MySQLAnalyticsSnapshotRepository` 均通过同一个 `AnalyticsSnapshotService.get(module_key, entity_key)` seam 读取：
+
+| 方法 | 路径 | 参数/实体键 |
+|---|---|---|
+| `GET` | `/api/v1/hospitals` | `facility_a`、`facility_b`、`metric`；无筛选读取 `hospitals/index` |
+| `GET` | `/api/v1/hospitals/{facility_id}` | `facility_id` 来自 `hospitals/index.options.facilities[].value`；读取 `hospitals/profile:{facility_id}` |
+
+`facility_a`、`facility_b` 只能使用快照枚举中的字符串机构编码；`metric` 只能是 `case_count`、`avg_los`、`avg_charges`、`avg_costs`、`emergency_rate` 或 `severe_rate`。未知参数、重复参数、非法枚举和相同的 A/B 机构返回 `400 INVALID_QUERY_PARAMETER`；所有医院读取接口严格 GET-only，携带请求体返回 `400 INVALID_REQUEST_FORMAT`，`HEAD`、`OPTIONS`、其他方法返回 `405 METHOD_NOT_ALLOWED`。
+
+成功响应继续使用统一信封。无筛选时 `data` 就是索引快照；存在筛选时，`data.filters` 回显已接受的白名单字符串，并在选择机构后增加 `comparison` 数组。`comparison` 是 API 响应层对完整 profile 快照的稳定顺序组合，不是数据库 payload 的新增字段，profile 内的指标顺序、单位和数值原样保留。
+
+下面以“机构已在索引枚举中、profile 尚未发布”的合法空结果为例；profile 已发布时 `metrics`、`sections` 和 `comparison` 会携带快照原值。
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "医院运营分析",
+    "description": "比较医疗机构病例量、住院时长、费用与重症结构。",
+    "options": {"facilities": [{"value": "001456", "label": "Mount Sinai Hospital"}]},
+    "filters": {"facility_a": "001456", "metric": "avg_charges"},
+    "metrics": [],
+    "sections": [],
+    "comparison": [],
+    "data_version": "sparcs_2021_20231012_sha256_<input-sha256>",
+    "generated_at": "2026-08-18T12:00:00.000000Z"
+  },
+  "trace_id": "<uuid>"
+}
+```
+
+合法机构已在 `index` 枚举中发布、但对应 profile 尚未发布时，返回 `200 OK` 并保留 `title`、`description`、`filters`、`data_version`、`generated_at`，同时令 `metrics`、`sections`、`comparison` 为空；索引本身未发布仍返回 `503 RESULT_NOT_READY`。MySQL 连接/查询失败返回 `503 DATABASE_UNAVAILABLE`；配置缺失返回 `500 SERVER_MISCONFIGURED`；快照 JSON 或结构校验失败返回 `500 SERVICE_RESULT_INVALID`。错误响应不包含 SQL、连接地址、密码、绝对路径或堆栈。
+
+最小调用示例：
+
+```powershell
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals'
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals/001456'
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals?facility_a=001456&facility_b=000541&metric=avg_charges'
+```
+
+固定 fixture 验证：`python -m pytest backend/tests/test_analytics_api.py -q`；完整回归：`python -m pytest backend/tests data/tests -q`。真实验收时将 `ANALYTICS_DATA_SOURCE` 切换为 `mysql`，使用已发布的医院 `index/profile` 快照重复无筛选、单院、双院、指标和错误路径，并对照 [Issue #47 医院快照证据](../evidence/47/README.md) 的 `data_version`、`generated_at`、206 条医院记录和 payload 一致性结果。
+
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
 > 当前状态：`FROZEN`

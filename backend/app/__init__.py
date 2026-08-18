@@ -97,6 +97,14 @@ def create_app(
 
     @app.errorhandler(AppError)
     def handle_app_error(error: AppError):
+        cause = error.__cause__
+        if cause is not None:
+            app.logger.error(
+                "API error trace_id=%s code=%s",
+                g.trace_id,
+                error.code,
+                exc_info=(type(cause), cause, cause.__traceback__),
+            )
         return jsonify(_error_payload(error)), error.status_code
 
     @app.errorhandler(HTTPException)

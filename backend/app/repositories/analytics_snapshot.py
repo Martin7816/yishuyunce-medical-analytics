@@ -9,6 +9,7 @@ from shared.analytics_snapshot_contract import validate_snapshot_document
 
 from ..errors import (
     DatabaseUnavailableError,
+    InvalidServiceResultError,
     ResultNotReadyError,
     ServerMisconfiguredError,
 )
@@ -98,7 +99,9 @@ LIMIT 1
             try:
                 payload = json.loads(payload)
             except json.JSONDecodeError as error:
-                raise ServerMisconfiguredError() from error
+                # The connection and configuration are usable; the published
+                # row itself is malformed and must use the contract error.
+                raise InvalidServiceResultError() from error
         return {
             "payload": payload,
             "data_version": row["data_version"],
