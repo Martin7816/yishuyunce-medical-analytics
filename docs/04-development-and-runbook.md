@@ -222,6 +222,25 @@ python data/src/publish_top10_mysql.py `
 
 本次实际结果为：2,101,588 行、0 条解析异常、0 条范围外记录、2,099,954 条非空诊断记录、477 个诊断分组；服务结果有 10 行，版本为 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。独立标准库核对和 PySpark 结果的 TOP10 完全一致。最后一条命令默认只做本地校验；连接到已执行 DDL 的 MySQL 时才增加 `--apply`，并提供 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 环境变量。
 
+### 4.2 运营驾驶舱全量快照（Issue #43）
+
+驾驶舱与其他分析模块复用同一份 PySpark 清洗帧，输出统一 `data_version`、`generated_at` 和 `analysis_snapshot_result` 记录。正式聚合不收集原始行；dashboard 只发布 overview 指标、年龄结构、主支付方式、疾病/医院 TOP10 和严重程度分布。
+
+```powershell
+python data/src/run_full_analytics_pyspark.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --output "<本地临时目录>\real-full.json" `
+  --module all `
+  --generated-at 2026-08-18T08:00:00Z
+python data/src/verify_dashboard_snapshot.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --snapshot "<本地临时目录>\real-full.json"
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<本地临时目录>\real-full.json"
+```
+
+发布前必须先执行 `data/sql/002-analysis-snapshot.sql` 并授予发布账号目标表的 `SELECT, INSERT, DELETE` 权限；`--apply` 会在一个事务中替换整批快照并校验行数、版本和时间戳。真实 CSV 不提交仓库，完整执行记录见 `evidence/43/README.md`。
+
 ## 5. VM 启动、健康检查与停止
 
 ### 5.1 启动前检查
