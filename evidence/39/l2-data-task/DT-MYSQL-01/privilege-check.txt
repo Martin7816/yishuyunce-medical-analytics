@@ -1,0 +1,7 @@
+TCP 192.168.219.128:3306: PASS
+CURRENT_USER(): issue31_publisher@192.168.219.1
+DATABASE(): medical_analytics
+GRANTS: SELECT, INSERT, DELETE on medical_analytics.disease_case_count_top10_result only
+analysis_snapshot_result SELECT: blocked, MySQL 1142
+data/sql/002-analysis-snapshot.sql: blocked, MySQL 1142 CREATE command denied
+Status: BLOCKED pending database administrator schema creation and grants

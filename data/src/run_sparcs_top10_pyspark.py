@@ -8,15 +8,19 @@ verifier remains an independent check and is deliberately not imported here.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pyspark
 from pyspark.sql import DataFrame, SparkSession, functions as F
+
+from analytics_metadata import (
+    KNOWN_SOURCE_NAME,
+    build_data_version,
+    normalize_generated_at,
+    sha256_file,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,34 +84,6 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
         "diagnosis_nonempty_distinct": valid.select("diagnosis").distinct().count(),
         "top10": top10,
     }
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def build_data_version(csv_path: Path, digest: str) -> str:
-    """Build a stable version without exposing a local absolute path."""
-
-    if csv_path.name == KNOWN_SOURCE_NAME:
-        return f"sparcs_2021_20231012_sha256_{digest}"
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", csv_path.stem).strip("._-")
-    return f"{safe_name or 'sparcs_input'}_sha256_{digest}"
-
-
-def normalize_generated_at(value: str | None) -> str:
-    if value is None:
-        parsed = datetime.now(UTC)
-    else:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            raise ValueError("--generated-at 必须包含时区")
-        parsed = parsed.astimezone(UTC)
-    return parsed.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def build_run_document(

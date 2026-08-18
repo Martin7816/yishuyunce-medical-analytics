@@ -13,7 +13,8 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator
 from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
 from pyspark.sql import SparkSession, functions as F
 
-from run_full_analytics_pyspark import FIELDS, clean_frame, fingerprint
+from analytics_metadata import build_data_version
+from run_full_analytics_pyspark import clean_frame, fingerprint
 
 
 FEATURES = ["age", "gender", "race", "ethnicity", "area", "facility_id", "admission", "emergency"]
@@ -35,8 +36,8 @@ def main() -> None:
 
     spark = SparkSession.builder.master("local[*]").appName("yishuyunce-high-cost-model").config("spark.ui.enabled", "false").getOrCreate()
     try:
-        raw = spark.read.option("header", "true").option("inferSchema", "false").option("mode", "PERMISSIVE").csv(str(args.input.resolve()))
-        frame = clean_frame(raw).where(F.col("valid_money") & F.col("charges").isNotNull())
+        raw = spark.read.option("header", "true").option("inferSchema", "false").option("mode", "FAILFAST").csv(str(args.input.resolve()))
+        frame = clean_frame(raw).where(F.col("in_scope") & F.col("valid_money") & F.col("charges").isNotNull())
         train_base, test_base = frame.randomSplit([0.8, 0.2], seed=SEED)
         threshold = float(train_base.agg(F.percentile_approx("charges", 0.75, 10000).alias("q")).first().q)
         train = train_base.withColumn("label", (F.col("charges") >= threshold).cast("double"))
@@ -86,7 +87,7 @@ def main() -> None:
             )
 
         digest = fingerprint(args.input)
-        data_version = f"sparcs_sha256_{digest}"
+        data_version = build_data_version(args.input.resolve(), digest)
         model_version = f"high_cost_lr_seed_{SEED}_{digest[:12]}"
         artifact = {
             "artifact_type": "pyspark_logistic_regression", "model_version": model_version,

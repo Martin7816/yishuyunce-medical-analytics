@@ -18,6 +18,12 @@
 
 完整 CSV、快照工件、模型工件、真实 `.env` 和 API Key 均不提交 Git。前端通过 Vite `/api` 代理访问 Flask；部署时应保持同源或由反向代理提供 `/api/v1`。
 
+### #39 真实数据任务交接
+
+2026-08-18 已按上述命令完成真实全量快照、模型工件、独立 dashboard 核对和发布 dry-run。输入文件的 SHA-256 为 `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`，快照与模型统一使用 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。可复查 stdout 和当前边界见 [`evidence/39/README.md`](../evidence/39/README.md)。
+
+当前发布账号只有旧 TOP10 表权限，尚未具备 `analysis_snapshot_result` 的建表、查询和发布权限；因此不能把真实 MySQL `--apply` 或 HDFS/Hive 检查写成已通过。管理员补齐权限后，按证据文档中的复验命令重新执行并保存行数、版本/时间一致性及 rollback 证据。
+
 > 关联 Issue：#12
 >
 > 基线日期：2026-08-17
