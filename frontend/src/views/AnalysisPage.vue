@@ -51,7 +51,6 @@ function setLocalOptions(payload) {
     if (values) optionSets[filter.key] = normalizeOptions(values)
   }
 }
-
 async function loadRemoteOptions(current, signal) {
   const remotes = new Map()
   for (const filter of props.config.filters || []) {
@@ -207,7 +206,6 @@ onBeforeUnmount(() => {
       </label>
       <button v-if="hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
     </section>
-
     <p v-if="validationMessage" class="filter-notice" role="alert">{{ validationMessage }}</p>
     <p v-if="data?.data_version?.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
 

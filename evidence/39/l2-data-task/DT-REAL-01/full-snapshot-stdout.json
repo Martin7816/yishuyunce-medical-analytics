@@ -4,7 +4,7 @@
   "records": 690,
   "raw_rows": 2101588,
   "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
-  "generated_at": "2026-08-18T10:30:00.000000Z",
+  "generated_at": "2026-08-18T11:11:56.038631Z",
   "dashboard_metric_keys": [
     "record_count",
     "facility_count",

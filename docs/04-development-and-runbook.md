@@ -20,9 +20,9 @@
 
 ### #39 真实数据任务交接
 
-2026-08-18 已按上述命令完成真实全量快照、模型工件、独立 dashboard 核对和发布 dry-run。输入文件的 SHA-256 为 `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`，快照与模型统一使用 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。可复查 stdout 和当前边界见 [`evidence/39/README.md`](../evidence/39/README.md)。
+2026-08-18 已按上述命令完成真实全量快照、模型工件、独立 dashboard 核对，并完成 MySQL 正式发布。输入文件的 SHA-256 为 `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`，最终快照为 691 条记录，快照与模型统一使用 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。发布后 MySQL 行数、版本/时间唯一性、真实 API 和事务回滚均已复验；HDFS 三节点和 Hive 外部表检查也已完成。可复查 stdout 和证据见 [`evidence/39/README.md`](../evidence/39/README.md)。
 
-当前发布账号只有旧 TOP10 表权限，尚未具备 `analysis_snapshot_result` 的建表、查询和发布权限；因此不能把真实 MySQL `--apply` 或 HDFS/Hive 检查写成已通过。管理员补齐权限后，按证据文档中的复验命令重新执行并保存行数、版本/时间一致性及 rollback 证据。
+Issue #39 的真实数据发布和支撑层复验已完成：`analysis_snapshot_result` 已建表并授予发布账号所需权限，`--apply` 实际写入 691 条记录；真实 MySQL API 返回 200，故障注入回滚后旧批次保持可读；HDFS 报告 3 个 Live DataNode 且块健康，HiveServer2 和外部表检查通过。详细结果与下游配置见 `evidence/39/`。
 
 > 关联 Issue：#12
 >

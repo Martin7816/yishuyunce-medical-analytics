@@ -1,0 +1,22 @@
+Cluster versions:
+Java 1.8.0_212
+Hadoop 3.3.4
+Hive 3.1.3
+
+HDFS:
+- hdfs dfsadmin -report: Live datanodes (3)
+- all three nodes: Decommission Status=Normal
+- Under replicated blocks=0
+- Blocks with corrupt replicas=0
+- Missing blocks=0
+- HDFS raw copy: /project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv
+- HDFS file bytes=832373138 (matches the local source)
+- HDFS line count=2101589 including header, therefore 2101588 data rows
+
+HiveServer2:
+- HiveServer2 listener: 10000
+- Beeline JDBC connection: PASS
+- Hive schema: analytics_check
+- External table: analytics_check.sparcs_2021_raw_issue39
+- SHOW DATABASES / SHOW TABLES / DESCRIBE: PASS
+- Hive is used only for raw-copy metadata/access checks; formal metrics remain the local PySpark result.
