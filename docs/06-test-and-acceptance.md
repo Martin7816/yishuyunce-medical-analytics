@@ -380,3 +380,55 @@ evidence/<issue>/<layer>/<case-id>/...
 - [ ] 等待 #10 的内容集中在单一章节，冻结后只需补空位
 - [ ] 未宣称 API 已通过、页面已通过、M1 全链路已通过
 - [ ] 除 `docs/06-test-and-acceptance.md` 外未修改任何其他正式文件；`verify_sparcs_mvp.py` 仅只读运行，未修改上游脚本或 fixture
+
+## Issue #25 页面正式接口适配记录
+
+本节记录 #25 的页面联调入口和证据要求。原有矩阵中的 `TBD` 仅表示当时尚未完成的前置阶段；#25 的实现以 #10 的正式契约为准。
+
+### 已实现的正式边界
+
+- 默认模式请求 `GET /api/v1/diseases/top10`，不附加查询参数和请求体；
+- 页面只消费 `data.items` 的原始顺序，不重新聚合、排序、截断 TOP10，也不连接 MySQL/HDFS；
+- 成功态逐项展示 `rank`、`diagnosis_name`、`case_count`，并展示 `unit`、`data_version`、`generated_at`；
+- `200 + data.items=[]` 显示 empty；非 2xx 按稳定 `code` 显示安全错误和重试入口；请求未结束时显示 loading 且清空旧结果；
+- 长诊断名称坐标轴可省略，悬浮提示保留完整名称；窗口变化只触发图表 resize，不改变 API 顺序；
+- Mock 只有显式设置 `VITE_TOP10_MODE=mock` 才启用，不能作为真实 API 或全链路证据。
+
+### 可复查命令
+
+后端：
+
+```powershell
+cd backend
+python -m pytest -q
+python run.py
+```
+
+前端正式模式：
+
+```powershell
+cd frontend
+npm run build
+npm run dev
+```
+
+前端 Mock 状态复现：
+
+```powershell
+$env:VITE_TOP10_MODE='mock'
+$env:VITE_TOP10_MOCK_STATE='success'
+npm run dev
+```
+
+在页面状态按钮中分别复现 `loading`、`success`、`empty`、`error`；错误态点击“重新加载”后应重新请求/加载并恢复 success。正式 success 证据必须同时保存 API 响应、页面截图和 `data_version`，并与 #31 的真实批次区分。
+
+### #25 交接检查
+
+| 检查项 | 证据位置 | 结论 |
+|---|---|---|
+| 请求方法和 URL | `frontend/src/api/diseaseTop10.js`、浏览器 Network | PASS（代码）；真实环境待复现 |
+| 四态与重试 | `frontend/src/App.vue`、Mock 状态步骤 | PASS（Mock）；真实环境待复现 |
+| 字段、单位和批次 | API 响应、页面截图 | 需使用 #31 实际 API 响应复核 |
+| 长名称、并列和窗口 | 页面截图 + API 响应对照 | 需在浏览器复核 |
+| 不重算、不直连、不冒充 Mock | 前端源码与 Network | PASS（代码检查） |
+| 下游 #26 交接 | #26 评论 | 待 PR 合并后补充 |

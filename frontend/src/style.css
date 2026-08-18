@@ -265,6 +265,13 @@ button:focus-visible {
   font-size: 13px;
 }
 
+.error-code {
+  margin-top: 10px;
+  color: #b42318;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
 .reload-button {
   margin-top: 20px;
   padding: 9px 18px;

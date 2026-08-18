@@ -1,83 +1,44 @@
-// 固定示例数据仅用于 TOP10 页面原型和状态测试，不代表真实业务结果。
-export const top10MockData = [
-  {
-    rank: 1,
-    diagnosis_name: '肺部恶性肿瘤',
-    case_count: 1286,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 2,
-    diagnosis_name: '缺血性心脏病',
-    case_count: 1134,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 3,
-    diagnosis_name: '脑梗死',
-    case_count: 987,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 4,
-    diagnosis_name: '慢性阻塞性肺疾病急性加重伴下呼吸道感染',
-    case_count: 862,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 5,
-    diagnosis_name: '糖尿病伴多个并发症',
-    case_count: 754,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 6,
-    diagnosis_name: '骨折术后康复治疗',
-    case_count: 691,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 7,
-    diagnosis_name: '大脑中动脉缺血性脑卒中伴偏瘫及吞咽功能障碍',
-    case_count: 628,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 8,
-    diagnosis_name: 'Malignant neoplasm of bronchus and lung with respiratory complications',
-    case_count: 574,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 9,
-    diagnosis_name: '慢性肾脏病',
-    case_count: 483,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
-  {
-    rank: 10,
-    diagnosis_name: '原发性高血压',
-    case_count: 416,
-    unit: '例',
-    data_version: 'mock-v1.0',
-    generated_at: '2026-08-18 10:30:00',
-  },
+// Mock 只用于页面状态联调，不代表真实全量 SPARCS 结果。
+const successItems = [
+  { rank: 1, diagnosis_name: 'COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER', case_count: 2 },
+  { rank: 2, diagnosis_name: 'LIVEBORN', case_count: 2 },
+  { rank: 3, diagnosis_name: 'TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER', case_count: 2 },
+  { rank: 4, diagnosis_name: 'ACUTE MYOCARDIAL INFARCTION', case_count: 1 },
+  { rank: 5, diagnosis_name: 'ASTHMA', case_count: 1 },
+  { rank: 6, diagnosis_name: 'CORONAVIRUS DISEASE 2019 (COVID-19)', case_count: 1 },
+  { rank: 7, diagnosis_name: 'DIABETES MELLITUS WITH COMPLICATION', case_count: 1 },
+  { rank: 8, diagnosis_name: 'MULTIPLE SCLEROSIS', case_count: 1 },
+  { rank: 9, diagnosis_name: 'NONINFECTIOUS GASTROENTERITIS', case_count: 1 },
+  { rank: 10, diagnosis_name: 'PARALYSIS (OTHER THAN CEREBRAL PALSY)', case_count: 1 },
 ]
+
+const baseData = {
+  metric: 'disease_case_count_top10',
+  unit: 'discharge_records',
+  generated_at: '2026-08-17T00:00:00.000000Z',
+}
+
+export const top10MockResponses = {
+  success: {
+    code: 'OK',
+    message: 'success',
+    data: {
+      ...baseData,
+      data_version: 'fixture:sparcs_mvp_sample:v1',
+      items: successItems,
+    },
+    trace_id: '00000000-0000-4000-8000-000000000001',
+  },
+  empty: {
+    code: 'OK',
+    message: 'success',
+    data: {
+      ...baseData,
+      data_version: 'fixture:sparcs_mvp_empty:v1',
+      items: [],
+    },
+    trace_id: '00000000-0000-4000-8000-000000000002',
+  },
+}
+
+export const top10MockData = top10MockResponses.success.data.items
