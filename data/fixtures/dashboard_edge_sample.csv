@@ -1,0 +1,5 @@
+CCSR Diagnosis Description,CCSR Diagnosis Code,Discharge Year,Age Group,Gender,Type of Admission,Length of Stay,Total Charges,Total Costs,Emergency Department Indicator,Facility Name,Facility ID,APR Severity of Illness Description,Payment Typology 1,APR Medical Surgical Description
+ASTHMA,RSP009,2021,0 to 17,F,Emergency,2,100.00,20.00,Y,Hospital A,F001,Major,Medicare,Medical
+DIABETES,END003,2021,18 to 29,M,Elective,120 +,-5,40.00,N,Hospital B,F002,Extreme,Medicaid,Surgical
+INFECTION,INF001,2021,30 to 49,F,Urgent,not available,300.00,not-a-number,Y,Hospital C,F003,Minor,Private Health Insurance,Medical
+, ,2021,50 to 69,M,Emergency,4,200.00,100.00,N,Hospital A,F001,,Self-Pay,Medical
