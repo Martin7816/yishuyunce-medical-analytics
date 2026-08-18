@@ -29,7 +29,8 @@ HDFS 原始副本 / Hive 检查（可选课堂展示）
 5. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
 6. [开发、运行与复现手册](docs/04-development-and-runbook.md)：版本基线、依赖归属、组长电脑复现和 VM 启停命令；
 7. [疾病病例量 TOP10 API 契约](docs/05-api.md)：接口路径、请求响应、空数据、错误语义和验收要求；
-8. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
+8. [M1 测试与验收](docs/06-test-and-acceptance.md)：固定样例、测试用例、证据规范和全链路验收边界；
+9. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
 
 项目任务与决策依赖见 GitHub [Wayfinder 地图](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/3)。
 
@@ -39,6 +40,7 @@ HDFS 原始副本 / Hive 检查（可选课堂展示）
 - 第2组按本项目概况自主确定首轮技术链路和验收基线；学校或课程后续明确提出的要求再纳入对应扩展；
 - 数据中的一行代表一次住院出院记录，不等于唯一患者；
 - 完整原始数据、密码、Token、API Key、`.env` 和个人绝对路径不得提交 Git。
+- Issue 对应的顶层编号文档中，`05` 固定为 API 契约，`06` 固定为测试与验收；后续新增编号文档从 `07` 开始，不复用已占用编号。
 
 架构边界已经固定；本机 PySpark 3.4.0 是唯一正式计算环境，VM 中 Hadoop/HDFS、Hive 和 MySQL 只承担可选存储、检查或服务支持，VM 不要求安装 Spark。API 和前端复现由下游 Issue 补充。本 README 必须始终反映 `main` 的真实可运行状态，不提前写未实现功能。
 

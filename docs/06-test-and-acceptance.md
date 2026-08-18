@@ -367,7 +367,7 @@ evidence/<issue>/<layer>/<case-id>/...
 
 提交 PR 前逐项确认：
 
-- [ ] `docs/05-test-and-acceptance.md` 已创建，成为岗位5后续 M1 验收的单一正式入口，未创建其他重复验收文档
+- [ ] `docs/06-test-and-acceptance.md` 已创建，成为岗位5后续 M1 验收的单一正式入口，未创建其他重复验收文档
 - [ ] 验收执行顺序覆盖五层：数据与固定样本 → 数据任务与服务结果 → Flask API → Vue/ECharts 页面 → 端到端集成与组长电脑复现
 - [ ] 固定样本核对章节引用真实仓库文件，写明输入、执行命令、预期结果、实际结果填写位置与证据保存位置；样本行数、非空诊断数、期望 TOP10 均来自现有文件/正式文档
 - [ ] 数据任务/服务结果验收模板覆盖：统计口径、清洗规则、排序与并列、严格 TOP10、重复执行一致性、服务结果字段契约、`data_version`、`unit`、`generated_at`、患者数与记录数不混淆
@@ -379,4 +379,4 @@ evidence/<issue>/<layer>/<case-id>/...
 - [ ] 问题记录与复验模板字段完整，状态限定 `PASS` / `FAIL` / `BLOCKED`
 - [ ] 等待 #10 的内容集中在单一章节，冻结后只需补空位
 - [ ] 未宣称 API 已通过、页面已通过、M1 全链路已通过
-- [ ] 除 `docs/05-test-and-acceptance.md` 外未修改任何其他正式文件；`verify_sparcs_mvp.py` 仅只读运行，未修改上游脚本或 fixture
+- [ ] 除 `docs/06-test-and-acceptance.md` 外未修改任何其他正式文件；`verify_sparcs_mvp.py` 仅只读运行，未修改上游脚本或 fixture
