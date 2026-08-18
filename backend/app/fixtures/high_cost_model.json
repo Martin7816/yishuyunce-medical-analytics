@@ -1,0 +1,18 @@
+{
+  "artifact_type": "fixture_only",
+  "model_version": "fixture:high_cost_logistic_regression:v1",
+  "data_version": "fixture:sparcs_full_analytics:v1",
+  "threshold_amount": 82450.3,
+  "classification_threshold": 0.5,
+  "intercept": -1.1,
+  "feature_weights": {
+    "age_group": {"0 to 17": -0.5, "18 to 29": -0.3, "30 to 49": 0.0, "50 to 69": 0.35, "70 or Older": 0.55},
+    "gender": {"F": 0.0, "M": 0.08, "U": 0.0},
+    "race": {"White": 0.08, "Black/African American": 0.12, "Other Race": 0.0},
+    "ethnicity": {"Not Span/Hispanic": 0.0, "Spanish/Hispanic": 0.05, "Unknown": 0.0},
+    "hospital_service_area": {"New York City": 0.2, "Long Island": 0.12, "Hudson Valley": 0.08, "Other": 0.0},
+    "facility_id": {"1": 0.14, "2": 0.22, "OTHER": 0.0},
+    "admission_type": {"Emergency": 0.45, "Urgent": 0.3, "Elective": -0.15, "Newborn": -0.6, "Trauma": 0.5, "Not Available": 0.0},
+    "emergency_indicator": {"Y": 0.38, "N": 0.0}
+  }
+}

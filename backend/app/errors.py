@@ -24,12 +24,17 @@ class InvalidRequestError(AppError):
 
 
 class ResultNotReadyError(AppError):
-    def __init__(self):
+    def __init__(self, resource: str = "analysis result"):
         super().__init__(
             503,
             "RESULT_NOT_READY",
-            "The disease TOP10 result has not been published yet.",
+            f"The {resource} has not been published yet.",
         )
+
+
+class UpstreamServiceError(AppError):
+    def __init__(self, message: str = "The AI service is temporarily unavailable."):
+        super().__init__(503, "UPSTREAM_SERVICE_ERROR", message)
 
 
 class DatabaseUnavailableError(AppError):

@@ -1,53 +1,83 @@
 # 医数云策
 
-医数云策是第2组自主确定的智慧医疗运营数据分析项目。当前已完成工程边界和 VMware/CentOS 集群环境基线，业务代码仍按下游 Issue 逐步实现。
+医数云策是第 2 组自主确定的医疗运营数据分析产品。当前终局实现分支覆盖 10 个模块：运营驾驶舱、医院、疾病、群体、费用成本、病情风险、支付、数据质量、高费用分类模型，以及 AI 问答与洞察报告。
 
-## 当前唯一目标
+疾病 TOP10 是已经验证的 M1 最小闭环，接口 `/api/v1/diseases/top10` 保持兼容；它不是最终产品边界。终局任务和依赖统一维护在 [Wayfinder #37](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/37)。
 
-第一轮只完成“疾病病例量 TOP10”真实数据闭环：
+## 架构
 
 ```text
 真实 CSV
-  → 本机 PySpark（唯一正式清洗与 TOP10 聚合）
-  → 服务结果
-  → Flask API
-  → Vue + ECharts
-  → 独立核对
-
-HDFS 原始副本 / Hive 检查（可选课堂展示）
-  ────────────────────────────────┘
+  → HDFS 原始副本 / Hive 外部表检查
+  → 本机 PySpark 一次清洗并生成统一分析快照与模型工件
+  → MySQL 单事务发布
+  → Flask 白名单 API
+  → Vue Router 十页面 / DeepSeek 白名单工具
 ```
 
-在这个闭环完成前，不同时铺开大量页面、复杂 AI、登录和平台化建设；后续扩展按课程交付需要和实际展示价值决定。
+不实现登录权限、个人诊断、自由 SQL、多轮记忆、Redis、微服务、Kubernetes、3D 可视化和本地大模型部署。数据中的一行代表一次住院出院记录，不等于唯一患者。
 
-## 开始阅读
+## 快速启动（联调快照）
 
-1. [项目概况](docs/00-project-overview.md)：项目做什么、不做什么、第一轮目标和五人分工；
-2. [业务术语](CONTEXT.md)：病例量、住院出院记录、主诊断描述和住院记录群体；
-3. [TOP10 指标与数据契约](docs/02-metrics-and-data-contract.md)：统计范围、清洗、排序、服务结果字段、刷新规则和复核命令；
-4. [MVP 服务结果表 DDL](data/sql/001-mvp-disease-top10-service.sql)：MySQL 表结构和事务刷新模板；
-5. [M0/M1 架构与环境边界](docs/03-architecture-and-env.md)：最小链路、存储边界、启动顺序和降级方案；
-6. [开发、运行与复现手册](docs/04-development-and-runbook.md)：版本基线、依赖归属、组长电脑复现和 VM 启停命令；
-7. [疾病病例量 TOP10 API 契约](docs/05-api.md)：接口路径、请求响应、空数据、错误语义和验收要求；
-8. [M1 测试与验收](docs/06-test-and-acceptance.md)：固定样例、测试用例、证据规范和全链路验收边界；
-9. [Agent 协作规则](AGENTS.md)：Issue tracker、标签和领域文档配置。
+联调快照的版本以 `fixture:` 开头，只用于并行开发和页面状态验证，不代表真实全量结论。
 
-项目任务与决策依赖见 GitHub [Wayfinder 地图](https://github.com/Martin7816/yishuyunce-medical-analytics/issues/3)。
+```powershell
+# 后端
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe run.py
 
-## 当前事实边界
+# 另开终端启动前端
+cd frontend
+npm ci
+npm run dev
+```
 
-- 老师提供的医疗 DOCX 和第1组工件是样例，不代表第2组必须原样实现；
-- 第2组按本项目概况自主确定首轮技术链路和验收基线；学校或课程后续明确提出的要求再纳入对应扩展；
-- 数据中的一行代表一次住院出院记录，不等于唯一患者；
-- 完整原始数据、密码、Token、API Key、`.env` 和个人绝对路径不得提交 Git。
-- Issue 对应的顶层编号文档中，`05` 固定为 API 契约，`06` 固定为测试与验收；后续新增编号文档从 `07` 开始，不复用已占用编号。
+访问 `http://127.0.0.1:5173/overview`。Vite 将 `/api` 转发到本机 Flask。AI 页面只有配置 `DEEPSEEK_API_KEY` 后才调用云端服务；缺少密钥会返回真实配置错误，不生成假答案。
 
-架构边界已经固定；本机 PySpark 3.4.0 是唯一正式计算环境，VM 中 Hadoop/HDFS、Hive 和 MySQL 只承担可选存储、检查或服务支持，VM 不要求安装 Spark。API 和前端复现由下游 Issue 补充。本 README 必须始终反映 `main` 的真实可运行状态，不提前写未实现功能。
+## 真实数据发布
 
-## 配置与依赖的归属
+完整 CSV、真实 `.env`、密钥和大型工件不得提交 Git。
 
-- `backend/app/config.py` 属于后端 Python 代码，放在 `backend/app/`；它只负责读取环境变量并组织配置，不保存密码、Token 或 API Key。
-- `backend/.env.example` 只描述后端运行所需的环境变量；真实的 `backend/.env` 仅存在于本地，并且必须写入 `.gitignore`。
-- `backend/requirements.txt` 只维护后端 Python 运行和测试依赖。前端依赖继续由 `frontend/package.json` 管理；未来确实形成独立运行环境的数据或 AI 模块，再在对应模块维护自己的依赖文件。
-- 根目录不再默认放后端的 `.env.example`、`.env` 或 `requirements.txt`。只有在全组确认整个仓库长期共用同一个 Python 环境时，才可以重新提议统一到根目录，并同步修改本规范、启动说明和验证脚本。
-- 如果前端确实需要环境变量，使用 `frontend/.env.example` 单独描述；前端和后端不得共用含义不清的环境变量名。
+```powershell
+python -m pip install -r data/requirements.txt
+python data/src/run_full_analytics_pyspark.py `
+  --input "<完整 SPARCS CSV>" `
+  --output "<临时目录>\analytics-snapshot.json"
+
+python data/src/train_high_cost_model_pyspark.py `
+  --input "<完整 SPARCS CSV>" `
+  --artifact "<临时目录>\high-cost-model.json" `
+  --metrics "<临时目录>\high-cost-metrics.json" `
+  --snapshot "<临时目录>\analytics-snapshot.json"
+
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<临时目录>\analytics-snapshot.json" --apply
+```
+
+先在 MySQL 执行 `data/sql/002-analysis-snapshot.sql`，再设置 `ANALYTICS_DATA_SOURCE=mysql` 和 `HIGH_COST_MODEL_PATH`。事务发布失败会回滚；所有模块必须共享同一个 `data_version` 和 `generated_at`。
+
+## 验证
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest backend/tests data/tests -q
+cd frontend
+npm run build
+```
+
+已实现测试覆盖响应信封、读取接口、白名单筛选、合法空结果、费用筛选互斥、模型泄漏字段拒绝、AI 工具来源与数据版本追踪，以及快照发布契约。真实 CSV、MySQL、DeepSeek 和组长电脑的端到端验收仍须按 [终局验收文档](docs/06-test-and-acceptance.md) 留存证据后才能关闭对应 Issue。
+
+## 文档入口
+
+- [项目概况](docs/00-project-overview.md)
+- [数据与可行性](docs/01-data-and-feasibility.md)
+- [指标与数据契约](docs/02-metrics-and-data-contract.md)
+- [架构与环境](docs/03-architecture-and-env.md)
+- [开发与运行手册](docs/04-development-and-runbook.md)
+- [API 契约](docs/05-api.md)
+- [测试与验收](docs/06-test-and-acceptance.md)
+- [终局产品冻结契约](docs/07-terminal-product-contract.md)
+
+老师提供的医疗材料和第 1 组工件仅作参考，不代表第 2 组已完成的内容。README 只描述当前代码可运行的边界；真实验收状态以 Issue 证据为准。

@@ -11,9 +11,15 @@ from werkzeug.exceptions import HTTPException
 from .config import Config
 from .errors import AppError
 from .repositories.disease_top10 import build_repository
+from .repositories.analytics_snapshot import build_analytics_repository
+from .routes.analytics import analytics_bp
 from .routes.diseases import diseases_bp
 from .routes.health import health_bp
+from .routes.intelligence import intelligence_bp
+from .services.ai_assistant import AIAssistantService, DeepSeekChatClient
 from .services.disease_top10 import DiseaseTop10Service
+from .services.analytics_snapshot import AnalyticsSnapshotService
+from .services.high_cost_model import HighCostModelService
 
 
 def _error_payload(error: AppError) -> dict:
@@ -28,7 +34,13 @@ def _error_payload(error: AppError) -> dict:
     return payload
 
 
-def create_app(config_override: dict | None = None, repository=None) -> Flask:
+def create_app(
+    config_override: dict | None = None,
+    repository=None,
+    analytics_repository=None,
+    high_cost_model_service=None,
+    ai_client=None,
+) -> Flask:
     """Create an application. Tests may inject a repository explicitly."""
 
     app = Flask(__name__)
@@ -40,9 +52,32 @@ def create_app(config_override: dict | None = None, repository=None) -> Flask:
     app.extensions["disease_top10_service"] = DiseaseTop10Service(
         selected_repository
     )
+    selected_analytics_repository = analytics_repository or build_analytics_repository(
+        app.config
+    )
+    app.extensions["analytics_snapshot_service"] = AnalyticsSnapshotService(
+        selected_analytics_repository
+    )
+    model_path = app.config.get("HIGH_COST_MODEL_PATH")
+    if not model_path and app.config.get("ANALYTICS_DATA_SOURCE") == "fixture":
+        model_path = app.config["APP_ROOT"] / "fixtures" / "high_cost_model.json"
+    app.extensions["high_cost_model_service"] = high_cost_model_service or HighCostModelService(
+        model_path
+    )
+    selected_ai_client = ai_client or DeepSeekChatClient(
+        app.config.get("DEEPSEEK_API_KEY"),
+        app.config["DEEPSEEK_BASE_URL"],
+        app.config["DEEPSEEK_MODEL"],
+        app.config["DEEPSEEK_TIMEOUT_SECONDS"],
+    )
+    app.extensions["ai_assistant_service"] = AIAssistantService(
+        app.extensions["analytics_snapshot_service"], selected_ai_client
+    )
 
     app.register_blueprint(health_bp)
     app.register_blueprint(diseases_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(intelligence_bp)
 
     @app.before_request
     def assign_trace_id() -> None:

@@ -1,5 +1,27 @@
 # 疾病病例量 TOP10 API 契约
 
+> 终局更新（2026-08-18）：本文件原有 TOP10 契约保持兼容。完整产品接口共享相同响应信封，详细冻结边界见 [07-terminal-product-contract.md](07-terminal-product-contract.md)。
+
+## 终局接口索引
+
+| 方法 | 路径 | 成功数据 |
+|---|---|---|
+| GET | `/api/v1/dashboard/overview` | 总览指标与年龄、支付、疾病、医院、严重程度分区 |
+| GET | `/api/v1/hospitals` | 医院排行，可选双院比较 |
+| GET | `/api/v1/hospitals/{facility_id}` | 单院画像 |
+| GET | `/api/v1/diseases` | 疾病 TOP10 与疾病枚举 |
+| GET | `/api/v1/diseases/{diagnosis_code}` | 疾病画像 |
+| GET | `/api/v1/cohorts/summary` | 有限白名单群体汇总 |
+| GET | `/api/v1/costs/overview` | 费用成本与分位数 |
+| GET | `/api/v1/risks/overview` | 严重程度与风险结构 |
+| GET | `/api/v1/payments/overview` | 支付方式分析 |
+| GET | `/api/v1/data-quality/summary` | 批次、缺失异常与管道状态 |
+| GET | `/api/v1/models/high-cost/metrics` | 模型阈值、评估指标与混淆矩阵 |
+| POST | `/api/v1/models/high-cost/predict` | 概率、分类、模型和数据版本 |
+| POST | `/api/v1/ai/chat` | 回答、工具轨迹、来源指标、版本、预定义图表 |
+
+预测请求只接受 `age_group`、`gender`、`race`、`ethnicity`、`hospital_service_area`、`facility_id`、`admission_type`、`emergency_indicator`。AI 请求只接受 `{"message":"..."}`。两者均拒绝额外字段；预测接口专门返回 `LEAKAGE_FIELD_FORBIDDEN` 拦截目标或出院后字段。
+
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
 > 当前状态：`FROZEN`
