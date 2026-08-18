@@ -139,9 +139,10 @@ def main() -> None:
     spark = SparkSession.builder.master("local[*]").appName("yishuyunce-full-analytics").config("spark.ui.enabled", "false").getOrCreate()
     try:
         raw = spark.read.option("header", "true").option("inferSchema", "false").option("mode", "PERMISSIVE").csv(str(args.input.resolve()))
-        raw_count = raw.count()
         cleaned = clean_frame(raw).persist(StorageLevel.MEMORY_AND_DISK)
-        cleaned.count()
+        # This first materialization both establishes the raw row count and
+        # fills the shared clean-frame cache. No earlier action may scan raw.
+        raw_count = cleaned.count()
         document = {"data_version": f"sparcs_sha256_{digest}", "generated_at": generated_at, "input": {"file_name": args.input.name, "sha256": digest, "raw_rows": raw_count}, "records": build_records(cleaned, raw_count)}
         cleaned.unpersist()
     finally:
