@@ -1,0 +1,6 @@
+{
+  "code": "DATABASE_UNAVAILABLE",
+  "message": "The data service is temporarily unavailable.",
+  "data": null,
+  "trace_id": "00000000-0000-4000-8000-000000000004"
+}
