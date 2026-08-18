@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
     <header class="page-heading">
       <div>
         <p class="eyebrow">{{ config.eyebrow }}</p>
-        <h1>{{ data?.title || '医数云策分析模块' }}</h1>
+        <h1>{{ data?.title || config.title || '医数云策分析模块' }}</h1>
         <p>{{ data?.description || '正在读取统一分析快照。' }}</p>
       </div>
       <span v-if="data?.data_version" class="version-pill" :title="data.data_version">批次 {{ data.data_version }}</span>

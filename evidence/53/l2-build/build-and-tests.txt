@@ -1,0 +1,28 @@
+# #53 构建与回归记录
+
+日期：2026-08-19
+
+## frontend
+
+命令：`npm run build`
+
+结果：PASS
+
+关键输出：
+
+```text
+vite v8.2.1 building client environment for production...
+✓ 621 modules transformed.
+✓ built in 567ms
+```
+
+Vite 给出的 chunk size warning 仅为已有构建体积提示，不影响构建退出码；本次页面没有新增运行时错误。
+
+## backend contract regression
+
+运行时：bundled Python + `backend/.venv/Lib/site-packages`
+
+```text
+tests/test_disease_analytics_api.py   23 passed in 0.39s
+tests/test_analytics_api.py           21 passed in 0.27s
+```
