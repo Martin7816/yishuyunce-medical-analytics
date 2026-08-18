@@ -18,7 +18,9 @@ except ImportError:
 class Config:
     APP_ROOT = Path(__file__).resolve().parent
 
-    TOP10_DATA_SOURCE = os.getenv("TOP10_DATA_SOURCE", "fixture")
+    # The source must be selected explicitly. Missing or unknown values fail
+    # closed instead of silently serving the development fixture.
+    TOP10_DATA_SOURCE = os.getenv("TOP10_DATA_SOURCE")
     TOP10_FIXTURE_STATE = os.getenv("TOP10_FIXTURE_STATE", "success")
 
     MYSQL_HOST = os.getenv("MYSQL_HOST")

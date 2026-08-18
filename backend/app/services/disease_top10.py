@@ -81,7 +81,10 @@ class DiseaseTop10Service:
                 or rank != expected_rank
             ):
                 raise ValueError("ranks must be continuous")
-            if not isinstance(name, str) or not name or len(name) > 255:
+            if not isinstance(name, str):
+                raise ValueError("invalid diagnosis name")
+            clean_name = name.strip()
+            if not clean_name or name != clean_name or len(clean_name) > 255:
                 raise ValueError("invalid diagnosis name")
             if name in names:
                 raise ValueError("duplicate diagnosis name")

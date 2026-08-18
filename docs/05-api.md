@@ -17,6 +17,7 @@
 | 项目 | 决策 |
 |---|---|
 | HTTP 方法 | `GET` |
+| 方法策略 | 严格 GET-only；`HEAD`、`OPTIONS` 不属于本接口契约 |
 | URL | `/api/v1/diseases/top10` |
 | API 版本 | 路径版本 `v1`；不使用请求头协商版本 |
 | 命名 | URL 使用小写复数名词；JSON 字段使用 `snake_case`，与服务结果字段保持一致 |
@@ -30,7 +31,9 @@
 
 - 携带任意查询参数，例如 `?limit=5`；
 - 给 GET 请求发送请求体；
-- 使用 `POST`、`PUT` 或 `DELETE`。
+- 使用 `HEAD`、`OPTIONS`、`POST`、`PUT` 或 `DELETE`。
+
+TOP10 路由显式关闭 Flask 自动提供的 `OPTIONS`，并拒绝 Flask 对 GET 自动放行的 `HEAD`；上述方法统一返回 `405 METHOD_NOT_ALLOWED`。
 
 ## 3. 统一响应结构
 
@@ -120,7 +123,7 @@
 | 400 | `INVALID_QUERY_PARAMETER` | 携带任何查询参数 | 请求参数不受支持 |
 | 400 | `INVALID_REQUEST_FORMAT` | GET 携带请求体或格式错误 | 请求格式无效 |
 | 404 | `RESOURCE_NOT_FOUND` | URL 不存在 | 请求的资源不存在 |
-| 405 | `METHOD_NOT_ALLOWED` | 使用非 GET 方法 | 请求方法不支持 |
+| 405 | `METHOD_NOT_ALLOWED` | 使用 `HEAD`、`OPTIONS`、`POST`、`PUT` 或 `DELETE` | 请求方法不支持 |
 | 500 | `SERVER_MISCONFIGURED` | MySQL 必要配置缺失、fixture 配置错误 | 服务配置不完整 |
 | 500 | `SERVICE_RESULT_INVALID` | 已发布数据不满足 #9 契约 | 服务结果校验失败 |
 | 500 | `INTERNAL_ERROR` | 未预期程序异常 | 服务内部异常 |
@@ -147,8 +150,10 @@ SELECT `rank`, `diagnosis_name`, `case_count`, `unit`,
        `data_version`, `generated_at`
 FROM `disease_case_count_top10_result`
 ORDER BY `rank` ASC
-LIMIT 10;
+LIMIT 11;
 ```
+
+`LIMIT 11` 是内部溢出哨兵：Repository 最多读取 11 行，Service 发现超过 10 行时返回 `500 SERVICE_RESULT_INVALID`，避免数据库查询提前截断后误把异常结果当作合法 TOP10。对外响应仍最多返回 10 条。
 
 Route 只校验请求和返回统一结构；Service 只验证已发布服务结果；Repository 只读取 MySQL。任何清洗、聚合、同义词合并、排名生成或长 SQL 都不进入 API。
 
@@ -176,12 +181,14 @@ Copy-Item .env.example .env
 python run.py
 ```
 
-默认使用固定成功 fixture。另开终端调用：
+请先显式配置 `TOP10_DATA_SOURCE`。开发环境可在 `backend/.env` 中设置为 `fixture`，生产环境应设置为 `mysql`；缺失或未知值不会回退到 fixture，而会返回 `500 SERVER_MISCONFIGURED`。另开终端调用：
 
 ```powershell
 curl.exe -i http://127.0.0.1:5000/api/v1/diseases/top10
 curl.exe -i "http://127.0.0.1:5000/api/v1/diseases/top10?limit=5"
 curl.exe -i -X POST http://127.0.0.1:5000/api/v1/diseases/top10
+curl.exe -i -X HEAD http://127.0.0.1:5000/api/v1/diseases/top10
+curl.exe -i -X OPTIONS http://127.0.0.1:5000/api/v1/diseases/top10
 curl.exe -i http://127.0.0.1:5000/api/v1/health
 ```
 
@@ -217,7 +224,7 @@ python -m pytest -q
 | 合法空结果 | GET + empty fixture | 200、`items=[]`、批次元数据仍存在 |
 | 非法参数 | `GET ...?limit=5` | 400、`INVALID_QUERY_PARAMETER` |
 | 请求体错误 | GET 携带 JSON body | 400、`INVALID_REQUEST_FORMAT` |
-| 方法错误 | `POST /api/v1/diseases/top10` | 405、`METHOD_NOT_ALLOWED` |
+| 方法错误 | `HEAD`、`OPTIONS`、`POST`、`PUT` 或 `DELETE /api/v1/diseases/top10` | 405、`METHOD_NOT_ALLOWED` |
 | 依赖失败 | Repository 抛出数据库不可用 | 503、`DATABASE_UNAVAILABLE` |
 | 配置缺失 | MySQL 模式缺少必要配置 | 500、`SERVER_MISCONFIGURED` |
 | 未发布 | MySQL 查询返回 0 行 | 503、`RESULT_NOT_READY` |
@@ -230,13 +237,14 @@ python -m pytest -q
 - fixture 只用于开发和验收；生产结果必须来自已验证 MySQL 服务表。
 - M1 服务表只保存当前批次，不提供历史版本查询。
 - `/api/v1/health` 只表示 Flask 进程存活，不代替 TOP10 数据依赖检查。
+- 当前 TOP10 接口不提供 HEAD/OPTIONS 探测契约；需要探活时使用 `/api/v1/health`。
 
 ## 13. Issue #10 Resolution（可直接粘贴）
 
 ```text
 Resolution: FROZEN
 
-- GET /api/v1/diseases/top10；v1 路径版本；不接受查询参数或请求体。
+- GET /api/v1/diseases/top10；v1 路径版本；严格 GET-only，不接受 HEAD/OPTIONS、查询参数或请求体。
 - 成功响应固定返回 code、message、data、trace_id；业务字段为 metric、unit、data_version、generated_at、items，以及每项的 rank、diagnosis_name、case_count。
 - items 按已发布 rank 升序，最多 10 项；并列和截断完全沿用 Issue #7/#9，不在 API 重新计算。
 - 合法空快照返回 200 + items=[]；生产 MySQL 空表属于尚未发布，返回 503 RESULT_NOT_READY。

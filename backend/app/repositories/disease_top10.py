@@ -17,7 +17,7 @@ SELECT `rank`, `diagnosis_name`, `case_count`, `unit`,
        `data_version`, `generated_at`
 FROM `disease_case_count_top10_result`
 ORDER BY `rank` ASC
-LIMIT 10
+LIMIT 11
 """.strip()
 
 
@@ -108,7 +108,9 @@ class MySQLDiseaseTop10Repository:
 
 
 def build_repository(config: dict):
-    source = str(config.get("TOP10_DATA_SOURCE", "fixture")).lower()
+    # Do not fall back to fixture data when deployment configuration is
+    # missing or unknown. The request will fail with SERVER_MISCONFIGURED.
+    source = str(config.get("TOP10_DATA_SOURCE") or "").lower()
     if source == "mysql":
         return MySQLDiseaseTop10Repository(config)
 

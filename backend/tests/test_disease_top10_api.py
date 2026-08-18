@@ -9,6 +9,7 @@ from app.errors import (
     ResultNotReadyError,
     ServerMisconfiguredError,
 )
+from werkzeug.test import EnvironBuilder
 
 
 SUCCESS_SNAPSHOT = {
@@ -108,9 +109,41 @@ def test_get_body_is_rejected(make_client):
     assert response.get_json()["code"] == "INVALID_REQUEST_FORMAT"
 
 
+def test_chunked_get_body_without_content_length_is_rejected(make_client):
+    client = make_client(StaticRepository(SUCCESS_SNAPSHOT))
+    environ = EnvironBuilder(
+        path="/api/v1/diseases/top10",
+        method="GET",
+        data=b'{"limit": 5}',
+        headers={"Transfer-Encoding": "chunked"},
+    ).get_environ()
+    environ.pop("CONTENT_LENGTH", None)
+    environ["wsgi.input_terminated"] = True
+
+    response = client.open(environ)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+
 def test_wrong_method_uses_json_error(make_client):
     client = make_client(StaticRepository(SUCCESS_SNAPSHOT))
     response = client.post("/api/v1/diseases/top10")
+
+    assert response.status_code == 405
+    assert response.get_json()["code"] == "METHOD_NOT_ALLOWED"
+
+
+def test_head_method_is_rejected(make_client):
+    client = make_client(StaticRepository(SUCCESS_SNAPSHOT))
+    response = client.head("/api/v1/diseases/top10")
+
+    assert response.status_code == 405
+
+
+def test_options_method_is_rejected(make_client):
+    client = make_client(StaticRepository(SUCCESS_SNAPSHOT))
+    response = client.options("/api/v1/diseases/top10")
 
     assert response.status_code == 405
     assert response.get_json()["code"] == "METHOD_NOT_ALLOWED"
@@ -156,6 +189,14 @@ def test_mysql_mode_detects_missing_required_configuration():
     assert response.get_json()["code"] == "SERVER_MISCONFIGURED"
 
 
+def test_missing_data_source_does_not_fall_back_to_fixture():
+    app = create_app({"TESTING": True, "TOP10_DATA_SOURCE": None})
+    response = app.test_client().get("/api/v1/diseases/top10")
+
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVER_MISCONFIGURED"
+
+
 def test_unexpected_exception_does_not_leak_details(make_client):
     client = make_client(RaisingRepository(RuntimeError("secret detail")))
     response = client.get("/api/v1/diseases/top10")
@@ -170,6 +211,37 @@ def test_invalid_published_result_is_rejected(make_client):
     snapshot = {
         **SUCCESS_SNAPSHOT,
         "items": [{"rank": 2, "diagnosis_name": "ALPHA", "case_count": 3}],
+    }
+    client = make_client(StaticRepository(snapshot))
+    response = client.get("/api/v1/diseases/top10")
+
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
+
+
+def test_blank_diagnosis_name_is_rejected(make_client):
+    snapshot = {
+        **SUCCESS_SNAPSHOT,
+        "items": [{"rank": 1, "diagnosis_name": "   ", "case_count": 3}],
+    }
+    client = make_client(StaticRepository(snapshot))
+    response = client.get("/api/v1/diseases/top10")
+
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
+
+
+def test_more_than_ten_published_rows_are_rejected(make_client):
+    snapshot = {
+        **SUCCESS_SNAPSHOT,
+        "items": [
+            {
+                "rank": rank,
+                "diagnosis_name": f"DIAGNOSIS-{rank}",
+                "case_count": 100 - rank,
+            }
+            for rank in range(1, 12)
+        ],
     }
     client = make_client(StaticRepository(snapshot))
     response = client.get("/api/v1/diseases/top10")
