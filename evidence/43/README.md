@@ -10,7 +10,7 @@
 | 文件大小 | `832373138` bytes |
 | SHA-256 | `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` |
 | `data_version` | `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` |
-| `generated_at` | `2026-08-18T00:00:00.000000Z` |
+| `generated_at` | `2026-08-18T10:30:00.000000Z` |
 
 ## 聚合与独立校验
 
@@ -41,14 +41,16 @@ python -m pytest -q backend/tests data/tests
 
 结果：独立 dashboard 核对 `PASS`；回滚路径和快照契约测试 `36 passed`。
 
-## MySQL 发布状态
+## MySQL 发布与复核
 
-发布脚本的 dry-run 通过，但当前 `backend/.env` 的 `issue31_publisher` 账号对 `analysis_snapshot_result` 没有 `SELECT`、`INSERT`、`DELETE` 或 `CREATE` 权限：查询和执行 `data/sql/002-analysis-snapshot.sql` 均返回 MySQL 1142。因此没有伪造 `--apply` 成功，也没有关闭 Issue。
+数据库管理员已完成目标表建表并授予 `issue31_publisher` 对 `analysis_snapshot_result` 的 `SELECT, INSERT, DELETE` 权限。账号授权和目标表只读检查通过：表存在，原批次为 691 行，版本/时间戳各唯一。
 
-管理员完成目标库建表并授予上述权限后复验：
+使用包含同一 dashboard 快照和模型记录的 691 条完整工件执行：
 
 ```powershell
-python data/src/publish_analytics_snapshot_mysql.py --input "<临时目录>\real-full.json" --apply
+python data/src/publish_analytics_snapshot_mysql.py --input "<临时目录>\analytics-snapshot-final.json" --apply
 ```
 
-需保存发布后记录数、唯一 `data_version`/`generated_at`、API 读取结果及故障注入回滚证据。字段、枚举、空组合 payload 和统一版本已可直接交接给 #44、#45。
+发布结果：`PASS`，691 rows；发布后数据库检查：691 行、1 个 `data_version`、1 个 `generated_at`。`dashboard/overview` 的 payload、版本和时间戳与工件逐项一致，数据库读取复核 `PASS`。实际数据库时间以 UTC 表示为 `2026-08-18T10:30:00.000000`，接口层按公共契约补充 `Z`。
+
+故障回滚路径由仓库测试覆盖（`36 passed`）；字段、枚举、空组合 payload 和统一版本已直接交接给 #44、#45。
