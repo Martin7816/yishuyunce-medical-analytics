@@ -1,9 +1,9 @@
 # M1 疾病病例量 TOP10 测试与验收
 
-> 文档版本：V0.1
-> 更新日期：2026-08-17
-> 状态：`PREPARED`（验收方法与证据框架已就绪；未宣布 M1 通过）
-> 关联 Issue：#13（准备 M1 TOP10 验收方案与证据框架，先于 #10 的并行任务）
+> 文档版本：V0.2
+> 更新日期：2026-08-18
+> 状态：`EXECUTING`（L1/L2 与 API 正常路径已有真实证据；页面四态与端到端仍 BLOCKED；未宣布 M1 通过、未宣布 #10 FROZEN）
+> 关联 Issue：#13（准备 M1 TOP10 验收方案与证据框架，先于 #10 的并行任务）、#26（补全并执行 M1 TOP10 全链路验收，进行中）
 > 适用范围：M1“疾病病例量 TOP10”真实数据闭环的验收执行、独立核对、问题复验与证据整理
 > 单一入口：本文是岗位5（结果核对、系统质量与端到端验收）后续 M1 验收的唯一正式入口，不再另建重复的验收文档
 
@@ -22,14 +22,14 @@
 2. 在 Issue #10 正式 API 契约冻结前，先把不依赖 API 的验收准备工作全部就位；
 3. 把仍等待 #10（以及 #11、下游数据任务）的内容集中登记，冻结后只补空位，不重写整篇文档。
 
-### 1.2 当前阶段：PRE-API / 验收准备
+### 1.2 当前阶段：验收执行中（API 正常路径已验，页面与端到端未开始）
 
 | 层 | 上游状态 | 本 Issue 可做 | 本 Issue 不可做 |
 |---|---|---|---|
 | 口径与契约 | `FROZEN`（#7、#9） | 引用为用例预期 | 修改或另写一套口径 |
 | 固定样本与独立核对 | `VERIFIED` | 复验、填写证据 | 修改 fixture 或核对脚本 |
-| 数据任务与服务结果 | PySpark 全量工件已通；MySQL 装载 `HANDOFF` | 预置验收用例 | 宣称 MySQL/API 全链路完成 |
-| Flask API | `HANDOFF`（代码已合并，待真实 MySQL 批次） | 预置四类用例模板 | 填写真实 URL、参数、状态码、错误码 |
+| 数据任务与服务结果 | 全量两次复跑、MySQL 实表与回滚演练 `VERIFIED`（#31） | 填写 DT 用例实际结果与证据来源 | 宣称 MySQL/API 全链路完成 |
+| Flask API | 契约 `CONFIRMED`（#10）；真实正常路径 `VERIFIED`（#31） | 按 [05-api.md](05-api.md) 回填 API 用例（标注来源 #10 CONFIRMED） | 宣布 #10 FROZEN；宣称 API 四类全部通过 |
 | Vue/ECharts 页面 | `HANDOFF`（待 #11） | 预置四态与检查项模板 | 填写页面触发方式 |
 | 全链路与组长电脑复现 | `HANDOFF`（待相关实现落位后由 Issue #26 执行） | 预置比较链与 checklist | 宣称 M1 PASS |
 
@@ -49,10 +49,10 @@
 | 服务结果契约检查脚本 | `PASS`（本 Issue 复验，退出码 0） | [02 第 6 节](02-metrics-and-data-contract.md)、本文第 4 章 |
 | 本机 PySpark 固定样例 | `VERIFIED`（#12 实测记录） | [04 第 7.1 节](04-development-and-runbook.md) |
 | 本机 PySpark 全量任务 | `VERIFIED`（2026-08-18） | [04 第 4.1 节](04-development-and-runbook.md) |
-| MySQL 业务结果实际装载 | `NOT RUN`（HANDOFF） | [03 第 9 节](03-architecture-and-env.md) |
-| Flask API | `HANDOFF`（待真实 MySQL 批次） | [03 第 3 节](03-architecture-and-env.md) |
-| Vue/ECharts 页面 | `BLOCKED`（待 #11） | [03 第 3 节](03-architecture-and-env.md) |
-| M1 全链路一致性 | `BLOCKED`（待 #26 执行） | 本文第 1.3 节 |
+| MySQL 业务结果实际装载 | `VERIFIED`（#31：`--apply` 提交 10 行、逐行查询一致、1264 回滚保留旧批次） | [03 第 9 节](03-architecture-and-env.md)、[04 第 7.1 节](04-development-and-runbook.md)、#31 Resolution |
+| Flask API | `VERIFIED`（#31 真实 HTTP 200、10 项；契约状态 #10 `CONFIRMED`，FROZEN 待 #10） | [05-api.md](05-api.md)、#31 Resolution |
+| Vue/ECharts 页面 | `BLOCKED`（待 #11/#25） | [03 第 3 节](03-architecture-and-env.md) |
+| M1 全链路一致性 | `BLOCKED`（页面与端到端未完成；#26 进行中） | 本文第 1.3 节 |
 
 ## 2. 验收执行顺序
 
@@ -61,8 +61,8 @@
 | 层 | 名称 | 内容 | 主要依据 | 当前状态 |
 |---|---|---|---|---|
 | L1 | 数据与固定样本 | 固定样本独立核对、全量基线核对 | [01](01-data-and-feasibility.md) 第 6、7 节 | `PASS`（固定样本与全量基线） |
-| L2 | 数据任务与服务结果 | PySpark 清洗聚合、服务结果契约、MySQL 事务装载 | [02](02-metrics-and-data-contract.md) | PySpark 工件与 dry-run `PASS`；MySQL 实表 `NOT RUN` |
-| L3 | Flask API | 只读查询服务结果、四类响应语义 | #10 已合并后执行 | `HANDOFF`（待真实 MySQL 批次） |
+| L2 | 数据任务与服务结果 | PySpark 清洗聚合、服务结果契约、MySQL 事务装载 | [02](02-metrics-and-data-contract.md) | 全量两次复跑、服务结果契约、MySQL 实表与回滚演练 `PASS`（#31） |
+| L3 | Flask API | 只读查询服务结果、四类响应语义 | [05-api.md](05-api.md)（#10 `CONFIRMED`） | API-01 真实数据 `PASS`（#31/#26）；API-02~04 契约与自动化测试已回填，真实 HTTP 证据待采集（`PENDING_HTTP_EVIDENCE`） |
 | L4 | Vue/ECharts 页面 | 四态、展示一致性与交互检查 | #11 实现后执行 | `BLOCKED`（待 #11） |
 | L5 | 端到端集成与组长电脑复现 | 全链路一致性比较、组长电脑 checklist | 本文第 7、8 章 | `BLOCKED`（待相关实现落位后由 Issue #26 执行） |
 
@@ -132,9 +132,9 @@ python data/src/verify_service_result_contract.py
 
 | 用例编号 | 检查目标 | 输入/前置条件 | 操作步骤 | 预期结果 | 实际结果 | 证据 | 状态 |
 |---|---|---|---|---|---|---|---|
-| L1-01 | 固定样本独立核对 | 仓库默认 fixture 路径；Python 标准库可用 | 仓库根目录执行 `python data/src/verify_sparcs_mvp.py` | 退出码 0，`status=PASS`，计数摘要与期望一致 | 2026-08-17 复验：退出码 0，`status=PASS`，`rows=16`、`malformed_rows=0`、`out_of_scope_rows=0`、`diagnosis_nonempty_rows=15`、`diagnosis_nonempty_distinct=12`，TOP10 与期望一致 | 脚本 stdout（JSON）；待正式归档至 `evidence/`（见第 9 章） | `PASS` |
-| L1-02 | 服务结果契约检查 | 同上 | 仓库根目录执行 `python data/src/verify_service_result_contract.py` | 退出码 0，`status=PASS`，`rows=10`、`unit=discharge_records` | 2026-08-17 复验：退出码 0，`status=PASS`，`data_version=fixture:sparcs_mvp_sample:v1`、`rows=10`、`unit=discharge_records` | 脚本 stdout（JSON） | `PASS` |
-| L1-03 | 全量基线核对（有完整 CSV 时） | 本地完整 2021 SPARCS CSV（路径只作命令行参数，不写入仓库） | 执行 `python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"` | 2,101,588 行、0 解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 [01 第 4 节](01-data-and-feasibility.md) 基线一致 | 2026-08-18：完整文件 SHA-256 与 [02 第 1.1 节](02-metrics-and-data-contract.md) 一致，独立核对 `PASS` | 本地命令 stdout（未提交原始文件） | `PASS` |
+| L1-01 | 固定样本独立核对 | 仓库默认 fixture 路径；Python 标准库可用 | 仓库根目录执行 `python data/src/verify_sparcs_mvp.py` | 退出码 0，`status=PASS`，计数摘要与期望一致 | 2026-08-17 复验 PASS；2026-08-18 #26 本轮复验：退出码 0，`status=PASS`，`rows=16`、`malformed_rows=0`、`out_of_scope_rows=0`、`diagnosis_nonempty_rows=15`、`diagnosis_nonempty_distinct=12`，TOP10 与期望一致，契约边界样例 PASS（7 个输入值、3 个分组） | 本机脚本 stdout（JSON）；待归档 `evidence/26/l1-fixture/L1-01/`（本轮未创建） | `PASS` |
+| L1-02 | 服务结果契约检查 | 同上 | 仓库根目录执行 `python data/src/verify_service_result_contract.py` | 退出码 0，`status=PASS`，`rows=10`、`unit=discharge_records` | 2026-08-17 复验 PASS；2026-08-18 #26 本轮复验：退出码 0，`status=PASS`，`data_version=fixture:sparcs_mvp_sample:v1`、`rows=10`、`unit=discharge_records` | 本机脚本 stdout（JSON）；待归档 `evidence/26/l1-fixture/L1-02/`（本轮未创建） | `PASS` |
+| L1-03 | 全量基线核对（有完整 CSV 时） | 本地完整 2021 SPARCS CSV（路径只作命令行参数，不写入仓库） | 执行 `python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"` | 2,101,588 行、0 解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 [01 第 4 节](01-data-and-feasibility.md) 基线一致 | 2026-08-18：完整文件 SHA-256 与 [02 第 1.1 节](02-metrics-and-data-contract.md) 一致，独立核对 `PASS` | 本地命令 stdout（未提交原始文件）；待归档 `evidence/26/l1-full/L1-03/`（本轮未创建） | `PASS` |
 
 说明：
 
@@ -153,41 +153,43 @@ python data/src/verify_service_result_contract.py
 
 | 用例编号 | 检查目标 | 输入/前置条件 | 操作步骤 | 预期结果 | 实际结果 | 证据 | 状态 |
 |---|---|---|---|---|---|---|---|
-| DT-01 | 统计口径一致 | 任务实际输入 CSV | 核对数据任务是否按“`Discharge Year` 去首尾空白后等于 `2021`”筛选 | 非 2021 记录不计入本指标，并计入质量统计（`out_of_scope_rows`） | | | `NOT RUN` |
-| DT-02 | 分组字段一致 | 任务实现与日志 | 核对只按 `CCSR Diagnosis Description` 分组；`CCSR Diagnosis Code` 只用于追溯 | 分组维度唯一；代码字段不参与分组、合并与展示 | | | `NOT RUN` |
-| DT-03 | 清洗规则一致 | 任务实现 | 核对只清理诊断名称首尾空白 | 保留大小写、内部空白、标点、括号；不做大小写折叠、同义词合并或代码映射（对照 [02 第 3 节](02-metrics-and-data-contract.md) 示例） | | | `NOT RUN` |
-| DT-04 | 空诊断排除 | 任务实现与输出 | 核对缺失、空字符串、全空白诊断的处置 | 清洗后为空的不进入排行；原始行仍计入输入质量统计 | | | `NOT RUN` |
-| DT-05 | 不去重 | 任务实现 | 用含重复诊断（样例中 `COMPLICATION …`、`LIVEBORN` 各 2 条）核对计数 | 相同诊断自然合并计数；即使整行重复也按两条住院出院记录计数 | 固定样例层面已由 L1-01 覆盖 | | 固定样例 `PASS`；真实任务 `NOT RUN` |
-| DT-06 | 排序与并列一致 | 任务输出 | 核对复合键 `(-case_count, diagnosis_name)` | `case_count` 降序；并列时 `diagnosis_name` 按 UTF-8/Unicode 二进制字典序升序 | | | `NOT RUN` |
-| DT-07 | 严格 TOP10 | 任务输出 | 核对截断发生在全量稳定排序之后 | 严格返回前 10 项；少于 10 项返回全部；第 10 名并列不扩展（对照 [02 第 4 节](02-metrics-and-data-contract.md)） | | | `NOT RUN` |
-| DT-08 | 结构异常行处理 | 任务输入 | 构造或检查无法按表头解析的 CSV 行场景 | 任务失败且不发布部分结果；正式数据基线为 0 行 | | | `NOT RUN` |
-| DT-09 | 超长/不可编码诊断名 | 任务实现 | 检查对超过 `VARCHAR(255)` 或无法编码名称的处理 | 不截断、不替换，任务失败，不刷新服务表 | | | `NOT RUN` |
-| DT-10 | 重复执行结果一致 | 同一输入文件 | 同一输入重复运行任务两次以上 | 每次得到相同 TOP10 与计数摘要；刷新幂等（重复发布同一 `data_version` 结果一致） | 固定样例多次复验一致（[04 第 7.1 节](04-development-and-runbook.md) 与本次 L1-01） | | 固定样例 `PASS`；真实任务 `NOT RUN` |
+| DT-01 | 统计口径一致 | 任务实际输入 CSV | 核对数据任务是否按“`Discharge Year` 去首尾空白后等于 `2021`”筛选 | 非 2021 记录不计入本指标，并计入质量统计（`out_of_scope_rows`） | 实现核对：任务按 `trim(Discharge Year)=2021` 过滤（`data/src/run_sparcs_top10_pyspark.py`）；#31 真实全量两次复跑 `out_of_scope_rows=0`（输入文件全部为 2021） | Issue #31 评论与 Resolution、PR #32/#33；待归档 `evidence/26/l2-data/DT-01/`（本轮未创建） | `PASS` |
+| DT-02 | 分组字段一致 | 任务实现与日志 | 核对只按 `CCSR Diagnosis Description` 分组；`CCSR Diagnosis Code` 只用于追溯 | 分组维度唯一；代码字段不参与分组、合并与展示 | 实现核对：只按清洗后的诊断描述 `groupBy("diagnosis")` 分组，代码字段未进入分组、合并与展示（`data/src/run_sparcs_top10_pyspark.py`） | 源码核对；待归档 `evidence/26/l2-data/DT-02/`（本轮未创建） | `PASS` |
+| DT-03 | 清洗规则一致 | 任务实现 | 核对只清理诊断名称首尾空白 | 保留大小写、内部空白、标点、括号；不做大小写折叠、同义词合并或代码映射（对照 [02 第 3 节](02-metrics-and-data-contract.md) 示例） | 实现核对：仅 `regexp_replace` 清理首尾 Unicode 空白（`data/src/run_sparcs_top10_pyspark.py`）；L1-01 契约边界样例 PASS（7 个输入值、3 个分组：` LIVEBORN ` 合并、`liveborn` 不折叠、重复计数，见 `verify_sparcs_mvp.py`）；`CORONAVIRUS DISEASE 2019 (COVID-19)` 保留原样由 L1-01 样本 TOP10 逐字符核对与 [02 第 3 节](02-metrics-and-data-contract.md) 示例共同支持 | L1-01 stdout（2026-08-18 复验）；待归档 `evidence/26/l2-data/DT-03/`（本轮未创建） | `PASS` |
+| DT-04 | 空诊断排除 | 任务实现与输出 | 核对缺失、空字符串、全空白诊断的处置 | 清洗后为空的不进入排行；原始行仍计入输入质量统计 | 实现核对：清洗后长度为 0 的诊断被过滤（`length(diagnosis)>0`）；#31 真实全量 2,101,588 行中 `malformed_rows=0`、2,099,954 条非空诊断记录、477 个诊断分组 | Issue #31 Resolution、[04 第 4.1 节](04-development-and-runbook.md)；待归档 `evidence/26/l2-data/DT-04/`（本轮未创建） | `PASS` |
+| DT-05 | 不去重 | 任务实现 | 用含重复诊断（样例中 `COMPLICATION …`、`LIVEBORN` 各 2 条）核对计数 | 相同诊断自然合并计数；即使整行重复也按两条住院出院记录计数 | 固定样例两重复诊断各计 2（L1-01）；实现无 distinct/dropDuplicates，仅 `groupBy(...).count()`；#31 真实全量两次复跑 TOP10 完全一致 | L1-01 stdout、Issue #31 Resolution；待归档 `evidence/26/l2-data/DT-05/`（本轮未创建） | `PASS` |
+| DT-06 | 排序与并列一致 | 任务输出 | 核对复合键 `(-case_count, diagnosis_name)` | `case_count` 降序；并列时 `diagnosis_name` 按 UTF-8/Unicode 二进制字典序升序 | 实现核对：`orderBy(desc(case_count), asc(diagnosis))`；#31 全量工件通过 `verify_service_result_contract.py --expected-scope full_scan` 的排序校验；固定样例并列 3 项按名称升序（L1-01） | Issue #31 Resolution、契约脚本 stdout；待归档 `evidence/26/l2-data/DT-06/`（本轮未创建） | `PASS` |
+| DT-07 | 严格 TOP10 | 任务输出 | 核对截断发生在全量稳定排序之后 | 严格返回前 10 项；少于 10 项返回全部；第 10 名并列不扩展（对照 [02 第 4 节](02-metrics-and-data-contract.md)） | 实现核对：稳定排序后 `limit(10)`；固定样例第 10 名并列项 `PREVIOUS C-SECTION`、`URINARY TRACT INFECTIONS` 被截断（L1-01）；#31 全量服务结果严格 10 行 | L1-01 stdout、Issue #31 Resolution；待归档 `evidence/26/l2-data/DT-07/`（本轮未创建） | `PASS` |
+| DT-08 | 结构异常行处理 | 任务输入 | 构造或检查无法按表头解析的 CSV 行场景 | 任务失败且不发布部分结果；正式数据基线为 0 行 | 实现核对：读取模式为 `FAILFAST`，解析异常即任务失败、不生成部分结果；#31 正式全量 `malformed_rows=0`（基线 0 行） | 源码核对、Issue #31 Resolution；待归档 `evidence/26/l2-data/DT-08/`（本轮未创建） | `PASS`（实现核对 + 正式基线 0 行） |
+| DT-09 | 超长/不可编码诊断名 | 任务实现 | 检查对超过 `VARCHAR(255)` 或无法编码名称的处理 | 不截断、不替换，任务失败，不刷新服务表 | 实现核对：发布器与后端服务对超过 255 字符的名称直接失败、不截断、不替换（`publish_top10_mysql.py` 发布器校验、`backend/app/services/disease_top10.py` API 侧校验）；真实全量 TOP10 中最长名称为 `SCHIZOPHRENIA SPECTRUM AND OTHER PSYCHOTIC DISORDERS`，实际长度 52 字符，≤255，未触发长名称失败路径（不声称它是全部 477 个分组名称中的最长项） | 源码核对；待归档 `evidence/26/l2-data/DT-09/`（本轮未创建） | `PASS`（实现核对；真实数据未出现超长值，未做故障注入） |
+| DT-10 | 重复执行结果一致 | 同一输入文件 | 同一输入重复运行任务两次以上 | 每次得到相同 TOP10 与计数摘要；刷新幂等（重复发布同一 `data_version` 结果一致） | 固定样例多次复验一致（L1-01/L1-02）；#31 真实全量两次复跑：`service_result`、TOP10 与输入指纹（文件名+大小+SHA-256）完全一致，`data_version=sparcs_2021_20231012_sha256_185808e2…` | Issue #31 评论与 Resolution、[04 第 7.1 节](04-development-and-runbook.md)；待归档 `evidence/26/l2-data/DT-10/`（本轮未创建） | `PASS` |
 
 服务结果与发布用例：
 
 | 用例编号 | 检查目标 | 输入/前置条件 | 操作步骤 | 预期结果 | 实际结果 | 证据 | 状态 |
 |---|---|---|---|---|---|---|---|
-| DT-11 | 服务结果字段契约 | 结果工件或 MySQL 表 | 核对字段集合与类型：`rank` TINYINT UNSIGNED 1—10 连续、`diagnosis_name` VARCHAR(255) utf8mb4_bin 非空且批内唯一、`case_count` BIGINT UNSIGNED 大于 0、`unit` 固定 `discharge_records`、`data_version`/`generated_at` 见 DT-12/DT-14（DDL 见 `data/sql/001-mvp-disease-top10-service.sql`） | 与 [02 第 2.2 节](02-metrics-and-data-contract.md) 完全一致；不包含患者 ID、诊断代码、明细等字段 | 固定样本契约检查 PASS（L1-02） | | 固定样例 `PASS`；MySQL 实表 `NOT RUN` |
-| DT-12 | `data_version` 一致 | 任务输入指纹 | 核对任务运行前记录的实际 `data_version` 与输入文件指纹（文件名+大小+SHA-256）对应；批内所有行同一值 | 同批行 `data_version` 唯一；版本变化时不混插新旧行、不沿用旧结果 | 固定样本 `fixture:sparcs_mvp_sample:v1` PASS（L1-02） | | 固定样例 `PASS`；真实任务 `NOT RUN` |
-| DT-13 | `unit` 一致 | 服务结果所有行 | 逐行核对 | 所有行 `unit=discharge_records` | 固定样本 PASS（L1-02） | | 固定样例 `PASS`；真实任务 `NOT RUN` |
-| DT-14 | `generated_at` 一致 | 服务结果所有行 | 核对批内所有行同一 `generated_at`（UTC、DATETIME(6)）；真实任务必须生成新时间 | 同批唯一；不得沿用 fixture 的 `2026-08-17T00:00:00Z` | 固定样本 PASS（L1-02） | | 固定样例 `PASS`；真实任务 `NOT RUN` |
-| DT-15 | 术语一致：不混淆患者数与记录数 | 任务、服务结果、API、页面文案 | 检查任何层是否出现“患者数/患病人数”表述 | `case_count` 一律表述为住院出院记录数；`unit=discharge_records` 明示单位（术语见 [CONTEXT.md](../CONTEXT.md)） | | | `NOT RUN` |
-| DT-16 | 事务刷新与失败保护 | MySQL 8.0.30（hadoop001）已启动；DDL 已执行 | 按 `data/sql/001-mvp-disease-top10-service.sql` 事务模板执行装载，并核对事务内 COUNT/版本/排名检查 | 全部通过才 COMMIT；异常 ROLLBACK 且旧批次继续可读；不发布空批次（0 个有效诊断时任务失败） | | | `NOT RUN` |
-| DT-17 | 服务结果可用性 | MySQL 表内容 | 按 [02 第 2.2 节](02-metrics-and-data-contract.md) 只读查询检查：1—10 行、`rank` 连续、名称唯一、单一 `data_version`、单一 `generated_at`、`unit` 正确 | 满足全部条件才视为“可用”，API 才允许返回 | | | `NOT RUN` |
+| DT-11 | 服务结果字段契约 | 结果工件或 MySQL 表 | 核对字段集合与类型：`rank` TINYINT UNSIGNED 1—10 连续、`diagnosis_name` VARCHAR(255) utf8mb4_bin 非空且批内唯一、`case_count` BIGINT UNSIGNED 大于 0、`unit` 固定 `discharge_records`、`data_version`/`generated_at` 见 DT-12/DT-14（DDL 见 `data/sql/001-mvp-disease-top10-service.sql`） | 与 [02 第 2.2 节](02-metrics-and-data-contract.md) 完全一致；不包含患者 ID、诊断代码、明细等字段 | 固定样本契约检查 PASS（L1-02）；#31 全量工件 `verify_service_result_contract.py --result … --expected-scope full_scan` PASS；MySQL 实表逐行查询与工件一致，字段不含患者 ID/诊断代码/明细 | Issue #31 Resolution、契约脚本 stdout；待归档 `evidence/26/l2-mysql/DT-11/`（本轮未创建） | `PASS` |
+| DT-12 | `data_version` 一致 | 任务输入指纹 | 核对任务运行前记录的实际 `data_version` 与输入文件指纹（文件名+大小+SHA-256）对应；批内所有行同一值 | 同批行 `data_version` 唯一；版本变化时不混插新旧行、不沿用旧结果 | 固定样本 PASS（L1-02）；#31 真实 `data_version=sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` 与指纹对应，两次复跑一致；MySQL 实表 `version_count=1`（来自 `publish_top10_mysql.py` 事务内 `validate_published_rows` 校验，通过后才 COMMIT） | Issue #31 Resolution、发布器事务内校验；#31 提交后验证为逐行查询核对（与工件一致，非独立聚合 COUNT 查询）；待归档 `evidence/26/l2-mysql/DT-12/`（本轮未创建） | `PASS` |
+| DT-13 | `unit` 一致 | 服务结果所有行 | 逐行核对 | 所有行 `unit=discharge_records` | 固定样本 PASS（L1-02）；#31 全量工件与 MySQL 实表逐行核对 `unit=discharge_records`（`unit_count=1` 来自 `publish_top10_mysql.py` 事务内 `validate_published_rows` 校验） | Issue #31 Resolution、发布器事务内校验；#31 提交后验证为逐行查询核对（与工件一致，非独立聚合 COUNT 查询）；待归档 `evidence/26/l2-mysql/DT-13/`（本轮未创建） | `PASS` |
+| DT-14 | `generated_at` 一致 | 服务结果所有行 | 核对批内所有行同一 `generated_at`（UTC、DATETIME(6)）；真实任务必须生成新时间 | 同批唯一；不得沿用 fixture 的 `2026-08-17T00:00:00Z` | 固定样本 PASS（L1-02）；#31 真实批 `generated_at=2026-08-18T01:36:42.446058Z`（新生成，未沿用 fixture 时间），批内唯一（`generated_at_count=1` 来自 `publish_top10_mysql.py` 事务内 `validate_published_rows` 校验） | Issue #31 Resolution、发布器事务内校验；#31 提交后验证为逐行查询核对（与工件一致，非独立聚合 COUNT 查询）；待归档 `evidence/26/l2-mysql/DT-14/`（本轮未创建） | `PASS` |
+| DT-15 | 术语一致：不混淆患者数与记录数 | 任务、服务结果、API、页面文案 | 检查任何层是否出现“患者数/患病人数”表述 | `case_count` 一律表述为住院出院记录数；`unit=discharge_records` 明示单位（术语见 [CONTEXT.md](../CONTEXT.md)） | 数据与 API 层核对：服务结果 `unit=discharge_records` 明示单位；[05-api.md](05-api.md) 与后端错误文案不使用“患者数/患病人数”；页面文案待 #25 页面落位后按 UI-07 核对 | 文档与源码核对；待归档 `evidence/26/l2-data/DT-15/`（本轮未创建） | `PASS`（数据与 API 层；页面层待 #25） |
+| DT-16 | 事务刷新与失败保护 | MySQL 8.0.30（hadoop001）已启动；DDL 已执行 | 按 `data/sql/001-mvp-disease-top10-service.sql` 事务模板执行装载，并核对事务内 COUNT/版本/排名检查 | 全部通过才 COMMIT；异常 ROLLBACK 且旧批次继续可读；不发布空批次（0 个有效诊断时任务失败） | #31：`publish_top10_mysql.py --apply` 事务提交 10 行，提交后查询逐行一致；故意写入超出 `BIGINT UNSIGNED` 的值触发 MySQL 1264 → 发布器 ROLLBACK，随后查询仍为 10 行、旧批次完整保留（`rollback_preserved=True`） | Issue #31 评论与 Resolution、[04 第 7.1 节](04-development-and-runbook.md)；待归档 `evidence/26/l2-mysql/DT-16/`（本轮未创建） | `PASS` |
+| DT-17 | 服务结果可用性 | MySQL 表内容 | 按 [02 第 2.2 节](02-metrics-and-data-contract.md) 只读查询检查：1—10 行、`rank` 连续、名称唯一、单一 `data_version`、单一 `generated_at`、`unit` 正确 | 满足全部条件才视为“可用”，API 才允许返回 | #31 提交后查询：10 行、`rank` 1—10 连续、名称唯一、单一 `data_version`、单一 `generated_at`、`unit=discharge_records`；随后 #10 真实 API 正常返回该批次（见 API-01） | Issue #31 Resolution；待归档 `evidence/26/l2-mysql/DT-17/`（本轮未创建） | `PASS` |
 
 ## 5. API 验收模板
 
-> 前置：Issue #10 正式 API 契约冻结后执行。URL、HTTP 方法、请求参数、状态码、error code、JSON 错误结构等，凡正式文档未冻结的内容一律为 `TBD - 待 Issue #10 冻结`，本章不自行猜测。
+> 前置：Issue #10 正式 API 契约冻结后执行。更新（2026-08-18，#26 第一轮回填）：本章请求构造、预期响应与错误语义已按 [05-api.md](05-api.md) 补入。**来源：Issue #10 `CONFIRMED`；FROZEN 尚待 #10 最终关闭/冻结**。回填不代表契约已冻结，也不代表 #26 第 1 项最终完成。
 >
-> 已冻结的边界：API 只查询已校验的 MySQL 服务结果（`disease_case_count_top10_result`），Route 不重新清洗、分组、排序或回读 HDFS（[02 第 2.2 节](02-metrics-and-data-contract.md)）；MySQL 不可用时返回明确依赖失败、不现场计算（[03 第 7 节](03-architecture-and-env.md)）；响应内容必须与服务结果语义一致（沿用**服务结果字段** `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据，见 [02 第 2.2 节](02-metrics-and-data-contract.md)）。API 最终 JSON 顶层结构、字段名与类型由 #10 冻结：`TBD - 待 Issue #10 冻结`，本文不把服务结果字段名提前写成 API JSON key。
+> 状态说明：`PENDING_HTTP_EVIDENCE` 是 #26 期间的中间状态——契约与自动化测试结果已回填，但尚未采集真实 HTTP 请求/响应/状态码证据（#26 第 4 项要求）；采集并通过后改为 `PASS`。
+>
+> 已冻结的边界：API 只查询已校验的 MySQL 服务结果（`disease_case_count_top10_result`），Route 不重新清洗、分组、排序或回读 HDFS（[02 第 2.2 节](02-metrics-and-data-contract.md)）；MySQL 不可用时返回明确依赖失败、不现场计算（[03 第 7 节](03-architecture-and-env.md)）；响应内容必须与服务结果语义一致（沿用**服务结果字段** `rank`、`diagnosis_name`、`case_count`、`unit`、`data_version` 和必要的批次元数据，见 [02 第 2.2 节](02-metrics-and-data-contract.md)）。API JSON 顶层结构与字段名已由 #10 写入 [05-api.md](05-api.md)（来源：Issue #10 `CONFIRMED`；FROZEN 尚待 #10 最终关闭/冻结）。
 
 | 用例编号 | 类别 | 检查目标 | 前置条件 | 输入/请求构造 | 预期响应 | 实际结果 | 证据 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| API-01 | 正常结果 | 返回已发布服务结果批次，内容与数值与服务结果一致 | MySQL 已有可用批次（DT-17 通过） | `TBD - 待 Issue #10 冻结`（URL、HTTP 方法、参数） | 返回内容与 MySQL 服务结果逐行一致（名称、排名、病例量、单位、`data_version`、`generated_at` 以**服务结果语义**为准，见 [02 第 2.2 节](02-metrics-and-data-contract.md)）；API 最终 JSON 顶层结构、字段名与类型 `TBD - 待 Issue #10 冻结`；状态码 `TBD - 待 Issue #10 冻结` | | | `BLOCKED` |
-| API-02 | 合法空结果 | 合法请求但无可展示结果的语义 | 由 #10 明确查询场景 | `TBD - 待 Issue #10 冻结` | `TBD - 待 Issue #10 冻结`。已知边界：M1 不发布零有效诊断的空批次（发布任务失败并保留旧批次），合法空数据状态由 #10 单独定义（[02 第 2.2 节](02-metrics-and-data-contract.md)） | | | `BLOCKED` |
-| API-03 | 非法参数 | 参数缺失、类型错误、越界等的统一错误语义 | #10 冻结参数规则 | `TBD - 待 Issue #10 冻结`（参数名、校验规则） | `TBD - 待 Issue #10 冻结`（状态码、error code、JSON 错误结构） | | | `BLOCKED` |
-| API-04 | 依赖失败 | MySQL 不可用等依赖故障的响应 | 可控地停止 MySQL（仅测试环境） | `TBD - 待 Issue #10 冻结` | 返回明确依赖失败、不现场计算、不返回假数据（[03 第 7 节](03-architecture-and-env.md)）；具体状态码与错误结构 `TBD - 待 Issue #10 冻结` | | | `BLOCKED` |
+| API-01 | 正常结果 | 返回已发布服务结果批次，内容与数值与服务结果一致 | MySQL 已有可用批次（DT-17 通过） | `GET /api/v1/diseases/top10`（无查询参数、无请求体；来源 #10 CONFIRMED） | `200 OK`；统一结构 `code=OK`、`message`、`data`、`trace_id`；`data` 含 `metric=disease_case_count_top10`、`unit=discharge_records`、`data_version`、`generated_at` 与 `items[]`（`rank` 1—10 连续、`diagnosis_name`、`case_count`），与服务结果语义一致（来源 #10 CONFIRMED） | #31 实机：真实 HTTP GET 返回 200、10 项，`data_version=sparcs_2021_20231012_sha256_185808e2…` 与 MySQL 一致（#31/#26 Issue 评论的真实联调记录）；2026-08-18 后端 pytest 12 passed（含成功契约用例） | Issue #31 Resolution、#26 Issue 评论、[05-api.md](05-api.md) 第 4 节；HTTP 响应原文待归档 `evidence/26/l3-api/API-01/`（本轮未创建） | `PASS`（真实数据正常路径；契约来源 #10 CONFIRMED，FROZEN 待 #10） |
+| API-02 | 合法空结果 | 合法请求但无可展示结果的语义 | fixture empty 模式启动后端（`TOP10_FIXTURE_STATE=empty`）；生产空表场景见预期列 | `GET /api/v1/diseases/top10`（来源 #10 CONFIRMED） | 合法空快照：`200 OK` 且 `data.items=[]`，批次元数据（`unit`、`data_version`、`generated_at`）仍存在；生产 MySQL 空表表示“尚未发布”，返回 `503 RESULT_NOT_READY`，不误判为空数据（来源 #10 CONFIRMED） | 契约来源 [05-api.md](05-api.md) 第 6、7 节；后端 pytest `test_legal_empty_snapshot_returns_empty_items`、`test_unpublished_result_is_not_misreported_as_empty` 通过；真实 HTTP 空态请求与生产空表场景尚未采集 | pytest 输出（2026-08-18）；待归档 `evidence/26/l3-api/API-02/`（本轮未创建） | `PENDING_HTTP_EVIDENCE`（契约与自动化测试已回填，真实 HTTP 证据待采集） |
+| API-03 | 非法参数 | 参数缺失、类型错误、越界等的统一错误语义 | 该端点不接受任何查询参数与请求体（来源 #10 CONFIRMED） | `GET …?limit=5`；GET 携带请求体；`POST /api/v1/diseases/top10` | 携带任意查询参数 → `400 INVALID_QUERY_PARAMETER`（`details` 列出参数名）；GET 携带请求体 → `400 INVALID_REQUEST_FORMAT`；非 GET 方法 → `405 METHOD_NOT_ALLOWED`；URL 不存在 → `404 RESOURCE_NOT_FOUND`（来源 #10 CONFIRMED） | 契约来源 [05-api.md](05-api.md) 第 2、7 节；后端 pytest `test_query_parameter_is_rejected`、`test_get_body_is_rejected`、`test_wrong_method_uses_json_error` 通过；真实 HTTP 请求/响应原文尚未采集 | pytest 输出（2026-08-18）；待归档 `evidence/26/l3-api/API-03/`（本轮未创建） | `PENDING_HTTP_EVIDENCE`（契约与自动化测试已回填，真实 HTTP 证据待采集） |
+| API-04 | 依赖失败 | MySQL 不可用等依赖故障的响应 | 可控地停止 MySQL（仅测试环境；本轮未执行） | 测试注入 Repository 抛出对应错误；真实场景为停止 MySQL 或错误配置 | MySQL 连接/查询失败 → `503 DATABASE_UNAVAILABLE`；结果表为空 → `503 RESULT_NOT_READY`；配置缺失 → `500 SERVER_MISCONFIGURED`；已发布结果违反契约 → `500 SERVICE_RESULT_INVALID`；未预期异常 → `500 INTERNAL_ERROR`；不现场计算、不返回假数据（来源 #10 CONFIRMED） | 契约来源 [05-api.md](05-api.md) 第 7 节；后端 pytest 覆盖上述全部错误码并通过；#31 的 1264 回滚演练属于数据发布侧，不是 API 侧；真实停库 HTTP 演练未执行 | pytest 输出（2026-08-18）；待归档 `evidence/26/l3-api/API-04/`（本轮未创建） | `PENDING_HTTP_EVIDENCE`（契约与自动化测试已回填，真实 HTTP 证据待采集） |
 
 ## 6. 页面验收模板
 
@@ -321,6 +323,18 @@ evidence/<issue>/<layer>/<case-id>/...
 
 原则（[03 第 2 节](03-architecture-and-env.md)）：完整 CSV、个人绝对路径、密码和 Token 不提交 Git；证据在仓库内必须可复现、可追溯、不含秘密。
 
+### 9.3 已有证据来源与待归档位置（2026-08-18，#26 第一轮）
+
+本轮只在本档记录证据来源与待归档位置，未创建 `evidence/` 目录与证据文件；正式归档待后续轮次按 9.1 约定执行。
+
+| 证据 | 当前来源 | 待归档位置 |
+|---|---|---|
+| L1-01/L1-02 固定样本复验 stdout（2026-08-18 本机） | 本机命令输出（记录于第 3.3 节用例） | `evidence/26/l1-fixture/L1-01/`、`evidence/26/l1-fixture/L1-02/` |
+| 全量基线独立核对（2026-08-18） | 本机命令 stdout（未提交原始文件） | `evidence/26/l1-full/L1-03/` |
+| 真实全量两次复跑、服务结果工件、MySQL `--apply`、提交后逐行查询、1264 回滚保留旧批次、真实 HTTP 200 | Issue #31 评论与 Resolution、PR #32/#33（已合并至 main）、[04 第 7.1 节](04-development-and-runbook.md) | `evidence/26/l2-data/DT-01~DT-10/`、`evidence/26/l2-mysql/DT-11~DT-17/`、`evidence/26/l3-api/API-01/` |
+| 后端自动化测试（2026-08-18，12 passed） | 本机 pytest 输出（`backend/tests/test_disease_top10_api.py`） | `evidence/26/l3-api/api-pytest-stdout.txt` |
+| API 空/非法/依赖失败真实 HTTP 证据 | 尚未采集（API-02~API-04 为 `PENDING_HTTP_EVIDENCE`） | `evidence/26/l3-api/API-02/`、`API-03/`、`API-04/` |
+
 ## 10. 问题记录与复验模板
 
 发现任何不一致或失败时，按以下字段登记；修复后按同一模板复验并更新状态。
@@ -347,21 +361,21 @@ evidence/<issue>/<layer>/<case-id>/...
 
 ## 11. 等待 Issue #10 补充清单
 
-#10 冻结后，本章各空位直接回填到第 5 章 API 用例与第 8 章 checklist 对应条目，不需要重写本文其他部分。
+#10 冻结后，本章各空位直接回填到第 5 章 API 用例与第 8 章 checklist 对应条目，不需要重写本文其他部分。2026-08-18 更新：第 5 章已按 #10 `CONFIRMED` 回填（来源：Issue #10 `CONFIRMED`；FROZEN 尚待 #10 最终关闭/冻结），本章保留为冻结状态追踪。
 
 | 编号 | 待 #10 冻结内容 | 影响位置 | 当前引用依据 |
 |---|---|---|---|
-| A-01 | API 路径/URL | API-01—API-04、第 8 章“页面访问” | 无（[04 第 2.3 节](04-development-and-runbook.md) 标记 Flask 未固定） |
-| A-02 | HTTP 方法与只读约束的最终表述 | API-01—API-04 | 只读 API 边界已冻结（[03 第 3 节](03-architecture-and-env.md)）；方法未冻结 |
-| A-03 | 请求参数名称、类型与校验规则 | API-01、API-03 | 无 |
-| A-04 | 正常响应状态码 | API-01 | 无 |
-| A-05 | 合法空结果的语义与响应结构 | API-02、UI-03 | M1 不发布零有效诊断空批次（[02 第 2.2 节](02-metrics-and-data-contract.md)）；空数据状态由 #10 定义 |
-| A-06 | 非法参数的状态码、error code、JSON 错误结构 | API-03 | 无 |
-| A-07 | 依赖失败（MySQL 不可用）的状态码与 JSON 错误结构 | API-04、UI-04 | 返回明确依赖失败、不现场计算（[03 第 7 节](03-architecture-and-env.md)）；结构未冻结 |
-| A-08 | API 端口/地址 | 第 8 章“后端启动”“页面访问” | 无（[04 第 2.3 节](04-development-and-runbook.md)） |
-| A-09 | 后端启动/停止命令、`backend/requirements.txt`、`backend/.env.example` | 第 8 章“后端启动”“配置检查” | 归属 #10（[04 第 3.2 节](04-development-and-runbook.md)） |
-| A-10 | API 健康检查 | 第 8 章“后端启动” | 归属 #10（[04 第 8 节](04-development-and-runbook.md) 交接清单） |
-| A-11 | 与页面联调的 API 地址（与 #11 共同确定） | UI-01—UI-12、第 8 章“前端启动”“页面访问” | 归属 #10/#11（[04 第 3.2 节](04-development-and-runbook.md)） |
+| A-01 | API 路径/URL：`GET /api/v1/diseases/top10`（已按 #10 CONFIRMED 回填） | API-01—API-04、第 8 章“页面访问” | [05-api.md](05-api.md) 第 2 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-02 | HTTP 方法与只读约束：`GET` 只读，不接受查询参数与请求体（已按 #10 CONFIRMED 回填） | API-01—API-04 | [05-api.md](05-api.md) 第 2、8 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-03 | 请求参数：无；携带任意参数 → `400 INVALID_QUERY_PARAMETER`（已按 #10 CONFIRMED 回填） | API-01、API-03 | [05-api.md](05-api.md) 第 2、7 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-04 | 正常响应状态码：`200 OK`（已按 #10 CONFIRMED 回填） | API-01 | [05-api.md](05-api.md) 第 4 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-05 | 合法空结果：`200` + `items:[]`，批次元数据保留；生产空表 → `503 RESULT_NOT_READY`（已按 #10 CONFIRMED 回填） | API-02、UI-03 | [05-api.md](05-api.md) 第 6、7 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-06 | 非法参数错误语义：`400 INVALID_QUERY_PARAMETER` / `INVALID_REQUEST_FORMAT`、`404 RESOURCE_NOT_FOUND`、`405 METHOD_NOT_ALLOWED`，统一 JSON 结构（已按 #10 CONFIRMED 回填） | API-03 | [05-api.md](05-api.md) 第 7 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-07 | 依赖失败语义：`503 DATABASE_UNAVAILABLE` / `RESULT_NOT_READY`、`500 SERVER_MISCONFIGURED` / `SERVICE_RESULT_INVALID` / `INTERNAL_ERROR`（已按 #10 CONFIRMED 回填） | API-04、UI-04 | [05-api.md](05-api.md) 第 7 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-08 | API 端口/地址：`127.0.0.1:5000`（已按 #10 CONFIRMED 提供启动与调用命令） | 第 8 章“后端启动”“页面访问” | [05-api.md](05-api.md) 第 10 节、[04 第 2.3 节](04-development-and-runbook.md)（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-09 | 后端启动命令与 `backend/requirements.txt`、`backend/.env.example`：已随 PR #29 合并，启动步骤见 [05-api.md](05-api.md) 第 10 节；停止命令待补 | 第 8 章“后端启动”“配置检查” | [05-api.md](05-api.md) 第 10 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-10 | API 健康检查：`GET /api/v1/health`（已提供，仅表示进程存活，不代替 TOP10 数据依赖检查） | 第 8 章“后端启动” | [05-api.md](05-api.md) 第 10、12 节（#10 `CONFIRMED`，FROZEN 待 #10） |
+| A-11 | 与页面联调的 API 地址：后端默认 `127.0.0.1:5000`；前端实际联调地址待 #25 与页面一起确认 | UI-01—UI-12、第 8 章“前端启动”“页面访问” | [05-api.md](05-api.md) 第 10 节；#25 联调时确认 |
 
 ## 12. Issue #13 完成检查表
 
@@ -380,3 +394,15 @@ evidence/<issue>/<layer>/<case-id>/...
 - [ ] 等待 #10 的内容集中在单一章节，冻结后只需补空位
 - [ ] 未宣称 API 已通过、页面已通过、M1 全链路已通过
 - [ ] 除 `docs/05-test-and-acceptance.md` 外未修改任何其他正式文件；`verify_sparcs_mvp.py` 仅只读运行，未修改上游脚本或 fixture
+
+## 13. Issue #26 执行状态（2026-08-18 第一轮回填）
+
+本轮只回填已有可靠证据、且不依赖前端完成的验收内容。**不宣布 #10 FROZEN、不宣布 #26 第 1 项最终完成、不宣布 API 四类全部通过、不宣布页面四态 PASS、不宣布 M1 全链路 PASS。**
+
+- 已回填为 `PASS`：L1-01/L1-02（2026-08-18 本轮复验）、DT-01~DT-17（#31 真实全量两次复跑、MySQL 实表发布、逐行查询、1264 回滚保留旧批次）、API-01（#31/#26 真实 HTTP GET 200、10 项、data_version 与 MySQL 一致）。
+- 已回填为 `VERIFIED`：1.4 事实表“MySQL 业务结果实际装载”“Flask API”两行；第 2 章 L2 状态。
+- 已按契约回填但非最终 PASS：API-02~API-04（`PENDING_HTTP_EVIDENCE`——契约来源 Issue #10 `CONFIRMED` + 后端 pytest 12 passed；真实 HTTP 请求/响应/状态码证据尚未采集，#26 第 4 项未完成）。
+- 已回填契约来源：第 5 章请求构造/预期响应、第 11 章 A-01~A-10。所有回填内容均标注“来源：Issue #10 `CONFIRMED`；FROZEN 尚待 #10 最终关闭/冻结”。
+- 仍 BLOCKED：UI-01~UI-12 与页面四态（待 #11/#25）、第 7 章端到端一致性（页面显示列与 E2E-01/E2E-02）、第 8 章组长电脑完整复现（前端启动/页面访问）、M1 整体 PASS。
+- #26 最终 Resolution：`BLOCKED`（待 #10 FROZEN、#25 页面落位并完成页面四态与端到端验收后统一编写）。
+- 本轮仅修改本文件；未创建 `evidence/` 目录；未修改 `docs/02`、`docs/03`、`docs/04`、`docs/05-api.md`、`backend/**`、`data/**`；未执行 `git add`/`commit`/`push`。
