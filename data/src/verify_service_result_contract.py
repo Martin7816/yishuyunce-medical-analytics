@@ -126,10 +126,75 @@ def validate_service_rows(service: dict[str, Any], expected_top10: list[dict[str
             fail("服务结果行的 generated_at 与批次元数据不一致")
 
 
+def validate_generated_service_result(
+    service: dict[str, Any], expected_top10: list[dict[str, Any]]
+) -> None:
+    """Validate the small artifact emitted by the formal PySpark task."""
+
+    required = {"metric", "unit", "data_version", "generated_at", "items"}
+    if set(service) != required:
+        fail(
+            "generated service_result 顶层字段必须为 "
+            f"{sorted(required)}，实际为 {sorted(service)}"
+        )
+    if service["metric"] != "disease_case_count_top10":
+        fail("metric 不符合疾病病例量 TOP10 契约")
+    if service["unit"] != UNIT:
+        fail(f"unit 必须固定为 {UNIT!r}")
+    if not isinstance(service["data_version"], str) or not service["data_version"]:
+        fail("data_version 必须是非空字符串")
+    if not isinstance(service["generated_at"], str) or not service["generated_at"].endswith("Z"):
+        fail("generated_at 必须是 UTC ISO-8601 字符串")
+
+    items = service["items"]
+    if not isinstance(items, list) or not 1 <= len(items) <= 10:
+        fail("generated service_result.items 必须包含 1—10 项")
+    expected_items = [
+        {
+            "rank": rank,
+            "diagnosis_name": item["name"],
+            "case_count": item["case_count"],
+        }
+        for rank, item in enumerate(expected_top10, start=1)
+    ]
+    assert_equal("generated service_result.items", expected_items, items)
+
+    ranks = [item.get("rank") for item in items]
+    if ranks != list(range(1, len(items) + 1)):
+        fail(f"rank 必须从 1 连续递增，实际为 {ranks!r}")
+    if len({item.get("diagnosis_name") for item in items}) != len(items):
+        fail("同一 data_version 内 diagnosis_name 不能重复")
+    if items != sorted(items, key=lambda item: (-item["case_count"], item["diagnosis_name"])):
+        fail("generated service_result.items 未按病例量降序、名称升序排列")
+
+    for item in items:
+        if not isinstance(item.get("rank"), int) or isinstance(item.get("rank"), bool):
+            fail("rank 必须是整数")
+        if not isinstance(item.get("diagnosis_name"), str) or not item["diagnosis_name"]:
+            fail("diagnosis_name 必须是非空字符串")
+        if (
+            not isinstance(item.get("case_count"), int)
+            or isinstance(item.get("case_count"), bool)
+            or item["case_count"] <= 0
+        ):
+            fail("case_count 必须是正整数")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample", type=Path, default=DEFAULT_SAMPLE)
     parser.add_argument("--expected", type=Path, default=DEFAULT_EXPECTED)
+    parser.add_argument(
+        "--result",
+        type=Path,
+        help="可选的 PySpark 服务结果工件；传入后核对 full_scan 的独立期望结果",
+    )
+    parser.add_argument(
+        "--expected-scope",
+        choices=("sample", "full_scan"),
+        default="sample",
+        help="--result 对应 expected JSON 中的核对范围",
+    )
     args = parser.parse_args()
 
     expected_document = json.loads(args.expected.read_text(encoding="utf-8"))
@@ -137,6 +202,19 @@ def main() -> None:
     actual_top10 = summarize_sample(args.sample)
     assert_equal("sample.top10", expected_top10, actual_top10)
     validate_service_rows(expected_document["service_result"], actual_top10)
+
+    result_summary: dict[str, Any] = {}
+    if args.result:
+        result_document = json.loads(args.result.read_text(encoding="utf-8"))
+        expected_scope = expected_document[args.expected_scope]
+        validate_generated_service_result(
+            result_document["service_result"], expected_scope["top10"]
+        )
+        result_summary = {
+            "result": args.result.name,
+            "result_data_version": result_document["service_result"]["data_version"],
+            "result_rows": len(result_document["service_result"]["items"]),
+        }
 
     print(
         json.dumps(
@@ -146,6 +224,7 @@ def main() -> None:
                 "data_version": expected_document["service_result"]["data_version"],
                 "rows": len(actual_top10),
                 "unit": UNIT,
+                **result_summary,
             },
             ensure_ascii=False,
             indent=2,
