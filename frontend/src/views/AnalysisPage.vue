@@ -25,7 +25,10 @@ function setLocalOptions(payload) {
   }
 }
 async function load() {
-  const current = ++requestId; state.value = 'loading'; error.value = null
+  const current = ++requestId
+  state.value = 'loading'
+  data.value = null
+  error.value = null
   try {
     await loadRemoteOptions()
     let path = props.config.endpoint
@@ -33,8 +36,10 @@ async function load() {
     else path = withQuery(path, filters)
     const payload = await apiRequest(path)
     if (current !== requestId) return
-    data.value = payload; setLocalOptions(payload)
-    state.value = (payload.metrics?.length || payload.sections?.some(section => section.items?.length)) ? 'success' : 'empty'
+    data.value = payload
+    setLocalOptions(payload)
+    const hasContent = Boolean(payload.metrics?.length || payload.sections?.some(section => section.items?.length))
+    state.value = hasContent ? 'success' : 'empty'
   } catch (caught) { if (current === requestId) { error.value = caught; state.value = 'error' } }
 }
 function updateFilter(key, value) {
@@ -66,9 +71,9 @@ watch(() => props.config, () => {
         </select>
       </label>
     </section>
+    <p v-if="data?.data_version?.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
     <PageState v-if="state !== 'success'" :state="state" :error="error" @retry="load" />
     <template v-else>
-      <p v-if="data.data_version?.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
       <p v-if="config.disclaimer" class="warning-note">{{ config.disclaimer }}</p>
       <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
       <section v-if="data.comparison?.length" class="comparison-grid">

@@ -7,14 +7,18 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 const props = defineProps({ section: { type: Object, required: true } })
+const chartTypes = new Set(['bar', 'pie'])
+const listTypes = new Set(['status', 'table'])
 const element = ref(null)
 let chart
 let observer
 const format = (value) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value
+const isChartType = (type) => chartTypes.has(type)
+const isListType = (type) => listTypes.has(type)
 
 function option() {
   const items = props.section.items || []
-  if (props.section.type === 'status' || props.section.type === 'table') return null
+  if (!isChartType(props.section.type)) return null
   if (props.section.type === 'pie') return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', radius: ['42%', '70%'], data: items }] }
   return {
     animationDuration: 350, grid: { left: 18, right: 34, top: 14, bottom: 22, containLabel: true },
@@ -36,8 +40,9 @@ onMounted(render)
 onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
 </script>
 <template>
-  <div v-if="section.type === 'status' || section.type === 'table'" class="status-grid">
+  <div v-if="isListType(section.type)" class="status-grid">
     <div v-for="item in section.items" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>
   </div>
-  <div v-else ref="element" class="chart-canvas" role="img" :aria-label="section.title"></div>
+  <div v-else-if="isChartType(section.type)" ref="element" class="chart-canvas" role="img" :aria-label="section.title"></div>
+  <div v-else class="state-panel"><span class="state-symbol">!</span><h2>暂不支持该图表类型</h2><p>已忽略未在页面契约中登记的 section。</p></div>
 </template>
