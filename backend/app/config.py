@@ -21,6 +21,13 @@ class Config:
     TOP10_DATA_SOURCE = os.getenv("TOP10_DATA_SOURCE", "fixture")
     TOP10_FIXTURE_STATE = os.getenv("TOP10_FIXTURE_STATE", "success")
 
+    ANALYTICS_DATA_SOURCE = os.getenv("ANALYTICS_DATA_SOURCE")
+
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    DEEPSEEK_TIMEOUT_SECONDS = int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "20"))
+
     MYSQL_HOST = os.getenv("MYSQL_HOST")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
     MYSQL_USER = os.getenv("MYSQL_USER")
