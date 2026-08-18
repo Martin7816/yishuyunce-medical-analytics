@@ -7,7 +7,12 @@ from app import create_app
 
 def fixture_app(**kwargs):
     return create_app(
-        {"TESTING": True, "TOP10_DATA_SOURCE": "fixture", "ANALYTICS_DATA_SOURCE": "fixture"},
+        {
+            "TESTING": True,
+            "TOP10_DATA_SOURCE": "fixture",
+            "ANALYTICS_DATA_SOURCE": "fixture",
+            "HIGH_COST_MODEL_PATH": None,
+        },
         **kwargs,
     )
 
