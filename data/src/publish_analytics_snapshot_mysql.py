@@ -5,9 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime
+import sys
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.analytics_snapshot_contract import (  # noqa: E402
+    normalize_utc_timestamp,
+    validate_snapshot_document,
+)
 
 
 TABLE = "analysis_snapshot_result"
@@ -15,30 +24,7 @@ TABLE = "analysis_snapshot_result"
 
 def load_snapshot(path: Path) -> dict[str, Any]:
     document = json.loads(path.read_text(encoding="utf-8"))
-    version = document.get("data_version")
-    generated_at = document.get("generated_at")
-    records = document.get("records")
-    if not isinstance(version, str) or not version or not version.isascii():
-        raise ValueError("data_version 必须是非空 ASCII 字符串")
-    if not isinstance(generated_at, str):
-        raise ValueError("generated_at 必须是 ISO-8601 字符串")
-    datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-    if not isinstance(records, list) or not records:
-        raise ValueError("records 必须是非空数组")
-    seen = set()
-    for record in records:
-        if not isinstance(record, dict):
-            raise ValueError("每条快照必须是对象")
-        key = (record.get("module_key"), record.get("entity_key"))
-        payload = record.get("payload")
-        if not all(isinstance(value, str) and value for value in key):
-            raise ValueError("module_key/entity_key 不能为空")
-        if key in seen:
-            raise ValueError(f"快照主键重复: {key}")
-        if not isinstance(payload, dict) or not isinstance(payload.get("metrics", []), list) or not isinstance(payload.get("sections", []), list):
-            raise ValueError(f"payload 结构无效: {key}")
-        seen.add(key)
-    return document
+    return validate_snapshot_document(document)
 
 
 def connection_options() -> dict[str, Any]:
@@ -63,7 +49,8 @@ def publish(document: dict[str, Any]) -> None:
         **connection_options(), charset="utf8mb4", cursorclass=DictCursor,
         autocommit=False, connect_timeout=5, read_timeout=10, write_timeout=10,
     )
-    generated_at = document["generated_at"].replace("Z", "").replace("T", " ")
+    generated_at = normalize_utc_timestamp(document["generated_at"])
+    generated_at = generated_at.removesuffix("Z").replace("T", " ")
     try:
         connection.begin()
         with connection.cursor() as cursor:
@@ -75,9 +62,16 @@ def publish(document: dict[str, Any]) -> None:
                     for record in document["records"]
                 ],
             )
-            cursor.execute(f"SELECT COUNT(*) AS n, COUNT(DISTINCT `data_version`) AS versions FROM `{TABLE}`")
+            cursor.execute(
+                f"SELECT COUNT(*) AS n, COUNT(DISTINCT `data_version`) AS versions, "
+                f"COUNT(DISTINCT `generated_at`) AS timestamps FROM `{TABLE}`"
+            )
             row = cursor.fetchone()
-            if row["n"] != len(document["records"]) or row["versions"] != 1:
+            if (
+                row["n"] != len(document["records"])
+                or row["versions"] != 1
+                or row["timestamps"] != 1
+            ):
                 raise ValueError("发布后快照完整性校验失败")
         connection.commit()
     except Exception:

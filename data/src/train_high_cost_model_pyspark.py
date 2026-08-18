@@ -120,8 +120,7 @@ def main() -> None:
             "module_key": "high_cost_model", "entity_key": "metrics",
             "payload": {
                 "title": "高费用病例分类模型", "description": "仅使用入院时可得类别字段的运营分类模型。",
-                "model_version": model_version, "threshold_amount": threshold,
-                "feature_names": list(PUBLIC_NAMES.values()),
+                "options": {"model_version": model_version, "threshold_amount": threshold, "feature_names": list(PUBLIC_NAMES.values())},
                 "metrics": [
                     {"key": "train_rows", "label": "训练集", "value": metrics["train_rows"], "unit": "条"},
                     {"key": "test_rows", "label": "测试集", "value": metrics["test_rows"], "unit": "条"},

@@ -26,6 +26,7 @@ def test_all_read_endpoints_share_envelope_and_version():
         assert response.status_code == 200, url
         body = response.get_json()
         assert set(body) == {"code", "message", "data", "trace_id"}
+        assert response.headers["X-Trace-ID"] == body["trace_id"]
         versions.add(body["data"]["data_version"])
     assert versions == {"fixture:sparcs_full_analytics:v1"}
 
@@ -79,6 +80,36 @@ def test_prediction_rejects_leakage_and_returns_versioned_result():
     rejected = client.post("/api/v1/models/high-cost/predict", json=features)
     assert rejected.status_code == 400
     assert rejected.get_json()["code"] == "LEAKAGE_FIELD_FORBIDDEN"
+
+
+def test_model_metadata_is_flattened_from_allowed_snapshot_options():
+    response = fixture_app().test_client().get("/api/v1/models/high-cost/metrics")
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["model_version"] == "fixture:high_cost_logistic_regression:v1"
+    assert data["threshold_amount"] == 82450.3
+    assert data["feature_names"][-1] == "emergency_indicator"
+
+
+def test_invalid_snapshot_payload_is_not_served():
+    class InvalidRepository:
+        def fetch(self, module_key, entity_key):
+            return {
+                "payload": {
+                    "title": "bad",
+                    "description": "bad",
+                    "metrics": [],
+                    "sections": [{"key": "x", "title": "x", "type": "line", "items": []}],
+                },
+                "data_version": "fixture:bad:v1",
+                "generated_at": "2026-08-18T08:00:00.000000Z",
+            }
+
+    response = fixture_app(analytics_repository=InvalidRepository()).test_client().get(
+        "/api/v1/dashboard/overview"
+    )
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
 
 
 class FakeAIClient:

@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import logging
+import sys
 import uuid
+from pathlib import Path
 
 from flask import Flask, g, jsonify
 from werkzeug.exceptions import HTTPException
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from .config import Config
 from .errors import AppError

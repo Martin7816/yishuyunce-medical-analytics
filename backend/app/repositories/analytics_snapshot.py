@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from shared.analytics_snapshot_contract import validate_snapshot_document
+
 from ..errors import (
     DatabaseUnavailableError,
     ResultNotReadyError,
@@ -20,8 +22,9 @@ class FixtureAnalyticsSnapshotRepository:
     def _load(self) -> dict:
         if self._document is None:
             try:
-                self._document = json.loads(self.fixture_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
+                document = json.loads(self.fixture_path.read_text(encoding="utf-8"))
+                self._document = validate_snapshot_document(document)
+            except (OSError, json.JSONDecodeError, ValueError) as error:
                 raise ServerMisconfiguredError() from error
         return self._document
 

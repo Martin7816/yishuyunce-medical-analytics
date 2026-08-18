@@ -144,7 +144,7 @@
         "title": "数据质量与任务管理",
         "description": "只读展示当前分析批次和存储检查，不在网页执行任务。",
         "metrics": [{"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"}, {"key": "valid_diagnosis_rows", "label": "有效诊断记录", "value": 2099954, "unit": "条"}, {"key": "parse_errors", "label": "解析异常", "value": 0, "unit": "条"}, {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}],
-        "sections": [{"key": "storage", "title": "存储与服务检查", "type": "status", "items": [{"name": "HDFS", "value": "VERIFIED"}, {"name": "Hive", "value": "VERIFIED"}, {"name": "MySQL", "value": "VERIFIED"}, {"name": "PySpark任务", "value": "PASS"}]}, {"key": "fields", "title": "关键字段完整性", "type": "bar", "items": [{"name": "诊断", "value": 0.9992}, {"name": "医院", "value": 0.995}, {"name": "费用", "value": 1.0}, {"name": "住院时长", "value": 1.0}]}]
+        "sections": [{"key": "storage", "title": "存储与服务检查", "type": "status", "items": [{"name": "HDFS", "value": "CHECK_REQUIRED"}, {"name": "Hive", "value": "CHECK_REQUIRED"}, {"name": "MySQL", "value": "CHECK_REQUIRED"}, {"name": "PySpark任务", "value": "FIXTURE_ONLY"}]}, {"key": "fields", "title": "关键字段完整性", "type": "bar", "items": [{"name": "诊断", "value": 0.9992}, {"name": "医院", "value": 0.995}, {"name": "费用", "value": 1.0}, {"name": "住院时长", "value": 1.0}]}]
       }
     },
     {
@@ -153,11 +153,9 @@
       "payload": {
         "title": "高费用病例分类模型",
         "description": "使用入院时可得类别字段预测高费用记录，仅供运营分析。",
-        "model_version": "fixture:high_cost_logistic_regression:v1",
-        "threshold_amount": 82450.3,
+        "options": {"model_version": "fixture:high_cost_logistic_regression:v1", "threshold_amount": 82450.3, "feature_names": ["age_group", "gender", "race", "ethnicity", "hospital_service_area", "facility_id", "admission_type", "emergency_indicator"]},
         "metrics": [{"key": "train_rows", "label": "训练集", "value": 1681270, "unit": "条"}, {"key": "test_rows", "label": "测试集", "value": 420318, "unit": "条"}, {"key": "accuracy", "label": "Accuracy", "value": 0.79, "unit": "%"}, {"key": "precision", "label": "Precision", "value": 0.67, "unit": "%"}, {"key": "recall", "label": "Recall", "value": 0.58, "unit": "%"}, {"key": "f1", "label": "F1", "value": 0.62, "unit": "%"}, {"key": "auc", "label": "AUC", "value": 0.82, "unit": "%"}],
-        "sections": [{"key": "confusion", "title": "混淆矩阵", "type": "table", "items": [{"name": "TN", "value": 296120}, {"name": "FP", "value": 19038}, {"name": "FN", "value": 44110}, {"name": "TP", "value": 61050}]}],
-        "feature_names": ["age_group", "gender", "race", "ethnicity", "hospital_service_area", "facility_id", "admission_type", "emergency_indicator"]
+        "sections": [{"key": "confusion", "title": "混淆矩阵", "type": "table", "items": [{"name": "TN", "value": 296120}, {"name": "FP", "value": 19038}, {"name": "FN", "value": 44110}, {"name": "TP", "value": 61050}]}]
       }
     }
   ]

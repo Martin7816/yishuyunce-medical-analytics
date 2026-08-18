@@ -227,4 +227,12 @@ def data_quality_summary():
 @analytics_bp.get("/api/v1/models/high-cost/metrics")
 def high_cost_metrics():
     _reject_unknown(set())
-    return _ok(_get("high_cost_model", "metrics"))
+    payload = _get("high_cost_model", "metrics")
+    # Model metadata lives under the snapshot's allowed `options` object;
+    # expose the established response shape without widening payload_json.
+    metadata = payload.get("options", {})
+    result = dict(payload)
+    for name in ("model_version", "threshold_amount", "feature_names"):
+        if name in metadata:
+            result[name] = metadata[name]
+    return _ok(result)
