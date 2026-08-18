@@ -1,0 +1,15 @@
+Issue #45 desktop acceptance baseline
+Captured: 2026-08-18 (Asia/Shanghai)
+
+Command: cd frontend; npm run build
+Result: PASS
+Details: vite v8.2.1; 621 modules transformed; built in 527ms.
+Note: Vite emitted only the existing large ECharts chunk warning; build exit code was 0.
+
+Command: backend/.venv/Scripts/python.exe -m pytest backend/tests data/tests -q
+Result: PASS
+Details: 38 passed in 42.52s.
+
+Command: git diff --check -- frontend/src
+Result: PASS
+Details: no whitespace errors.

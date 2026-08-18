@@ -1,0 +1,19 @@
+{
+  "issue": 45,
+  "captured_at_utc": "2026-08-18T12:37:32Z",
+  "source": "http://127.0.0.1:5000 (real dashboard snapshot) via http://127.0.0.1:5175",
+  "viewport_rule": "desktop only; mobile adaptation explicitly out of scope",
+  "console_error_count": 0,
+  "routes": [
+    {"route": "/overview", "heading": "医疗运营驾驶舱", "state_panels": 0, "error_panels": 0, "metric_cards": 8, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/hospitals", "heading": "医院运营分析", "state_panels": 0, "error_panels": 0, "metric_cards": 1, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/diseases", "heading": "疾病画像分析", "state_panels": 0, "error_panels": 0, "metric_cards": 1, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/cohorts", "heading": "住院记录群体分析", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/costs", "heading": "医疗费用与成本分析", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/risks", "heading": "病情严重程度与风险分析", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/payments", "heading": "支付方式分析", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/data-quality", "heading": "数据质量与任务管理", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/model", "heading": "高费用病例分类模型", "state_panels": 0, "error_panels": 0, "metric_cards": 7, "client_width": 1265, "scroll_width": 1265},
+    {"route": "/assistant", "heading": "AI 大模型问答与洞察报告", "state_panels": 0, "error_panels": 0, "metric_cards": 0, "client_width": 1280, "scroll_width": 1280}
+  ]
+}
