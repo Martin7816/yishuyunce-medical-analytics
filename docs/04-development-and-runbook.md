@@ -26,8 +26,9 @@ Windows/VM 本地暂存
 |---|---|---|
 | M0 固定样例 | `VERIFIED` | 纯 Python 标准库读取样本、独立计数、TOP10 和契约边界 |
 | VM 环境基线 | `VERIFIED` | 三台 CentOS 7 64 位虚拟机、Hadoop/HDFS、MySQL，以及 Hive 和 `spark-submit` 的既有实机记录 |
-| Spark 全量任务 | `HANDOFF` | 正式任务由下游数据 Issue 提供；当前 `main` 没有可执行的 Spark 作业 |
-| Flask API | `HANDOFF` | #10 已在 `docs/05-api.md` 固定目标路径和默认端口；后端依赖与实际命令待落位 |
+| Spark 全量任务 | `VERIFIED` | 本机 PySpark 3.4.0 已读取真实全量 CSV 并生成服务结果工件；脚本见 `data/src/run_sparcs_top10_pyspark.py` |
+| MySQL 服务结果发布 | `HANDOFF` | `data/src/publish_top10_mysql.py` 已提供校验和事务替换；VM 实际装载仍待执行 |
+| Flask API | `HANDOFF` | #10 的 PR #29 已合并；默认配置仍使用 fixture，真实验收需设置 `TOP10_DATA_SOURCE=mysql` |
 | Vue/ECharts 页面 | `HANDOFF` | 由 #11 固定页面四态和 API 地址后再维护前端依赖 |
 | 全链路一致性 | `HANDOFF` | 由 #13 按固定样例和全量版本复验 |
 
@@ -117,7 +118,7 @@ spark-submit --version
 | HiveServer2 | `hadoop001:10000` | Hive 表/查询检查 | 启动后用 `ss -lntp` 复核；不承担 TOP10 正式计算 |
 | MySQL TCP | `hadoop001:3306` | 教师配置中的 MySQL 监听端口 | 使用 MySQL 启动后复核；本机连接优先记录 socket |
 | MySQL Unix socket | `/opt/module/mysql/mysql.sock` | `hadoop001` 本地客户端连接 | 已在实际配置中确认 |
-| Flask | `127.0.0.1:5000`（目标） | 由 #10 的 `docs/05-api.md` 固定 | 当前 `main` 无后端 |
+| Flask | `127.0.0.1:5000`（目标） | 由 #10 的 `docs/05-api.md` 固定 | 当前 `main` 已有后端；默认数据源仍为 fixture |
 | Vue/Vite | 未固定 | #11 固定页面启动方式后再确定 | 当前 `main` 无前端 |
 
 M1 不单独固定 Spark Standalone 端口：正式计算由 `spark-submit` 按数据任务配置提交，当前架构没有把一套额外的 Spark Master 服务加入必要链路。
@@ -146,7 +147,7 @@ M0 样本核对只使用 Python 标准库中的 `argparse`、`csv`、`json`、`p
 
 ## 4. 从干净 `main` 运行固定样例
 
-这是当前 `main` 唯一完整、无需等待下游代码的复现路径。建议在不含中文、空格且路径较短的本地目录执行；仓库本身不依赖特定绝对路径。
+这是当前 `main` 不依赖下游服务、可直接复查固定样例的基础路径。建议在不含中文、空格且路径较短的本地目录执行；仓库本身不依赖特定绝对路径。
 
 ```powershell
 # 任选一个短路径；示例路径不是项目固定路径
@@ -177,6 +178,25 @@ python data/src/verify_sparcs_mvp.py --full-source "<本地完整 SPARCS CSV 路
 ```
 
 全量复核要求与 `docs/01-data-and-feasibility.md` 中同一版本文件一致：2,101,588 条记录、0 条解析异常、477 个非空主诊断描述，TOP10 与记录的基线一致。没有完整文件时不要用固定样例结果冒充全量结果。
+
+### 4.1 真实全量 TOP10 与服务结果工件
+
+2026-08-18 已在组长电脑使用本机 PySpark 3.4.0 读取老师提供的完整 CSV，生成小型服务结果工件。完整 CSV 和工件均不提交 Git；命令中的路径只替换为本机实际路径：
+
+```powershell
+python -m pip install -r data/requirements.txt
+python data/src/run_sparcs_top10_pyspark.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --expected data/fixtures/sparcs_mvp_expected_top10.json `
+  --output "<本地临时目录>\issue10-real-service-result.json"
+python data/src/verify_service_result_contract.py `
+  --result "<本地临时目录>\issue10-real-service-result.json" `
+  --expected-scope full_scan
+python data/src/publish_top10_mysql.py `
+  --input "<本地临时目录>\issue10-real-service-result.json"
+```
+
+本次实际结果为：2,101,588 行、0 条解析异常、0 条范围外记录、2,099,954 条非空诊断记录、477 个诊断分组；服务结果有 10 行，版本为 `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。独立标准库核对和 PySpark 结果的 TOP10 完全一致。最后一条命令默认只做本地校验；连接到已执行 DDL 的 MySQL 时才增加 `--apply`，并提供 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 环境变量。
 
 ## 5. VM 启动、健康检查与停止
 
@@ -239,11 +259,11 @@ ss -lntp | grep ':10000'
 
 #### Spark 和业务服务
 
-当前 `main` 尚未提交正式 Spark 作业、MySQL 业务结果表、Flask API 或 Vue 页面，所以这里不提供带占位符却看似可运行的启动命令。#10 已在 `docs/05-api.md` 固定 Flask 目标地址为 `127.0.0.1:5000`；后端代码落位后仍需把实际启动命令和健康检查输出补到本手册。下游完成后必须按下面的顺序接入：
+当前 `main` 已有本机 PySpark 正式计算脚本、MySQL 服务结果发布脚本和 #10 Flask API；真实 MySQL 装载与 API 真数据验收仍待本 Issue 完成。默认 API 数据源为 fixture，真实验收必须设置 `TOP10_DATA_SOURCE=mysql`。下游完成后必须按下面的顺序接入：
 
 ```text
-Spark 正式任务读取 HDFS raw
-  → 生成并校验 HDFS result
+本机 Spark 正式任务读取受控 CSV
+  → 生成并校验服务结果工件
   → 事务装载 MySQL 服务结果
   → 启动 Flask，只读 MySQL
   → 启动 Vue，只读 Flask API
@@ -275,7 +295,8 @@ HiveServer2 应根据启动时记录的 PID 或服务管理方式停止，停止
 | HDFS 报告节点不足或块异常 | 停止正式全量任务，先恢复三节点和 HDFS 健康状态；不能切换到另一份未登记原始数据 |
 | HiveServer2 不可用 | 只影响 Hive 检查层；Spark 正式计算仍不能改由 Hive/Pandas 另算，页面/API也不填假数据 |
 | 完整原始 CSV 不存在 | 运行固定样例或独立核对；不能声称已完成全量结果 |
-| Flask/MySQL 依赖未安装 | 当前 `main` 没有后端，不能用主机偶然安装的 Flask 版本当项目依赖；等待 #10 按 `docs/05-api.md` 提交清单 |
+| PySpark/MySQL 数据依赖未安装 | 按 `data/requirements.txt` 安装；固定样例独立核对不需要第三方依赖，但不能用它冒充真实计算 |
+| Flask 默认仍为 fixture | 可用固定 Mock 做契约开发；真实验收必须设置 `TOP10_DATA_SOURCE=mysql`，并确认 API 返回本 Issue 发布的 `data_version` |
 
 ## 7. 组长电脑复现记录
 
@@ -296,16 +317,18 @@ python data/src/verify_sparcs_mvp.py
 - 仓库没有真实 `.env`、完整原始 CSV 或个人绝对路径；
 - VM 三节点配置文件保留在本机 VMware 目录，来宾设置为 CentOS 7 64 位，未把虚拟磁盘或配置路径写入项目。
 
+2026-08-18 的真实全量复现记录：本机 PySpark 3.4.0 读取完整数据并通过 `--expected` 核对，输出 2,101,588 行、477 个诊断分组和 10 行服务结果；`verify_service_result_contract.py --result ... --expected-scope full_scan` 与 `publish_top10_mysql.py` 的 dry-run 均为 `PASS`。由于当前 VM 的 SSH 连接不可达，MySQL `--apply` 尚未执行。
+
 ### 7.2 已有 VM 证据与限制
 
 `docs/03-architecture-and-env.md` 已记录 2026-08-17 的 VM 实机证据：三节点可互相 SSH，`hdfs dfsadmin -report` 显示 3 个 Live datanodes 且无缺失/损坏/低副本块，`hadoop001` 的 9000、9870、8088 已监听，Java 1.8.0_212、Hadoop 3.3.4、Hive 3.1.3、MySQL 8.0.30 已确认，MySQL 已成功进入客户端。
 
-当前仓库尚未保存 `spark-submit --version` 的具体输出，也尚未合并正式 Spark/API/前端命令；这两项不能在 #12 中用猜测补齐，需在对应组件落位时补充实际输出并由 #13 复验。
+当前仓库尚未保存 VM 中 `spark-submit --version` 的具体输出，也尚未合并正式 API/前端命令；这些不能在 #12 中用猜测补齐，需在对应组件落位时补充实际输出并由 #13 复验。正式 TOP10 已在本机 PySpark local 模式完成，VM 只承担可选存储和 MySQL 服务结果支持。
 
 ## 8. 交接清单
 
-- #9：提交业务服务结果表、`data_version`、刷新事务和 MySQL 连接字段后，更新后端配置示例。
-- #10：按 `docs/05-api.md` 提交 Flask 依赖、API 端口 `5000`、健康检查和失败响应后，补齐后端启动与停止命令。
+- #31：使用真实服务结果工件执行 DDL 和 `publish_top10_mysql.py --apply`，记录 MySQL 结果表可用性和 `data_version`。
+- #10：按 `docs/05-api.md` 使用本 Issue 发布的真实批次设置 MySQL 数据源，补齐后端启动与停止命令。
 - #11：提交 `package.json`、前端环境变量和页面端口后，补齐前端启动命令。
 - #13：按本手册顺序运行固定样例和全量版本，留下 HDFS、Spark、MySQL、API 和页面一致性证据。
 

@@ -8,7 +8,10 @@ verifier remains an independent check and is deliberately not imported here.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SAMPLE = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv"
 DIAGNOSIS_FIELD = "CCSR Diagnosis Description"
 YEAR_FIELD = "Discharge Year"
+SERVICE_METRIC = "disease_case_count_top10"
+SERVICE_UNIT = "discharge_records"
+KNOWN_SOURCE_NAME = (
+    "Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv"
+)
+EDGE_WHITESPACE = r"^[\s\p{Z}\ufeff]+|[\s\p{Z}\ufeff]+$"
 
 
 def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str, Any]:
@@ -29,15 +38,20 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
         spark.read.option("header", "true")
         .option("inferSchema", "false")
         .option("mode", "FAILFAST")
-        .csv(csv_path.resolve().as_uri())
+        # Spark on Windows does not decode percent-escaped non-ASCII local
+        # paths produced by Path.as_uri(); pass the resolved path directly.
+        .csv(str(csv_path.resolve()))
     )
     missing = {DIAGNOSIS_FIELD, YEAR_FIELD}.difference(frame.columns)
     if missing:
         raise ValueError(f"CSV 缺少指标字段: {sorted(missing)}")
 
-    diagnosis = F.trim(F.col(DIAGNOSIS_FIELD)).alias("diagnosis")
+    diagnosis = F.regexp_replace(
+        F.col(DIAGNOSIS_FIELD), EDGE_WHITESPACE, ""
+    ).alias("diagnosis")
+    year = F.trim(F.col(YEAR_FIELD))
     valid = (
-        frame.where(F.trim(F.col(YEAR_FIELD)) == F.lit("2021"))
+        frame.where(year == F.lit("2021"))
         .select(diagnosis)
         .where(F.length(F.col("diagnosis")) > 0)
     )
@@ -58,9 +72,71 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
         "pyspark_version": pyspark.__version__,
         "input": csv_path.name,
         "rows": frame.count(),
+        "malformed_rows": 0,
+        "out_of_scope_rows": frame.where(
+            year.isNull() | (year != F.lit("2021"))
+        ).count(),
         "diagnosis_nonempty_rows": valid.count(),
         "diagnosis_nonempty_distinct": valid.select("diagnosis").distinct().count(),
         "top10": top10,
+    }
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_data_version(csv_path: Path, digest: str) -> str:
+    """Build a stable version without exposing a local absolute path."""
+
+    if csv_path.name == KNOWN_SOURCE_NAME:
+        return f"sparcs_2021_20231012_sha256_{digest}"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", csv_path.stem).strip("._-")
+    return f"{safe_name or 'sparcs_input'}_sha256_{digest}"
+
+
+def normalize_generated_at(value: str | None) -> str:
+    if value is None:
+        parsed = datetime.now(UTC)
+    else:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("--generated-at 必须包含时区")
+        parsed = parsed.astimezone(UTC)
+    return parsed.isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def build_run_document(
+    result: dict[str, Any], csv_path: Path, generated_at: str
+) -> dict[str, Any]:
+    digest = sha256_file(csv_path)
+    data_version = build_data_version(csv_path, digest)
+    service_result = {
+        "metric": SERVICE_METRIC,
+        "unit": SERVICE_UNIT,
+        "data_version": data_version,
+        "generated_at": generated_at,
+        "items": [
+            {
+                "rank": rank,
+                "diagnosis_name": item["name"],
+                "case_count": item["case_count"],
+            }
+            for rank, item in enumerate(result["top10"], start=1)
+        ],
+    }
+    return {
+        **result,
+        "input_fingerprint": {
+            "file_name": csv_path.name,
+            "size_bytes": csv_path.stat().st_size,
+            "sha256": digest,
+        },
+        "service_result": service_result,
     }
 
 
@@ -73,6 +149,15 @@ def main() -> None:
         help="可选的期望 JSON；传入后核对其中 sample.top10 和计数摘要",
     )
     parser.add_argument("--top", type=int, default=10)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="可选的服务结果工件路径；只写入小型 JSON，不复制原始 CSV",
+    )
+    parser.add_argument(
+        "--generated-at",
+        help="可选的 ISO-8601 时间；不传时使用当前 UTC 时间",
+    )
     args = parser.parse_args()
 
     if args.top < 1:
@@ -91,9 +176,16 @@ def main() -> None:
 
     if args.expected:
         expected_document = json.loads(args.expected.read_text(encoding="utf-8"))
-        expected = expected_document["sample"]
+        expected_key = (
+            "sample"
+            if args.input.resolve() == DEFAULT_SAMPLE.resolve()
+            else "full_scan"
+        )
+        expected = expected_document[expected_key]
         for field in (
             "rows",
+            "malformed_rows",
+            "out_of_scope_rows",
             "diagnosis_nonempty_rows",
             "diagnosis_nonempty_distinct",
         ):
@@ -104,7 +196,17 @@ def main() -> None:
         if result["top10"] != expected["top10"]:
             raise AssertionError("top10 不一致")
 
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    document = build_run_document(
+        result, args.input.resolve(), normalize_generated_at(args.generated_at)
+    )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    print(json.dumps(document, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

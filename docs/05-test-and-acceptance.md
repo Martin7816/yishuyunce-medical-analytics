@@ -28,8 +28,8 @@
 |---|---|---|---|
 | 口径与契约 | `FROZEN`（#7、#9） | 引用为用例预期 | 修改或另写一套口径 |
 | 固定样本与独立核对 | `VERIFIED` | 复验、填写证据 | 修改 fixture 或核对脚本 |
-| 数据任务与服务结果 | 固定样例已通；全量任务 `HANDOFF` | 预置验收用例 | 宣称全量任务完成 |
-| Flask API | `HANDOFF`（待 #10） | 预置四类用例模板 | 填写 URL、参数、状态码、错误码 |
+| 数据任务与服务结果 | PySpark 全量工件已通；MySQL 装载 `HANDOFF` | 预置验收用例 | 宣称 MySQL/API 全链路完成 |
+| Flask API | `HANDOFF`（代码已合并，待真实 MySQL 批次） | 预置四类用例模板 | 填写真实 URL、参数、状态码、错误码 |
 | Vue/ECharts 页面 | `HANDOFF`（待 #11） | 预置四态与检查项模板 | 填写页面触发方式 |
 | 全链路与组长电脑复现 | `HANDOFF`（待相关实现落位后由 Issue #26 执行） | 预置比较链与 checklist | 宣称 M1 PASS |
 
@@ -41,16 +41,16 @@
 - 固定样本 `PASS` 不等于真实全链路通过证据；Mock 结果不等于正式验收证据；
 - RAW/侦察结果不是另一套正式业务口径，只作为与正式任务对比的基线（[01 第 4、8 节](01-data-and-feasibility.md)）。
 
-### 1.4 当前已确认的事实（截至 2026-08-17）
+### 1.4 当前已确认的事实（截至 2026-08-18）
 
 | 项目 | 状态 | 依据 |
 |---|---|---|
 | 固定样本独立核对脚本 | `PASS`（本 Issue 复验，退出码 0） | [01 第 7 节](01-data-and-feasibility.md)、本文第 3 章 |
 | 服务结果契约检查脚本 | `PASS`（本 Issue 复验，退出码 0） | [02 第 6 节](02-metrics-and-data-contract.md)、本文第 4 章 |
 | 本机 PySpark 固定样例 | `VERIFIED`（#12 实测记录） | [04 第 7.1 节](04-development-and-runbook.md) |
-| 本机 PySpark 全量任务 | `NOT RUN`（HANDOFF） | [04 第 1 节](04-development-and-runbook.md) |
+| 本机 PySpark 全量任务 | `VERIFIED`（2026-08-18） | [04 第 4.1 节](04-development-and-runbook.md) |
 | MySQL 业务结果实际装载 | `NOT RUN`（HANDOFF） | [03 第 9 节](03-architecture-and-env.md) |
-| Flask API | `BLOCKED`（待 #10） | [03 第 3 节](03-architecture-and-env.md) |
+| Flask API | `HANDOFF`（待真实 MySQL 批次） | [03 第 3 节](03-architecture-and-env.md) |
 | Vue/ECharts 页面 | `BLOCKED`（待 #11） | [03 第 3 节](03-architecture-and-env.md) |
 | M1 全链路一致性 | `BLOCKED`（待 #26 执行） | 本文第 1.3 节 |
 
@@ -60,9 +60,9 @@
 
 | 层 | 名称 | 内容 | 主要依据 | 当前状态 |
 |---|---|---|---|---|
-| L1 | 数据与固定样本 | 固定样本独立核对、全量基线核对 | [01](01-data-and-feasibility.md) 第 6、7 节 | `PASS`（固定样本）；全量 `NOT RUN` |
-| L2 | 数据任务与服务结果 | PySpark 清洗聚合、服务结果契约、MySQL 事务装载 | [02](02-metrics-and-data-contract.md) | 固定样例 `PASS`；真实任务 `NOT RUN` |
-| L3 | Flask API | 只读查询服务结果、四类响应语义 | #10 冻结后执行 | `BLOCKED`（待 #10） |
+| L1 | 数据与固定样本 | 固定样本独立核对、全量基线核对 | [01](01-data-and-feasibility.md) 第 6、7 节 | `PASS`（固定样本与全量基线） |
+| L2 | 数据任务与服务结果 | PySpark 清洗聚合、服务结果契约、MySQL 事务装载 | [02](02-metrics-and-data-contract.md) | PySpark 工件与 dry-run `PASS`；MySQL 实表 `NOT RUN` |
+| L3 | Flask API | 只读查询服务结果、四类响应语义 | #10 已合并后执行 | `HANDOFF`（待真实 MySQL 批次） |
 | L4 | Vue/ECharts 页面 | 四态、展示一致性与交互检查 | #11 实现后执行 | `BLOCKED`（待 #11） |
 | L5 | 端到端集成与组长电脑复现 | 全链路一致性比较、组长电脑 checklist | 本文第 7、8 章 | `BLOCKED`（待相关实现落位后由 Issue #26 执行） |
 
@@ -82,7 +82,8 @@
 | `data/fixtures/sparcs_mvp_sample.csv` | 固定脱敏样本：16 条记录、12 个字段，来自同一份真实 2021 SPARCS CSV |
 | `data/fixtures/sparcs_mvp_expected_top10.json` | 独立期望结果：样本摘要、样本 TOP10、服务结果期望节点、全量基线 |
 | `data/src/verify_sparcs_mvp.py` | Python 标准库独立计数 + 调用侦察脚本对拍 + 契约边界样例 |
-| `data/src/verify_service_result_contract.py` | 从样本独立重算 TOP10，核对服务结果字段契约（不连接 MySQL） |
+| `data/src/verify_service_result_contract.py` | 从样本独立重算 TOP10，也可核对 PySpark 服务结果工件（不连接 MySQL） |
+| `data/src/publish_top10_mysql.py` | 校验小型服务结果工件，并在显式 `--apply` 时事务替换 MySQL 当前批次 |
 
 样本事实（从 [01 第 6 节](01-data-and-feasibility.md)与 fixture 文件读取）：
 
@@ -133,7 +134,7 @@ python data/src/verify_service_result_contract.py
 |---|---|---|---|---|---|---|---|
 | L1-01 | 固定样本独立核对 | 仓库默认 fixture 路径；Python 标准库可用 | 仓库根目录执行 `python data/src/verify_sparcs_mvp.py` | 退出码 0，`status=PASS`，计数摘要与期望一致 | 2026-08-17 复验：退出码 0，`status=PASS`，`rows=16`、`malformed_rows=0`、`out_of_scope_rows=0`、`diagnosis_nonempty_rows=15`、`diagnosis_nonempty_distinct=12`，TOP10 与期望一致 | 脚本 stdout（JSON）；待正式归档至 `evidence/`（见第 9 章） | `PASS` |
 | L1-02 | 服务结果契约检查 | 同上 | 仓库根目录执行 `python data/src/verify_service_result_contract.py` | 退出码 0，`status=PASS`，`rows=10`、`unit=discharge_records` | 2026-08-17 复验：退出码 0，`status=PASS`，`data_version=fixture:sparcs_mvp_sample:v1`、`rows=10`、`unit=discharge_records` | 脚本 stdout（JSON） | `PASS` |
-| L1-03 | 全量基线核对（有完整 CSV 时） | 本地完整 2021 SPARCS CSV（路径只作命令行参数，不写入仓库） | 执行 `python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"` | 2,101,588 行、0 解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 [01 第 4 节](01-data-and-feasibility.md) 基线一致 | | | `NOT RUN` |
+| L1-03 | 全量基线核对（有完整 CSV 时） | 本地完整 2021 SPARCS CSV（路径只作命令行参数，不写入仓库） | 执行 `python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"` | 2,101,588 行、0 解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 [01 第 4 节](01-data-and-feasibility.md) 基线一致 | 2026-08-18：完整文件 SHA-256 与 [02 第 1.1 节](02-metrics-and-data-contract.md) 一致，独立核对 `PASS` | 本地命令 stdout（未提交原始文件） | `PASS` |
 
 说明：
 

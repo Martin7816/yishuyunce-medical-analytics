@@ -71,7 +71,7 @@ M1 采用以下单向链路：
 | HDFS | 可选支撑层 | 保存原始副本或课堂展示材料，不是正式输入唯一来源 | 本地 CSV → HDFS raw 副本 | `hdfs dfsadmin -report` 已显示 3 个 Live datanodes，均 `Normal`，无缺失/损坏块 |
 | Python 标准库核对 | M0 必须，非正式计算 | 独立核对字段、缺失和固定样本 TOP10 | 固定样本 → JSON 核对摘要 | `python data/src/verify_sparcs_mvp.py` 已通过固定样本，`status=PASS` |
 | Hive | M1 支撑层，不做指标计算 | 登记 HDFS 外部表、检查原始层和课堂 SQL 访问 | HDFS → 元数据/检查查询 | VM 中 Hive 3.1.3 已确认；MySQL 修复后需按教师命令完成 schema/HiveServer2 验收 |
-| Spark | M1 正式计算必须 | 唯一执行 #7 清洗、分组、计数、排序 | HDFS raw → TOP10 结果工件 | VM 中 `spark-submit` 已确认；正式任务和全量运行证据由后续开发补齐 |
+| Spark | M1 正式计算必须 | 唯一执行 #7 清洗、分组、计数、排序 | 本机 CSV → TOP10 结果工件 | 本机 PySpark 3.4.0 已完成真实全量运行；脚本见 `data/src/run_sparcs_top10_pyspark.py` |
 | MySQL | M1 服务层必须 | 保存小型服务结果、版本和刷新追溯 | TOP10 工件 → `disease_case_count_top10_result` | MySQL 8.0.30 已在 hadoop001 启动并成功进入客户端；表 DDL 和刷新契约见 [`docs/02-metrics-and-data-contract.md`](02-metrics-and-data-contract.md) |
 | Flask | M1 必须 | 提供受控只读 API 和统一错误语义 | MySQL → JSON | 路径、响应和失败码由 #10 固定；不在 Route 重算指标 |
 | Vue + ECharts | M1 展示必须 | 展示排名、名称、病例量和四种页面状态 | Flask → 图表页面 | 页面和四态由后续 Issue 验收；不得写死正式结果 |
@@ -172,14 +172,14 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 - 组长电脑的 Conda 环境 `csupy311` 可导入 PySpark `3.4.0`；固定样例经本机 PySpark local 模式运行并通过独立标准库脚本核对。
 - VM 中 Java 1.8.0_212、Hadoop 3.3.4、Hive 3.1.3、MySQL 8.0.30 已确认；VM 未安装 Spark，`spark-submit` 未找到符合本次修订后的边界。
 - MySQL 因残留 Socket 锁文件曾启动失败；确认 PID 9024 实际为 `rsyslogd` 后清理临时锁文件，已能进入 MySQL 8.0.30 客户端。该问题不涉及数据库数据目录。
-- 本机 PySpark TOP10 固定样例已落位；全量任务、Hive schema/HiveServer2 复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面仍属于下游 Issue，不在本 Issue 中冒充完成。
+- 本机 PySpark TOP10 固定样例和真实全量任务均已落位并通过独立基线核对；Hive schema/HiveServer2 复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面仍属于下游 Issue，不在本 Issue 中冒充完成。
 
 ## 7. 故障与降级
 
 | 故障 | M1 处理 | 允许的降级 |
 |---|---|---|
 | Windows 主机找不到 `hdfs`/`hive`/`mysql` | 预期边界；正式 TOP10 使用本机 PySpark，HDFS/Hive/MySQL 需要时通过 WindTerm 在 VM 执行 | 不把 Windows PATH 结果写成集群不可用 |
-| VM 未启动或 SSH 不通 | 阻塞实机链路，先恢复 VM/网络 | 固定样本可继续做本地契约开发，不冒充全量结果 |
+| VM 未启动或 SSH 不通 | 阻塞 MySQL/HDFS 实机链路，先恢复 VM/网络 | 本机 PySpark 仍可生成真实全量工件，但不能声称 MySQL/API 已完成 |
 | HDFS 不可用 | 不影响本机正式计算；需要副本或课堂展示时标记支撑层阻塞 | 继续使用本机受控 CSV，但不能声称 HDFS 副本已验收 |
 | Hive/HS2 不可用 | 不影响本机 PySpark 正式计算 | 跳过 Hive 展示，不用 Hive 另算 TOP10 |
 | 本机 PySpark 未安装或任务失败 | 不刷新 MySQL 服务结果；先激活 `csupy311` 并检查 `pyspark.__version__` | 固定样例可退回标准库独立核对，但不冒充正式计算 |
@@ -198,4 +198,4 @@ Windows 主机通过 VMware 和 WindTerm 连接 CentOS 集群；大数据命令�
 
 ## 9. 当前完成边界
 
-本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。Spark 正式任务、HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
+本文已冻结组件职责、唯一计算位置、HDFS/Hive/MySQL 存储边界、启动顺序和故障降级，并记录了 VMware 三节点集群与 MySQL 的实际证据。本机 Spark 正式任务已完成真实全量工件；HiveServer2 完整复验、MySQL 业务结果实际装载、Flask API 和 Vue 页面继续由对应 Issue 实现和验收。
