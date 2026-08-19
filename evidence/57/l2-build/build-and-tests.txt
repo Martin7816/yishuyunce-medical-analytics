@@ -1,0 +1,9 @@
+cd frontend; npm ci; npm run build
+PASS — Vite 8.2.1; 621 modules transformed; 8.07s
+Note: Vite reports the existing AnalyticsChart chunk is larger than 500 kB after minification.
+
+python -m pytest backend/tests data/tests -q
+60 passed, 3 skipped in 0.99s
+
+git diff --check
+PASS

@@ -191,6 +191,7 @@ onBeforeUnmount(() => {
       <span v-if="data?.data_version" class="version-pill" :title="data.data_version">批次 {{ data.data_version }}</span>
     </header>
 
+    <p v-if="config.boundaryNotice" class="warning-note medical-boundary-note" role="note">{{ config.boundaryNotice }}</p>
     <section v-if="config.filters?.length" class="filter-bar" aria-label="分析筛选">
       <label v-for="filter in config.filters" :key="filter.key" :for="`filter-${filter.key}`">
         {{ filter.label }}
@@ -204,7 +205,7 @@ onBeforeUnmount(() => {
           <option v-for="item in optionSets[filter.key]" :key="item.value" :value="item.value">{{ item.label }}</option>
         </select>
       </label>
-      <button v-if="hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
+      <button v-if="config.alwaysShowClear || hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
     </section>
     <p v-if="validationMessage" class="filter-notice" role="alert">{{ validationMessage }}</p>
     <p v-if="data?.data_version?.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
@@ -237,8 +238,8 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
-        <section class="section-grid">
-          <article v-for="section in data.sections" :key="section.key" class="content-card">
+        <section class="section-grid" :class="{ 'cohort-section-grid': config.layout === 'cohort', 'risk-section-grid': config.layout === 'risk' }">
+          <article v-for="section in data.sections" :key="section.key" class="content-card" :class="{ 'section-card-disposition': section.key === 'disposition' }">
             <h2>{{ section.title }}</h2>
             <AnalyticsChart v-if="section.items?.length" :section="section" />
             <p v-else class="section-empty">当前条件没有可展示的条目。</p>

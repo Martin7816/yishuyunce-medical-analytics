@@ -1,0 +1,30 @@
+{
+  "fixture_success": {
+    "route": "/cohorts",
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "filters": ["年龄组", "性别", "入院方式"],
+    "clear_filter_button": true,
+    "metric_cards": 5,
+    "charts": ["主要疾病", "严重程度", "年龄结构"],
+    "fixture_warning": true
+  },
+  "fixture_empty": {
+    "selected_age_group": "50 to 69",
+    "state": "state-panel empty",
+    "message": "当前条件暂无数据",
+    "clear_filter_button": true,
+    "charts": 0
+  },
+  "error": {
+    "state": "state-panel error",
+    "code": "HTTP_ERROR",
+    "retry_button": true,
+    "old_charts": 0
+  },
+  "responsive": {
+    "viewport_css_width": 390,
+    "client_width": 390,
+    "scroll_width": 390,
+    "top_nav_internal_overflow_allowed": true
+  }
+}
