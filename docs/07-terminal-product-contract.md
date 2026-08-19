@@ -62,6 +62,17 @@
 
 合法但尚未发布的筛选仍返回 `200`，保留标题、描述、版本和时间，将 `metrics`、`sections` 置为空；非法参数、未知字段和非白名单值返回 `400`。
 
+支付快照补充约定：`payments` 的 wildcard 记录键为
+`payment=*|age=*`，其 `options.payment_type` 只来自清洗帧中的非空
+`Payment Typology 1`，`options.age_group` 只来自清洗帧中的非空年龄组。
+支付记录按当前键对应的有效住院出院记录计算 `record_count`，金额指标只使用
+可解析且非负的 `Total Charges`；`avg_charges` 为算术平均，
+`median_charges` 使用 `percentile_approx(charges, 0.5, 10000)`，单位均为美元。
+`sections` 固定按 `payment`、`charges`、`age`、`diseases` 输出；其中支付方式、年龄和疾病
+排行排除空分组并按 value 降序、name 升序，疾病严格 TOP10，支付方式费用只展示有有效收费的方式。
+wildcard 和每个有限 `payment_type × age_group` 组合都必须有记录；无数据组合保留合法空
+`metrics`/`sections`，不能省略。缺失支付字段仍计入 wildcard 的记录分母，但不进入支付方式排行。
+
 `entity_key` 中的枚举值按发布的字符串原样保存，因此允许年龄等枚举值内部的普通空格（例如 `age=50 to 69|gender=*|admission=*`）；模块键和实体键仍禁止首尾空白、换行、回车和制表控制字符。请求 URL 中的空格按 HTTP 客户端规则编码，服务端解码后使用同一实体键顺序。
 
 医院模块补充约束：`hospitals/index.options.facilities[].value` 和
