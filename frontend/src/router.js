@@ -25,7 +25,7 @@ const configs = {
     { key: 'metric', label: '比较指标', values: comparisonMetricOptions },
   ] },
   diseases: { endpoint: '/diseases', eyebrow: '疾病群体画像', title: '疾病画像分析', profile: { key: 'diagnosis_code', path: '/diseases/' }, filters: [{ key: 'diagnosis_code', option: 'diagnoses', label: '疾病' }] },
-  cohorts: { endpoint: '/cohorts/summary', eyebrow: '有限条件群体切片', filters: [
+  cohorts: { endpoint: '/cohorts/summary', eyebrow: '有限条件群体切片', title: '住院记录群体分析', layout: 'cohort', alwaysShowClear: true, filters: [
     { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'gender', option: 'gender', label: '性别' }, { key: 'admission_type', option: 'admission_type', label: '入院方式' },
   ] },
   costs: { endpoint: '/costs/overview', eyebrow: '收费与成本分布', filters: [

@@ -98,7 +98,7 @@
         "options": {"age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"], "gender": ["F", "M", "U"], "admission_type": ["Emergency", "Elective", "Newborn", "Urgent", "Trauma", "Not Available"]},
         "filters": {},
         "metrics": [{"key": "record_count", "label": "符合条件的记录", "value": 2101588, "unit": "条"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.63, "unit": "%"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"}],
-        "sections": [{"key": "diseases", "title": "主要疾病", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}]
+        "sections": [{"key": "diseases", "title": "主要疾病", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}, {"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "0-17岁", "value": 301231}, {"name": "18-29岁", "value": 181248}, {"name": "30-49岁", "value": 426115}, {"name": "50-69岁", "value": 612884}, {"name": "70岁及以上", "value": 580110}]}]
       }
     },
     {
