@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app import create_app
-from app.errors import DatabaseUnavailableError, ResultNotReadyError
-from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotRepository
+from app.errors import (
+    DatabaseUnavailableError,
+    InvalidServiceResultError,
+    ResultNotReadyError,
+)
+from app.repositories.analytics_snapshot import (
+    FixtureAnalyticsSnapshotRepository,
+    MySQLAnalyticsSnapshotRepository,
+)
 from werkzeug.test import EnvironBuilder
 
 
@@ -276,6 +285,80 @@ def test_unknown_and_non_whitelisted_filters_are_rejected():
     assert response.get_json()["code"] == "INVALID_QUERY_PARAMETER"
 
 
+def test_repeated_query_parameters_are_rejected():
+    response = fixture_app().test_client().get(
+        "/api/v1/cohorts/summary?age_group=30%20to%2049&age_group=50%20to%2069"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["details"] == {"parameters": ["age_group"]}
+
+
+def test_analytics_get_routes_reject_head_options_and_post():
+    client = fixture_app().test_client()
+    urls = [
+        "/api/v1/dashboard/overview",
+        "/api/v1/hospitals",
+        "/api/v1/hospitals/1",
+        "/api/v1/diseases",
+        "/api/v1/diseases/NVS005",
+        "/api/v1/cohorts/summary",
+        "/api/v1/costs/overview",
+        "/api/v1/risks/overview",
+        "/api/v1/payments/overview",
+        "/api/v1/data-quality/summary",
+        "/api/v1/models/high-cost/metrics",
+    ]
+    for url in urls:
+        assert client.head(url).status_code == 405
+        for method in ("options", "post"):
+            response = getattr(client, method)(url)
+            assert response.status_code == 405, (method, url)
+            assert response.get_json()["code"] == "METHOD_NOT_ALLOWED"
+
+
+def test_analytics_get_routes_reject_request_bodies():
+    response = fixture_app().test_client().get(
+        "/api/v1/dashboard/overview",
+        data="{}",
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+
+class MissingProfileRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+
+    def fetch(self, module_key, entity_key):
+        if (module_key, entity_key) in {
+            ("hospitals", "profile:2"),
+            ("diseases", "profile:INF012"),
+        }:
+            raise ResultNotReadyError()
+        return self.delegate.fetch(module_key, entity_key)
+
+
+def test_valid_unpublished_profiles_return_empty_results():
+    client = fixture_app(analytics_repository=MissingProfileRepository()).test_client()
+    for path, expected_filter in (
+        ("/api/v1/hospitals/2", {"facility_id": "2"}),
+        ("/api/v1/diseases/INF012", {"diagnosis_code": "INF012"}),
+    ):
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.get_json()["data"]
+        assert data["metrics"] == []
+        assert data["sections"] == []
+        assert data["filters"] == expected_filter
+
+
 def test_cost_dimensions_are_mutually_exclusive():
     response = fixture_app().test_client().get(
         "/api/v1/costs/overview?diagnosis_code=NVS005&facility_id=1"
@@ -379,3 +462,56 @@ def test_analytics_source_must_be_explicit():
     response = app.test_client().get("/api/v1/dashboard/overview")
     assert response.status_code == 500
     assert response.get_json()["code"] == "SERVER_MISCONFIGURED"
+
+
+def test_mysql_adapter_maps_database_failure_and_corrupt_json(monkeypatch):
+    import pymysql
+
+    config = {
+        "MYSQL_HOST": "db",
+        "MYSQL_USER": "reader",
+        "MYSQL_DATABASE": "analytics",
+    }
+    repository = MySQLAnalyticsSnapshotRepository(config)
+
+    def fail_connect(**kwargs):
+        raise pymysql.MySQLError("password=secret should not escape")
+
+    monkeypatch.setattr(pymysql, "connect", fail_connect)
+    with pytest.raises(DatabaseUnavailableError):
+        repository.fetch("dashboard", "overview")
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def execute(self, query, params):
+            self.query = query
+            self.params = params
+
+        def fetchone(self):
+            return {
+                "payload_json": "{not-json}",
+                "data_version": "fixture:bad:v1",
+                "generated_at": "2026-08-18T08:00:00.000000Z",
+            }
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self):
+            return None
+
+    connection = Connection()
+    monkeypatch.setattr(pymysql, "connect", lambda **kwargs: connection)
+    with pytest.raises(InvalidServiceResultError):
+        repository.fetch("dashboard", "overview")
+    assert connection.cursor_instance.params == ("dashboard", "overview")
+    assert "analysis_snapshot_result" in connection.cursor_instance.query

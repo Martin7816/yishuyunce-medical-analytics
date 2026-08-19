@@ -15,6 +15,22 @@ from ..errors import (
 )
 
 
+def _decode_mysql_payload(value):
+    """Decode the JSON column without treating a corrupt row as empty data."""
+
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise InvalidServiceResultError() from error
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise InvalidServiceResultError() from error
+    return value
+
+
 class FixtureAnalyticsSnapshotRepository:
     def __init__(self, fixture_path: Path) -> None:
         self.fixture_path = fixture_path
@@ -61,14 +77,14 @@ LIMIT 1
             raise ServerMisconfiguredError()
         return {
             "host": self.config["MYSQL_HOST"],
-            "port": self.config["MYSQL_PORT"],
+            "port": self.config.get("MYSQL_PORT", 3306),
             "user": self.config["MYSQL_USER"],
             "password": self.config.get("MYSQL_PASSWORD", ""),
             "database": self.config["MYSQL_DATABASE"],
             "charset": "utf8mb4",
-            "connect_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
-            "read_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
-            "write_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
+            "connect_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
+            "read_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
+            "write_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
             "autocommit": True,
         }
 
@@ -94,18 +110,16 @@ LIMIT 1
             raise DatabaseUnavailableError() from error
         if not row:
             raise ResultNotReadyError()
-        payload = row["payload_json"]
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except json.JSONDecodeError as error:
-                # The connection and configuration are usable; the published
-                # row itself is malformed and must use the contract error.
-                raise InvalidServiceResultError() from error
+        try:
+            payload = _decode_mysql_payload(row["payload_json"])
+            data_version = row["data_version"]
+            generated_at = row["generated_at"]
+        except (KeyError, TypeError) as error:
+            raise InvalidServiceResultError() from error
         return {
             "payload": payload,
-            "data_version": row["data_version"],
-            "generated_at": row["generated_at"],
+            "data_version": data_version,
+            "generated_at": generated_at,
         }
 
 

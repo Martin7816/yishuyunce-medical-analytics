@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify
 from werkzeug.exceptions import MethodNotAllowed
 
 from ..errors import InvalidRequestError, ResultNotReadyError
+from .parameters import (
+    query_value,
+    reject_unknown_query_parameters,
+    request_has_body,
+    validate_option,
+)
 
 
 analytics_bp = Blueprint("analytics", __name__)
@@ -21,71 +27,74 @@ HOSPITAL_METRIC_KEYS = frozenset(
 )
 
 
-def _request_has_body() -> bool:
-    """Detect GET bodies even when a client uses chunked transfer encoding."""
-
-    if request.headers.get("Transfer-Encoding"):
-        return True
-    if request.content_length is not None:
-        return request.content_length > 0
-    if request.environ.get("wsgi.input_terminated"):
-        return bool(request.get_data(cache=True))
-    return False
-
-
-@analytics_bp.before_request
-def _enforce_get_only() -> None:
-    if request.method != "GET":
-        raise MethodNotAllowed(valid_methods=["GET"])
-    if _request_has_body():
-        raise InvalidRequestError(
-            "INVALID_REQUEST_FORMAT",
-            "This GET endpoint does not accept a request body.",
-        )
-
-
 def _ok(data: dict):
     return jsonify(
         {"code": "OK", "message": "success", "data": data, "trace_id": g.trace_id}
     )
 
 
-def _reject_unknown(allowed: set[str]) -> None:
-    unknown = sorted(set(request.args) - allowed)
-    repeated = sorted(name for name, values in request.args.lists() if len(values) > 1)
-    if unknown or repeated:
+@analytics_bp.before_request
+def enforce_read_only_request() -> None:
+    """Keep all analytics snapshot endpoints strictly GET-only."""
+
+    if request.method != "GET":
+        raise MethodNotAllowed(valid_methods=["GET"])
+    if request_has_body():
         raise InvalidRequestError(
-            "INVALID_QUERY_PARAMETER",
-            "One or more query parameters are not supported.",
-            {"parameters": sorted(set(unknown + repeated))},
+            "INVALID_REQUEST_FORMAT",
+            "These read-only endpoints do not accept a request body.",
         )
+
+
+def _reject_unknown(allowed: set[str]) -> None:
+    reject_unknown_query_parameters(allowed)
 
 
 def _get(module: str, entity: str):
     return current_app.extensions["analytics_snapshot_service"].get(module, entity)
 
 
-def _option_values(payload: dict, option: str) -> set[str]:
-    raw = payload.get("options", {}).get(option, [])
-    values = set()
-    for item in raw:
-        values.add(str(item.get("value")) if isinstance(item, dict) else str(item))
-    return values
+def _empty_result(base: dict, filters: dict[str, str]) -> dict:
+    """Build a valid empty response from a published base snapshot."""
+
+    result = dict(base)
+    result["filters"] = dict(filters)
+    result["metrics"] = []
+    result["sections"] = []
+    return result
+
+
+def _get_or_empty(
+    module: str,
+    entity: str,
+    base: dict,
+    filters: dict[str, str],
+) -> dict:
+    try:
+        return _get(module, entity)
+    except ResultNotReadyError:
+        # A known enum value with no published aggregate is a legal empty
+        # result. A missing base snapshot is still a dependency error because
+        # there is no metadata from which to form a stable response.
+        return _empty_result(base, filters)
 
 
 def _validate_option(
-    parameter: str,
+    parameter_name: str,
     value: str | None,
     payload: dict,
     *,
     option_name: str | None = None,
 ) -> None:
-    option_name = option_name or parameter
-    if value is not None and value not in _option_values(payload, option_name):
+    validate_option(parameter_name, value, payload, option_name=option_name)
+
+
+def _validate_metric(value: str | None) -> None:
+    if value is not None and value not in HOSPITAL_METRIC_KEYS:
         raise InvalidRequestError(
             "INVALID_QUERY_PARAMETER",
-            f"The {parameter} value is not supported.",
-            {"parameter": parameter},
+            "The metric value is not supported.",
+            {"parameter": "metric"},
         )
 
 
@@ -99,22 +108,14 @@ def dashboard_overview():
 def hospitals_index():
     _reject_unknown({"facility_a", "facility_b", "metric"})
     payload = _get("hospitals", "index")
-    for name in ("facility_a", "facility_b"):
-        _validate_option(
-            name,
-            request.args.get(name),
-            payload,
-            option_name="facilities",
-        )
-    metric = request.args.get("metric")
-    if metric is not None and metric not in HOSPITAL_METRIC_KEYS:
-        raise InvalidRequestError(
-            "INVALID_QUERY_PARAMETER", "The metric value is not supported.",
-            {"parameter": "metric"},
-        )
+    facility_a = query_value("facility_a")
+    facility_b = query_value("facility_b")
+    metric = query_value("metric")
+    _validate_option("facility_a", facility_a, payload, option_name="facilities")
+    _validate_option("facility_b", facility_b, payload, option_name="facilities")
+    _validate_metric(metric)
 
-    selected = [request.args.get("facility_a"), request.args.get("facility_b")]
-    if selected[0] and selected[0] == selected[1]:
+    if facility_a and facility_a == facility_b:
         raise InvalidRequestError(
             "INVALID_QUERY_PARAMETER",
             "facility_a and facility_b must identify different facilities.",
@@ -122,33 +123,34 @@ def hospitals_index():
         )
 
     filters = {
-        name: request.args[name]
-        for name in ("facility_a", "facility_b", "metric")
-        if request.args.get(name)
+        name: value
+        for name, value in (
+            ("facility_a", facility_a),
+            ("facility_b", facility_b),
+            ("metric", metric),
+        )
+        if value is not None
     }
+    if not filters:
+        return _ok(payload)
+
     profiles = []
-    for facility_id in filter(None, selected):
+    for facility_id in filter(None, (facility_a, facility_b)):
         try:
             profiles.append(_get("hospitals", f"profile:{facility_id}"))
         except ResultNotReadyError:
             # A valid facility can be enumerated before its profile is
-            # published. That is a legal empty filter result, not a module
-            # outage; the index itself was already available above.
-            empty = {
-                **payload,
-                "filters": filters,
-                "metrics": [],
-                "sections": [],
-                "comparison": [],
-            }
-            return _ok(empty)
-
-    if not filters:
-        return _ok(payload)
+            # published. The index remains a legal empty filter result.
+            return _ok(
+                {
+                    **_empty_result(payload, filters),
+                    "comparison": [],
+                }
+            )
 
     result = {**payload, "filters": filters}
     if profiles:
-        # Comparison is a response-only composition of complete snapshots;
+        # Comparison is response-only composition of complete snapshots;
         # metrics, ordering, units, and null semantics stay in the snapshots.
         result["comparison"] = profiles
     return _ok(result)
@@ -159,7 +161,14 @@ def hospital_profile(facility_id: str):
     _reject_unknown(set())
     index = _get("hospitals", "index")
     _validate_option("facility_id", facility_id, index, option_name="facilities")
-    return _ok(_get("hospitals", f"profile:{facility_id}"))
+    return _ok(
+        _get_or_empty(
+            "hospitals",
+            f"profile:{facility_id}",
+            index,
+            {"facility_id": facility_id},
+        )
+    )
 
 
 @analytics_bp.get("/api/v1/diseases")
@@ -176,15 +185,29 @@ def diseases_index():
 def disease_profile(diagnosis_code: str):
     _reject_unknown(set())
     index = _get("diseases", "index")
-    _validate_option("diagnoses", diagnosis_code, index)
-    return _ok(_get("diseases", f"profile:{diagnosis_code}"))
+    _validate_option(
+        "diagnosis_code", diagnosis_code, index, option_name="diagnoses"
+    )
+    return _ok(
+        _get_or_empty(
+            "diseases",
+            f"profile:{diagnosis_code}",
+            index,
+            {"diagnosis_code": diagnosis_code},
+        )
+    )
 
 
 def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
     base = _get(module, base_entity)
+    values = {parameter: query_value(parameter) for parameter in options}
     for parameter, option_name in options.items():
-        _validate_option(parameter, request.args.get(parameter), base, option_name=option_name)
-    selected = {key: value for key in options if (value := request.args.get(key))}
+        _validate_option(parameter, values[parameter], base, option_name=option_name)
+    selected = {
+        parameter: value
+        for parameter, value in values.items()
+        if value is not None
+    }
     if not selected:
         return base
     parts = []
@@ -192,15 +215,7 @@ def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
         value = selected.get(parameter, "*")
         parts.append(f"{parameter.replace('_group', '').replace('_type', '')}={value}")
     entity = "|".join(parts)
-    try:
-        return _get(module, entity)
-    except ResultNotReadyError:
-        # A valid filter without a published aggregate is a legal empty result.
-        result = dict(base)
-        result["filters"] = selected
-        result["metrics"] = []
-        result["sections"] = []
-        return result
+    return _get_or_empty(module, entity, base, selected)
 
 
 @analytics_bp.get("/api/v1/cohorts/summary")
@@ -211,7 +226,11 @@ def cohort_summary():
         _filtered_snapshot(
             "cohorts",
             "age=*|gender=*|admission=*",
-            {"age_group": "age_group", "gender": "gender", "admission_type": "admission_type"},
+            {
+                "age_group": "age_group",
+                "gender": "gender",
+                "admission_type": "admission_type",
+            },
         )
     )
 
@@ -220,32 +239,39 @@ def cohort_summary():
 def cost_overview():
     allowed = {"diagnosis_code", "facility_id", "severity"}
     _reject_unknown(allowed)
-    if request.args.get("diagnosis_code") and request.args.get("facility_id"):
+    diagnosis_code = query_value("diagnosis_code")
+    facility_id = query_value("facility_id")
+    severity = query_value("severity")
+    if diagnosis_code is not None and facility_id is not None:
         raise InvalidRequestError(
             "INVALID_QUERY_PARAMETER",
             "diagnosis_code and facility_id are mutually exclusive.",
         )
     # Full whitelists are published by the disease and hospital modules.
-    if request.args.get("diagnosis_code"):
+    if diagnosis_code is not None:
         _validate_option(
             "diagnosis_code",
-            request.args["diagnosis_code"],
+            diagnosis_code,
             _get("diseases", "index"),
             option_name="diagnoses",
         )
-    if request.args.get("facility_id"):
+    if facility_id is not None:
         _validate_option(
             "facility_id",
-            request.args["facility_id"],
+            facility_id,
             _get("hospitals", "index"),
             option_name="facilities",
         )
     base = _get("costs", "diagnosis=*|facility=*|severity=*")
-    _validate_option("severity", request.args.get("severity"), base)
+    _validate_option("severity", severity, base)
     selected = {
-        name: request.args[name]
-        for name in ("diagnosis_code", "facility_id", "severity")
-        if request.args.get(name)
+        name: value
+        for name, value in (
+            ("diagnosis_code", diagnosis_code),
+            ("facility_id", facility_id),
+            ("severity", severity),
+        )
+        if value is not None
     }
     if not selected:
         return _ok(base)
@@ -254,41 +280,38 @@ def cost_overview():
         selected.get("facility_id", "*"),
         selected.get("severity", "*"),
     )
-    try:
-        payload = _get("costs", entity)
-    except ResultNotReadyError:
-        payload = {**base, "filters": selected, "metrics": [], "sections": []}
-    return _ok(payload)
+    return _ok(_get_or_empty("costs", entity, base, selected))
 
 
 @analytics_bp.get("/api/v1/risks/overview")
 def risk_overview():
     allowed = {"age_group", "diagnosis_code"}
     _reject_unknown(allowed)
-    if request.args.get("diagnosis_code"):
+    age_group = query_value("age_group")
+    diagnosis_code = query_value("diagnosis_code")
+    if diagnosis_code is not None:
         _validate_option(
             "diagnosis_code",
-            request.args["diagnosis_code"],
+            diagnosis_code,
             _get("diseases", "index"),
             option_name="diagnoses",
         )
     base = _get("risks", "age=*|diagnosis=*")
-    _validate_option("age_group", request.args.get("age_group"), base)
+    _validate_option("age_group", age_group, base)
     selected = {
-        name: request.args[name]
-        for name in ("age_group", "diagnosis_code")
-        if request.args.get(name)
+        name: value
+        for name, value in (
+            ("age_group", age_group),
+            ("diagnosis_code", diagnosis_code),
+        )
+        if value is not None
     }
     if not selected:
         return _ok(base)
     entity = "age={}|diagnosis={}".format(
         selected.get("age_group", "*"), selected.get("diagnosis_code", "*")
     )
-    try:
-        payload = _get("risks", entity)
-    except ResultNotReadyError:
-        payload = {**base, "filters": selected, "metrics": [], "sections": []}
-    return _ok(payload)
+    return _ok(_get_or_empty("risks", entity, base, selected))
 
 
 @analytics_bp.get("/api/v1/payments/overview")
@@ -297,7 +320,9 @@ def payment_overview():
     _reject_unknown(allowed)
     return _ok(
         _filtered_snapshot(
-            "payments", "payment=*|age=*", {"payment_type": "payment_type", "age_group": "age_group"}
+            "payments",
+            "payment=*|age=*",
+            {"payment_type": "payment_type", "age_group": "age_group"},
         )
     )
 
@@ -306,10 +331,11 @@ def payment_overview():
 def data_quality_summary():
     _reject_unknown({"data_version"})
     payload = _get("data_quality", "summary")
-    requested = request.args.get("data_version")
-    if requested and requested != payload["data_version"]:
+    requested = query_value("data_version")
+    if requested is not None and requested != payload["data_version"]:
         raise InvalidRequestError(
-            "INVALID_QUERY_PARAMETER", "The data_version is not available.",
+            "INVALID_QUERY_PARAMETER",
+            "The data_version is not available.",
             {"parameter": "data_version"},
         )
     return _ok(payload)

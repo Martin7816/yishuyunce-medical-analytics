@@ -74,6 +74,49 @@ curl.exe 'http://127.0.0.1:5000/api/v1/hospitals?facility_a=001456&facility_b=00
 > 冻结记录：2026-08-18，Issue #10 的字段、四态和边界语义已按 Resolution、真实服务结果和 `backend/tests/test_disease_top10_api.py` 复核；后续公共字段变更必须先说明上下游影响。
 > 上游依据：`02-metrics-and-data-contract.md` V1.1（Issue #7、#9，`FROZEN`）
 
+## 0. Issue #40 统一分析快照读取基础
+
+终局分析页面通过一个只读 Service interface 获取已发布快照，不在路由中连接数据库、解析 JSON 或重新计算指标：
+
+```python
+AnalyticsSnapshotService.get(module_key, entity_key) -> dict
+```
+
+返回值是冻结 `payload` 加上同一批次的 `data_version` 和 `generated_at`。`FixtureAnalyticsSnapshotRepository` 与 `MySQLAnalyticsSnapshotRepository` 是这个 interface 的两个 adapter；MySQL adapter 只读取 `analysis_snapshot_result`，查询参数使用绑定变量，不读取 CSV/HDFS。
+
+### 0.1 数据源和配置
+
+`ANALYTICS_DATA_SOURCE` 必须显式设置为 `fixture` 或 `mysql`，未知、缺失值不会悄悄回退到 fixture，而是在请求时返回 `500 SERVER_MISCONFIGURED`。fixture 只用于联调和契约测试；真实模式还必须提供 `MYSQL_HOST`、`MYSQL_USER`、`MYSQL_DATABASE`，密码只放在未提交的 `backend/.env` 中。
+
+公共快照的结构校验位于 `shared/analytics_snapshot_contract.py`，Repository 负责读取和依赖错误映射，`AnalyticsSnapshotService` 负责统一验证和时间格式化。MySQL 已发布快照的 JSON 损坏、字段未知、版本/时间或 payload 不符合结构时返回 `500 SERVICE_RESULT_INVALID`；fixture 文件无法读取或配置错误时返回 `500 SERVER_MISCONFIGURED`，两者都不会降级为空答案。
+
+### 0.2 分析路由的参数和实体键
+
+所有分析 GET 路由严格拒绝 `HEAD`、`OPTIONS`、其他 HTTP 方法和请求体。查询参数先经过 `backend/app/routes/parameters.py` 的白名单检查，再按索引快照的 `options` 校验枚举值；重复参数也会返回 `400 INVALID_QUERY_PARAMETER`。费用路由的 `diagnosis_code` 与 `facility_id` 互斥。
+
+实体键只能由服务端按以下顺序拼接，调用方不得自行改顺序：
+
+| 场景 | entity_key |
+|---|---|
+| 总览、索引、汇总 | `overview`、`index` 或固定 `summary` |
+| 医院画像 | `profile:{facility_id}` |
+| 疾病画像 | `profile:{diagnosis_code}` |
+| 群体 | `age={age_group}\|gender={gender}\|admission={admission_type}` |
+| 费用 | `diagnosis={diagnosis_code}\|facility={facility_id}\|severity={severity}` |
+| 风险 | `age={age_group}\|diagnosis={diagnosis_code}` |
+| 支付 | `payment={payment_type}\|age={age_group}` |
+
+合法枚举值对应的具体快照尚未发布时，接口返回 `200`，保留标题、描述、版本和时间，并将 `metrics`、`sections` 置为空；整个模块的基础快照未发布时仍返回 `503 RESULT_NOT_READY`。数据库连接/查询失败返回 `503 DATABASE_UNAVAILABLE`。
+
+### 0.3 Issue #40 验证命令
+
+```powershell
+python -m pip install -r backend/requirements.txt
+python -m pytest -q backend/tests/test_analytics_api.py backend/tests/test_disease_top10_api.py
+```
+
+测试覆盖统一响应信封和 `X-Trace-ID`、未知/重复参数、枚举校验、费用互斥、实体键顺序、合法空结果、方法/请求体错误、配置缺失、数据库依赖错误和损坏快照。完整的终局字段和模块清单见 [07-terminal-product-contract.md](07-terminal-product-contract.md)。
+
 ## 1. 范围和基本原则
 
 本接口只返回已经清洗、聚合、校验并发布到 MySQL 表 `disease_case_count_top10_result` 的疾病病例量 TOP10。病例量单位固定为 `discharge_records`，中文含义是“有效住院出院记录数”，不是患者人数。
