@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "input": "dashboard_edge_sample.csv",
+  "raw_rows": 4,
+  "records": 47,
+  "cohort_key_count": 36,
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-19T00:00:00.000000Z",
+  "notes": [
+    "The fixed batch includes the cohort module plus the existing dashboard, hospital, payment, risk and disease modules.",
+    "The edge rows cover 120 + length normalization, invalid length, negative amount, invalid cost and missing diagnosis/severity values."
+  ]
+}

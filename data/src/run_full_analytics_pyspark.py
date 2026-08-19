@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,14 @@ FIELDS = {
 }
 
 FIELD_ALIASES = {"facility_id": ("Permanent Facility Id", "Facility ID")}
+
+COHORT_MISSING = "__COHORT_MISSING__"
+COHORT_FIELDS = ("age", "gender", "admission")
+COHORT_OPTION_KEYS = {
+    "age": "age_group",
+    "gender": "gender",
+    "admission": "admission_type",
+}
 
 
 def clean_frame(raw: DataFrame) -> DataFrame:
@@ -194,8 +203,8 @@ def grouped_rows(
     return output
 
 
-def _summary_aggregation(frame: DataFrame, group: str | None = None) -> DataFrame:
-    aggregations = [
+def _summary_aggregation_expressions() -> list[Any]:
+    return [
         F.count("*").alias("record_count"),
         F.avg(F.when(F.col("los") >= 0, F.col("los")).otherwise(None)).alias(
             "avg_los"
@@ -216,6 +225,10 @@ def _summary_aggregation(frame: DataFrame, group: str | None = None) -> DataFram
             "severe_yes"
         ),
     ]
+
+
+def _summary_aggregation(frame: DataFrame, group: str | None = None) -> DataFrame:
+    aggregations = _summary_aggregation_expressions()
     return frame.groupBy(group).agg(*aggregations) if group else frame.agg(*aggregations)
 
 
@@ -316,27 +329,7 @@ def summary_metrics(
 ) -> list[dict[str, Any]]:
     """Build reusable metrics with field-valid averages and record denominators."""
 
-    aggregate = frame.agg(
-        F.count("*").alias("record_count"),
-        F.avg(F.when(F.col("los") >= 0, F.col("los")).otherwise(None)).alias(
-            "avg_los"
-        ),
-        F.avg(
-            F.when(F.col("charges") >= 0, F.col("charges")).otherwise(None)
-        ).alias("avg_charges"),
-        F.avg(F.when(F.col("costs") >= 0, F.col("costs")).otherwise(None)).alias(
-            "avg_costs"
-        ),
-        F.sum(F.when(F.col("emergency") == "Y", 1).otherwise(0)).alias(
-            "emergency_yes"
-        ),
-        F.sum(
-            F.when(F.col("medical_surgical").contains("Surgical"), 1).otherwise(0)
-        ).alias("surgical_yes"),
-        F.sum(
-            F.when(F.col("severity").isin("Major", "Extreme"), 1).otherwise(0)
-        ).alias("severe_yes"),
-    ).first()
+    aggregate = frame.agg(*_summary_aggregation_expressions()).first()
 
     denominator = aggregate["record_count"]
     return [
@@ -378,6 +371,198 @@ def summary_metrics(
             "%",
         ),
     ]
+
+
+def _cohort_dimension_frame(frame: DataFrame) -> DataFrame:
+    """Add non-null cube dimensions without changing the public clean frame.
+
+    A missing source value is represented by a sentinel before ``cube``.  This
+    keeps it distinct from the null values that Spark uses for wildcard rollup
+    rows, so wildcard filters include missing values while specific filters do
+    not.
+    """
+
+    result = frame
+    for field in COHORT_FIELDS:
+        result = result.withColumn(
+            f"_cohort_{field}",
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(COHORT_MISSING)),
+        )
+    return result
+
+
+def _cohort_options(frame: DataFrame) -> dict[str, list[str]]:
+    def values(field: str) -> list[str]:
+        return [
+            row[field]
+            for row in frame.where(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0)
+            )
+            .select(field)
+            .distinct()
+            .orderBy(field)
+            .collect()
+        ]
+
+    return {COHORT_OPTION_KEYS[field]: values(field) for field in COHORT_FIELDS}
+
+
+def _cohort_valid_rollup(row_field: str, options: list[str]):
+    return F.col(row_field).isNull() | F.col(row_field).isin(options)
+
+
+def _cohort_tuple_from_row(row: Any) -> tuple[str | None, str | None, str | None]:
+    return tuple(
+        None if row[f"_cohort_{field}"] is None else str(row[f"_cohort_{field}"])
+        for field in COHORT_FIELDS
+    )  # type: ignore[return-value]
+
+
+def _cohort_summary_rows(
+    frame: DataFrame, options: dict[str, list[str]]
+) -> dict[tuple[str | None, str | None, str | None], Any]:
+    """Aggregate all wildcard and finite filter combinations in one cube."""
+
+    decorated = _cohort_dimension_frame(frame)
+    grouped = decorated.cube(
+        *(f"_cohort_{field}" for field in COHORT_FIELDS)
+    ).agg(*_summary_aggregation_expressions())
+    valid = grouped.where(
+        _cohort_valid_rollup("_cohort_age", options["age_group"])
+        & _cohort_valid_rollup("_cohort_gender", options["gender"])
+        & _cohort_valid_rollup("_cohort_admission", options["admission_type"])
+    )
+    return {
+        _cohort_tuple_from_row(row): row
+        for row in valid.collect()
+        if int(row["record_count"] or 0) > 0
+    }
+
+
+def _cohort_section_rows(
+    frame: DataFrame,
+    group: str,
+    options: dict[str, list[str]],
+    *,
+    limit: int | None = 10,
+) -> dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]]:
+    """Aggregate one chart dimension for every legal cohort filter."""
+
+    decorated = _cohort_dimension_frame(frame).withColumn(
+        "_cohort_item",
+        F.when(
+            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            F.col(group),
+        ),
+    )
+    grouped = decorated.cube(
+        *(f"_cohort_{field}" for field in COHORT_FIELDS),
+        "_cohort_item",
+    ).count()
+    valid = grouped.where(
+        F.col("_cohort_item").isNotNull()
+        & _cohort_valid_rollup("_cohort_age", options["age_group"])
+        & _cohort_valid_rollup("_cohort_gender", options["gender"])
+        & _cohort_valid_rollup("_cohort_admission", options["admission_type"])
+    )
+    ordered = valid.orderBy(
+        F.asc("_cohort_age"),
+        F.asc("_cohort_gender"),
+        F.asc("_cohort_admission"),
+        F.desc("count"),
+        F.asc("_cohort_item"),
+    )
+    result: dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]] = {}
+    for row in ordered.collect():
+        key = _cohort_tuple_from_row(row)
+        values = result.setdefault(key, [])
+        if limit is None or len(values) < limit:
+            values.append(
+                {
+                    "name": str(row["_cohort_item"]),
+                    "value": _rounded(row["count"], integer=True),
+                }
+            )
+    return result
+
+
+def _cohort_entity_key(
+    values: tuple[str | None, str | None, str | None]
+) -> str:
+    return "|".join(
+        f"{field}={value if value is not None else '*'}"
+        for field, value in zip(COHORT_FIELDS, values)
+    )
+
+
+def _cohort_record(
+    values: tuple[str | None, str | None, str | None],
+    summary_row: Any | None,
+    section_values: dict[str, list[dict[str, Any]]],
+    options: dict[str, list[str]],
+) -> dict[str, Any]:
+    filters = {
+        COHORT_OPTION_KEYS[field]: value
+        for field, value in zip(COHORT_FIELDS, values)
+        if value is not None
+    }
+    if summary_row is None:
+        metrics: list[dict[str, Any]] = []
+        sections: list[dict[str, Any]] = []
+    else:
+        metrics = _summary_metrics_from_row(summary_row)
+        sections = [
+            section("diseases", "主要疾病", section_values["diagnosis"]),
+            section("severity", "严重程度", section_values["severity"]),
+            section("age", "年龄结构", section_values["age"]),
+            section("gender", "性别结构", section_values["gender"]),
+        ]
+    return record(
+        "cohorts",
+        _cohort_entity_key(values),
+        "住院记录群体分析",
+        "有限白名单群体筛选；记录不按患者去重。",
+        metrics,
+        sections,
+        options if values == (None, None, None) else None,
+        filters,
+    )
+
+
+def build_cohort_records(frame: DataFrame) -> list[dict[str, Any]]:
+    """Build the wildcard and complete finite cohort snapshot matrix."""
+
+    options = _cohort_options(frame)
+    values = (
+        [None, *options["age_group"]],
+        [None, *options["gender"]],
+        [None, *options["admission_type"]],
+    )
+    summary_rows = _cohort_summary_rows(frame, options)
+    section_rows = {
+        "diagnosis": _cohort_section_rows(frame, "diagnosis", options, limit=10),
+        "severity": _cohort_section_rows(frame, "severity", options, limit=10),
+        "age": _cohort_section_rows(frame, "age", options, limit=None),
+        "gender": _cohort_section_rows(frame, "gender", options, limit=None),
+    }
+    records = []
+    for combination in product(*values):
+        key = tuple(combination)
+        records.append(
+            _cohort_record(
+                key,
+                summary_rows.get(key),
+                {
+                    name: rows.get(key, [])
+                    for name, rows in section_rows.items()
+                },
+                options,
+            )
+        )
+    return records
 
 
 def record(
@@ -837,6 +1022,19 @@ def build_records(
         name: rows(scoped, name, limit=None)
         for name in ("age", "payment", "diagnosis", "severity")
     }
+
+    def option_values(name: str) -> list[str]:
+        return [
+            row[name]
+            for row in scoped.where(
+                F.col(name).isNotNull() & (F.length(F.col(name)) > 0)
+            )
+            .select(name)
+            .distinct()
+            .orderBy(name)
+            .collect()
+        ]
+
     dashboard_frame = frame.where(F.coalesce(F.col("in_scope"), F.lit(False)))
     dashboard = build_dashboard_record(dashboard_frame)
     records: list[dict[str, Any]] = [dashboard]
@@ -946,36 +1144,7 @@ def build_records(
             )
         )
 
-    def option_values(name: str) -> list[str]:
-        return [
-            row[name]
-            for row in scoped.where(F.length(F.col(name)) > 0)
-            .select(name)
-            .distinct()
-            .orderBy(name)
-            .collect()
-        ]
-
-    records.append(
-        record(
-            "cohorts",
-            "age=*|gender=*|admission=*",
-            "住院记录群体分析",
-            "有限白名单群体筛选；记录不按患者去重。",
-            common,
-            [
-                section("diseases", "主要疾病", overall["diagnosis"][:10]),
-                section("severity", "严重程度", overall["severity"][:10]),
-                section("age", "年龄结构", overall["age"][:10]),
-            ],
-            {
-                "age_group": option_values("age"),
-                "gender": option_values("gender"),
-                "admission_type": option_values("admission"),
-            },
-            {},
-        )
-    )
+    records.extend(build_cohort_records(scoped))
 
     quantiles = cost_frame.agg(
         *[

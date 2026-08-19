@@ -76,6 +76,20 @@ def test_non_utc_generated_at_is_rejected(tmp_path):
         load_snapshot(invalid)
 
 
+def test_entity_key_preserves_internal_spaces_in_published_enum_values(tmp_path):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    cohort = next(row for row in document["records"] if row["module_key"] == "cohorts")
+    cohort["entity_key"] = "age=50 to 69|gender=*|admission=*"
+    invalid = tmp_path / "cohort-space-key.json"
+    invalid.write_text(json.dumps(document), encoding="utf-8")
+
+    loaded = load_snapshot(invalid)
+    assert next(
+        row for row in loaded["records"] if row["module_key"] == "cohorts"
+    )["entity_key"] == "age=50 to 69|gender=*|admission=*"
+
+
 def test_publish_rolls_back_when_post_write_integrity_check_fails(monkeypatch):
     class FakeCursor:
         def __enter__(self):

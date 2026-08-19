@@ -196,8 +196,10 @@ def validate_snapshot_document(document: Any) -> dict:
         _object_keys(record, {"module_key", "entity_key", "payload"}, field)
         module_key = _string(record.get("module_key"), f"{field}.module_key", max_length=64)
         entity_key = _string(record.get("entity_key"), f"{field}.entity_key", max_length=191)
-        if any(character.isspace() for character in module_key + entity_key):
-            _fail(f"{field} 的主键不能含空白")
+        if any(character in "\r\n\t" for character in module_key):
+            _fail(f"{field}.module_key 不能含控制空白")
+        if any(character in "\r\n\t" for character in entity_key):
+            _fail(f"{field}.entity_key 不能含控制空白")
         key = (module_key, entity_key)
         if key in seen:
             _fail(f"快照主键重复: {key}")
