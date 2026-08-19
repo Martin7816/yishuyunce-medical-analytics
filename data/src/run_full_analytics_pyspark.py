@@ -895,12 +895,18 @@ def build_records(
 
     diagnosis_options_frame = (
         scoped.where(F.length(F.col("diagnosis_code")) > 0)
-        .select("diagnosis_code", "diagnosis")
-        .dropDuplicates(["diagnosis_code"])
+        .groupBy("diagnosis_code")
+        .agg(
+            F.min(
+                F.when(
+                    F.length(F.col("diagnosis")) > 0, F.col("diagnosis")
+                )
+            ).alias("diagnosis")
+        )
     )
     diagnosis_options = [
         {"value": row.diagnosis_code, "label": row.diagnosis or row.diagnosis_code}
-        for row in diagnosis_options_frame.orderBy("diagnosis_code").limit(1000).collect()
+        for row in diagnosis_options_frame.orderBy("diagnosis_code").collect()
     ]
     diagnosis_summaries = grouped_summary_metrics(scoped, "diagnosis_code")
     diagnosis_ages = grouped_rows(scoped, "diagnosis_code", "age")
