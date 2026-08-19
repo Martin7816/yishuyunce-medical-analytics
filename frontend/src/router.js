@@ -31,9 +31,9 @@ const configs = {
   costs: { endpoint: '/costs/overview', eyebrow: '收费与成本分布', filters: [
     { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病' }, { key: 'facility_id', remote: '/hospitals', option: 'facilities', label: '医院' }, { key: 'severity', option: 'severity', label: '严重程度', values: severityOptions },
   ], mutuallyExclusive: ['diagnosis_code', 'facility_id'] },
-  risks: { endpoint: '/risks/overview', eyebrow: '严重程度与风险结构', filters: [
+  risks: { endpoint: '/risks/overview', eyebrow: '严重程度与风险结构', title: '病情严重程度与风险分析', layout: 'risk', alwaysShowClear: true, boundaryNotice: '本页仅展示住院出院记录的群体统计，不构成个人诊断、治疗建议或因果判断。', filters: [
     { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病' },
-  ], disclaimer: '群体统计不构成个人诊断、治疗建议或因果判断。' },
+  ] },
   payments: { endpoint: '/payments/overview', eyebrow: '主支付方式结构', filters: [
     { key: 'payment_type', option: 'payment_type', label: '支付方式' }, { key: 'age_group', option: 'age_group', label: '年龄组' },
   ] },

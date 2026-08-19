@@ -14,6 +14,9 @@ let chart
 let observer
 let resizeFrame = 0
 const format = (value) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value
+const compactFormat = (value) => typeof value === 'number'
+  ? new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+  : value
 const isChartType = (type) => chartTypes.has(type)
 const isListType = (type) => listTypes.has(type)
 
@@ -38,7 +41,7 @@ function option() {
   return {
     animationDuration: 350, grid: { left: 18, right: 34, top: 14, bottom: 22, containLabel: true },
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: format },
-    xAxis: { type: 'value', splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
+    xAxis: { type: 'value', axisLabel: { formatter: compactFormat }, splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
     yAxis: { type: 'category', inverse: true, data: items.map(item => item.name), axisLabel: { width: 135, overflow: 'truncate' } },
     series: [{ type: 'bar', data: items.map(item => item.value), barMaxWidth: 20, itemStyle: { color: '#297b7f', borderRadius: [0, 5, 5, 0] } }],
   }
