@@ -12,9 +12,24 @@ const listTypes = new Set(['status', 'table'])
 const element = ref(null)
 let chart
 let observer
+let resizeFrame = 0
 const format = (value) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value
 const isChartType = (type) => chartTypes.has(type)
 const isListType = (type) => listTypes.has(type)
+
+function cancelScheduledResize() {
+  if (!resizeFrame) return
+  cancelAnimationFrame(resizeFrame)
+  resizeFrame = 0
+}
+
+function scheduleResize() {
+  cancelScheduledResize()
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0
+    chart?.resize()
+  })
+}
 
 function option() {
   const items = props.section.items || []
@@ -30,14 +45,14 @@ function option() {
 }
 async function render() {
   await nextTick()
-  observer?.disconnect(); chart?.dispose()
+  observer?.disconnect(); cancelScheduledResize(); chart?.dispose()
   if (!element.value || !option()) return
   chart = init(element.value); chart.setOption(option())
-  observer = new ResizeObserver(() => chart?.resize()); observer.observe(element.value)
+  observer = new ResizeObserver(scheduleResize); observer.observe(element.value)
 }
 watch(() => props.section, render, { deep: true })
 onMounted(render)
-onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
+onBeforeUnmount(() => { observer?.disconnect(); cancelScheduledResize(); chart?.dispose() })
 </script>
 <template>
   <div v-if="isListType(section.type)" class="status-grid">

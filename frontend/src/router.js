@@ -24,7 +24,7 @@ const configs = {
     { key: 'facility_a', option: 'facilities', label: '医院 A' }, { key: 'facility_b', option: 'facilities', label: '医院 B' },
     { key: 'metric', label: '比较指标', values: comparisonMetricOptions },
   ] },
-  diseases: { endpoint: '/diseases', eyebrow: '疾病群体画像', profile: { key: 'diagnosis_code', path: '/diseases/' }, filters: [{ key: 'diagnosis_code', option: 'diagnoses', label: '疾病' }] },
+  diseases: { endpoint: '/diseases', eyebrow: '疾病群体画像', title: '疾病画像分析', profile: { key: 'diagnosis_code', path: '/diseases/' }, filters: [{ key: 'diagnosis_code', option: 'diagnoses', label: '疾病' }] },
   cohorts: { endpoint: '/cohorts/summary', eyebrow: '有限条件群体切片', filters: [
     { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'gender', option: 'gender', label: '性别' }, { key: 'admission_type', option: 'admission_type', label: '入院方式' },
   ] },
