@@ -278,6 +278,29 @@ python data/src/publish_analytics_snapshot_mysql.py `
 
 真实 CSV、快照和数据库凭证不提交 Git；#55 的实际键数量、空组合数量、版本、MySQL 对照和回滚结果以 `evidence/55/README.md` 为准。后端使用 `GET /api/v1/cohorts/summary` 按相同 entity key 读取，前端只渲染返回顺序，不在请求或页面重新聚合。
 
+### 4.5 病情严重程度与风险快照（Issue #63）
+
+风险模块继续复用统一清洗帧，实体键固定为 `age={值或*}|diagnosis={值或*}`，请求白名单为 `age_group`、`diagnosis_code`。年龄枚举来自纳入清洗帧，疾病选项来自诊断编码及其稳定描述标签；通配与全部有限笛卡尔积都必须发布，合法空组合保留为 `metrics=[]/sections=[]`。
+
+风险指标的分母是当前筛选后的有效住院出院记录数；`Major`/`Extreme` 为高风险记录。快照发布高风险记录数、比例（`0—1`，单位 `%`）、高风险平均住院时长/收费/成本，并提供严重程度、死亡风险、离院去向、高风险年龄和高风险疾病 TOP10 分布。排行统一按 `value` 降序、`name` 升序，结果只作群体描述，不作诊断、治疗或因果判断。
+
+固定边界样例和完整 CSV 均使用独立标准库脚本逐键重算，命令如下：
+
+```powershell
+python data/src/run_full_analytics_pyspark.py `
+  --input "<本地 CSV>" `
+  --output "<本地临时目录>\real-full.json" `
+  --module all `
+  --generated-at 2026-08-19T00:00:00Z
+python data/src/verify_risk_snapshot.py `
+  --input "<本地 CSV>" `
+  --snapshot "<本地临时目录>\real-full.json"
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<本地临时目录>\real-full.json"
+```
+
+风险快照的固定样例为 12 个键（8 个非空、4 个空组合）；本次真实 CSV 为 2,868 个键（2,614 个非空、254 个空组合），5 个年龄枚举、477 个诊断编码，原始/纳入记录均为 2,101,588。独立核对、MySQL 逐键比较和事务回滚的实际输出见 [`evidence/63/README.md`](../evidence/63/README.md)。
+
 ## 5. VM 启动、健康检查与停止
 
 ### 5.1 启动前检查

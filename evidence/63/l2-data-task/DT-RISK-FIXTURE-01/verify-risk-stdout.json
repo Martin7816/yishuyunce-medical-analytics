@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "module": "risks",
+  "raw_rows": 4,
+  "scoped_rows": 3,
+  "risk_key_count": 12,
+  "nonempty_combination_count": 8,
+  "empty_combination_count": 4,
+  "option_counts": {
+    "age_group": 3,
+    "diagnosis_code": 2
+  },
+  "wildcard_record_count": 3,
+  "wildcard_high_risk_count": 2,
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

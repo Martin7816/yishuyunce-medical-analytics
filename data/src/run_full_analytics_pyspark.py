@@ -70,6 +70,21 @@ COHORT_OPTION_KEYS = {
     "admission": "admission_type",
 }
 
+RISK_MISSING = "__RISK_MISSING__"
+RISK_FIELDS = ("age", "diagnosis_code")
+RISK_ENTITY_FIELDS = ("age", "diagnosis")
+RISK_OPTION_KEYS = {
+    "age": "age_group",
+    "diagnosis_code": "diagnosis_code",
+}
+
+PAYMENT_MISSING = "__PAYMENT_MISSING__"
+PAYMENT_FIELDS = ("payment", "age")
+PAYMENT_OPTION_KEYS = {
+    "payment": "payment_type",
+    "age": "age_group",
+}
+
 
 def clean_frame(raw: DataFrame) -> DataFrame:
     """Select the frozen columns and apply the shared cleaning rules."""
@@ -565,6 +580,213 @@ def build_cohort_records(frame: DataFrame) -> list[dict[str, Any]]:
     return records
 
 
+def _payment_dimension_frame(frame: DataFrame) -> DataFrame:
+    """Add payment dimensions without losing missing values in wildcard rows."""
+
+    result = frame
+    for field in PAYMENT_FIELDS:
+        result = result.withColumn(
+            f"_payment_{field}",
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(PAYMENT_MISSING)),
+        )
+    return result
+
+
+def _payment_options(frame: DataFrame) -> dict[str, list[str]]:
+    def values(field: str) -> list[str]:
+        return [
+            row[field]
+            for row in frame.where(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0)
+            )
+            .select(field)
+            .distinct()
+            .orderBy(field)
+            .collect()
+        ]
+
+    return {PAYMENT_OPTION_KEYS[field]: values(field) for field in PAYMENT_FIELDS}
+
+
+def _payment_valid_rollup(row_field: str, options: list[str]):
+    return F.col(row_field).isNull() | F.col(row_field).isin(options)
+
+
+def _payment_tuple_from_row(row: Any) -> tuple[str | None, str | None]:
+    return tuple(
+        None if row[f"_payment_{field}"] is None else str(row[f"_payment_{field}"])
+        for field in PAYMENT_FIELDS
+    )  # type: ignore[return-value]
+
+
+def _payment_summary_aggregation_expressions() -> list[Any]:
+    return _summary_aggregation_expressions() + [
+        F.percentile_approx(
+            F.when(F.col("charges") >= 0, F.col("charges")),
+            0.5,
+            10000,
+        ).alias("median_charges")
+    ]
+
+
+def _payment_summary_rows(
+    frame: DataFrame, options: dict[str, list[str]]
+) -> dict[tuple[str | None, str | None], Any]:
+    """Aggregate every wildcard/finite payment filter in one cube."""
+
+    decorated = _payment_dimension_frame(frame)
+    grouped = decorated.cube(
+        *(f"_payment_{field}" for field in PAYMENT_FIELDS)
+    ).agg(*_payment_summary_aggregation_expressions())
+    valid = grouped.where(
+        _payment_valid_rollup("_payment_payment", options["payment_type"])
+        & _payment_valid_rollup("_payment_age", options["age_group"])
+    )
+    return {
+        _payment_tuple_from_row(row): row
+        for row in valid.collect()
+        if int(row["record_count"] or 0) > 0
+    }
+
+
+def _payment_section_rows(
+    frame: DataFrame,
+    group: str,
+    options: dict[str, list[str]],
+    value: str = "count",
+    limit: int | None = 10,
+) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
+    """Aggregate one payment page section for every legal filter pair."""
+
+    decorated = _payment_dimension_frame(frame).withColumn(
+        "_payment_item",
+        F.when(
+            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            F.col(group),
+        ),
+    )
+    aggregate = (
+        F.count("*")
+        if value == "count"
+        else F.avg(F.col(value))
+    ).alias("value")
+    grouped = decorated.cube(
+        *(f"_payment_{field}" for field in PAYMENT_FIELDS),
+        "_payment_item",
+    ).agg(aggregate)
+    valid = grouped.where(
+        F.col("_payment_item").isNotNull()
+        & _payment_valid_rollup("_payment_payment", options["payment_type"])
+        & _payment_valid_rollup("_payment_age", options["age_group"])
+    )
+    ordered = valid.orderBy(
+        F.asc("_payment_payment"),
+        F.asc("_payment_age"),
+        F.desc("value"),
+        F.asc("_payment_item"),
+    )
+    result: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+    for row in ordered.collect():
+        key = _payment_tuple_from_row(row)
+        values = result.setdefault(key, [])
+        if limit is None or len(values) < limit:
+            values.append(
+                {
+                    "name": str(row["_payment_item"]),
+                    "value": _rounded(row["value"], integer=value == "count"),
+                }
+            )
+    return result
+
+
+def _payment_metrics_from_row(row: Any) -> list[dict[str, Any]]:
+    return [
+        metric("record_count", "记录数", _rounded(row["record_count"], integer=True), "条"),
+        metric("avg_charges", "平均收费", _rounded(row["avg_charges"]), "美元"),
+        metric(
+            "median_charges",
+            "收费中位数",
+            _rounded(row["median_charges"]),
+            "美元",
+        ),
+    ]
+
+
+def _payment_record(
+    values: tuple[str | None, str | None],
+    summary_row: Any | None,
+    section_values: dict[str, list[dict[str, Any]]],
+    options: dict[str, list[str]],
+) -> dict[str, Any]:
+    filters = {
+        PAYMENT_OPTION_KEYS[field]: value
+        for field, value in zip(PAYMENT_FIELDS, values)
+        if value is not None
+    }
+    if summary_row is None:
+        metrics: list[dict[str, Any]] = []
+        sections: list[dict[str, Any]] = []
+    else:
+        metrics = _payment_metrics_from_row(summary_row)
+        sections = [
+            section("payment", "主支付方式结构", section_values["payment"]),
+            section("charges", "不同支付方式平均收费", section_values["charges"]),
+            section("age", "年龄结构", section_values["age"]),
+            section("diseases", "主要疾病", section_values["diagnosis"]),
+        ]
+    return record(
+        "payments",
+        "|".join(
+            f"{field}={value if value is not None else '*'}"
+            for field, value in zip(PAYMENT_FIELDS, values)
+        ),
+        "支付方式分析",
+        "核心支付维度为 Payment Typology 1；统计对象为住院出院记录。",
+        metrics,
+        sections,
+        options if values == (None, None) else None,
+        filters,
+    )
+
+
+def build_payment_records(frame: DataFrame) -> list[dict[str, Any]]:
+    """Build the payment wildcard and complete finite filter matrix."""
+
+    options = _payment_options(frame)
+    values = (
+        [None, *options["payment_type"]],
+        [None, *options["age_group"]],
+    )
+    summary_rows = _payment_summary_rows(frame, options)
+    charge_frame = frame.where(F.coalesce(F.col("valid_money"), F.lit(False)))
+    section_rows = {
+        "payment": _payment_section_rows(frame, "payment", options, limit=None),
+        "charges": _payment_section_rows(
+            charge_frame, "payment", options, value="charges", limit=None
+        ),
+        "age": _payment_section_rows(frame, "age", options, limit=None),
+        "diagnosis": _payment_section_rows(frame, "diagnosis", options, limit=10),
+    }
+    records = []
+    for combination in product(*values):
+        key = tuple(combination)
+        records.append(
+            _payment_record(
+                key,
+                summary_rows.get(key),
+                {
+                    name: rows.get(key, [])
+                    for name, rows in section_rows.items()
+                },
+                options,
+            )
+        )
+    return records
+
+
 def record(
     module: str,
     entity: str,
@@ -586,6 +808,254 @@ def record(
     if filters is not None:
         payload["filters"] = filters
     return {"module_key": module, "entity_key": entity, "payload": payload}
+
+
+def _risk_dimension_frame(frame: DataFrame) -> DataFrame:
+    """Add non-null cube dimensions while preserving wildcard semantics."""
+
+    result = frame
+    for field in RISK_FIELDS:
+        result = result.withColumn(
+            f"_risk_{field}",
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(RISK_MISSING)),
+        )
+    return result
+
+
+def _risk_valid_rollup(row_field: str, options: list[str]) -> Any:
+    """Accept wildcard cube rows and only published finite option values."""
+
+    return F.col(row_field).isNull() | F.col(row_field).isin(options)
+
+
+def _risk_tuple_from_row(row: Any) -> tuple[str | None, str | None]:
+    return tuple(
+        None if row[f"_risk_{field}"] is None else str(row[f"_risk_{field}"])
+        for field in RISK_FIELDS
+    )  # type: ignore[return-value]
+
+
+def _risk_summary_aggregation_expressions() -> list[Any]:
+    high_risk = F.col("severity").isin("Major", "Extreme")
+    return [
+        F.count("*").alias("record_count"),
+        F.sum(F.when(high_risk, 1).otherwise(0)).alias("high_risk_count"),
+        F.avg(
+            F.when(high_risk & (F.col("los") >= 0), F.col("los"))
+        ).alias("high_risk_avg_los"),
+        F.avg(
+            F.when(high_risk & (F.col("charges") >= 0), F.col("charges"))
+        ).alias("high_risk_avg_charges"),
+        F.avg(
+            F.when(high_risk & (F.col("costs") >= 0), F.col("costs"))
+        ).alias("high_risk_avg_costs"),
+    ]
+
+
+def _risk_summary_rows(
+    frame: DataFrame, options: dict[str, Any]
+) -> dict[tuple[str | None, str | None], Any]:
+    """Aggregate wildcard and every finite risk filter in one cube."""
+
+    decorated = _risk_dimension_frame(frame)
+    grouped = decorated.cube(
+        *(f"_risk_{field}" for field in RISK_FIELDS)
+    ).agg(*_risk_summary_aggregation_expressions())
+    valid = grouped.where(
+        _risk_valid_rollup("_risk_age", options["age_group"])
+        & _risk_valid_rollup("_risk_diagnosis_code", options["diagnosis_code_values"])
+    )
+    return {
+        _risk_tuple_from_row(row): row
+        for row in valid.collect()
+        if int(row["record_count"] or 0) > 0
+    }
+
+
+def _risk_section_rows(
+    frame: DataFrame,
+    group: str,
+    options: dict[str, Any],
+    *,
+    limit: int | None,
+) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
+    """Aggregate one risk section for every legal wildcard/finite filter."""
+
+    decorated = _risk_dimension_frame(frame).withColumn(
+        "_risk_item",
+        F.when(
+            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            F.col(group),
+        ),
+    )
+    grouped = decorated.cube(
+        *(f"_risk_{field}" for field in RISK_FIELDS),
+        "_risk_item",
+    ).count()
+    valid = grouped.where(
+        F.col("_risk_item").isNotNull()
+        & _risk_valid_rollup("_risk_age", options["age_group"])
+        & _risk_valid_rollup(
+            "_risk_diagnosis_code", options["diagnosis_code_values"]
+        )
+    )
+    ordered = valid.orderBy(
+        F.asc("_risk_age"),
+        F.asc("_risk_diagnosis_code"),
+        F.desc("count"),
+        F.asc("_risk_item"),
+    )
+    result: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+    for row in ordered.collect():
+        key = _risk_tuple_from_row(row)
+        values = result.setdefault(key, [])
+        if limit is None or len(values) < limit:
+            values.append(
+                {
+                    "name": str(row["_risk_item"]),
+                    "value": _rounded(row["count"], integer=True),
+                }
+            )
+    return result
+
+
+def _risk_metrics_from_row(row: Any) -> list[dict[str, Any]]:
+    denominator = int(row["record_count"] or 0)
+    if denominator == 0:
+        return []
+
+    high_risk_count = int(row["high_risk_count"] or 0)
+    metrics = [
+        metric(
+            "high_risk_count",
+            "Major/Extreme记录数",
+            high_risk_count,
+            "条",
+        ),
+        metric(
+            "high_risk_rate",
+            "Major/Extreme比例",
+            _rate(high_risk_count, denominator),
+            "%",
+        ),
+    ]
+    if high_risk_count:
+        metrics.extend(
+            [
+                metric(
+                    "avg_los",
+                    "高风险平均住院时长",
+                    _rounded(row["high_risk_avg_los"]),
+                    "天",
+                ),
+                metric(
+                    "avg_charges",
+                    "高风险平均收费",
+                    _rounded(row["high_risk_avg_charges"]),
+                    "美元",
+                ),
+                metric(
+                    "avg_costs",
+                    "高风险平均成本",
+                    _rounded(row["high_risk_avg_costs"]),
+                    "美元",
+                ),
+            ]
+        )
+    return metrics
+
+
+def _risk_entity_key(values: tuple[str | None, str | None]) -> str:
+    return "|".join(
+        f"{field}={value if value is not None else '*'}"
+        for field, value in zip(RISK_ENTITY_FIELDS, values)
+    )
+
+
+def _risk_record(
+    values: tuple[str | None, str | None],
+    summary_row: Any | None,
+    section_values: dict[str, list[dict[str, Any]]],
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    filters = {
+        RISK_OPTION_KEYS[field]: value
+        for field, value in zip(RISK_FIELDS, values)
+        if value is not None
+    }
+    if summary_row is None:
+        metrics: list[dict[str, Any]] = []
+        sections: list[dict[str, Any]] = []
+    else:
+        metrics = _risk_metrics_from_row(summary_row)
+        sections = [
+            section("severity", "严重程度分布", section_values["severity"]),
+            section("mortality", "死亡风险分布", section_values["mortality"]),
+            section("disposition", "高风险记录离院去向", section_values["disposition"]),
+            section("age", "高风险年龄结构", section_values["age"]),
+            section("diseases", "高风险疾病 TOP10", section_values["diseases"]),
+        ]
+    return record(
+        "risks",
+        _risk_entity_key(values),
+        "病情严重程度与风险分析",
+        "群体统计，不构成诊断、治疗或因果判断。",
+        metrics,
+        sections,
+        options if values == (None, None) else None,
+        filters,
+    )
+
+
+def build_risk_records(
+    frame: DataFrame,
+    options: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build the wildcard and complete risk filter snapshot matrix."""
+
+    diagnosis_values = [
+        item["value"] if isinstance(item, dict) else str(item)
+        for item in options["diagnosis_code"]
+    ]
+    cube_options = {
+        "age_group": options["age_group"],
+        "diagnosis_code_values": diagnosis_values,
+    }
+    summary_rows = _risk_summary_rows(frame, cube_options)
+    high_risk = frame.where(F.col("severity").isin("Major", "Extreme"))
+    section_rows = {
+        "severity": _risk_section_rows(frame, "severity", cube_options, limit=None),
+        "mortality": _risk_section_rows(frame, "mortality", cube_options, limit=None),
+        "disposition": _risk_section_rows(
+            high_risk, "disposition", cube_options, limit=None
+        ),
+        "age": _risk_section_rows(high_risk, "age", cube_options, limit=None),
+        "diseases": _risk_section_rows(
+            high_risk, "diagnosis", cube_options, limit=10
+        ),
+    }
+    values = (
+        [None, *options["age_group"]],
+        [None, *diagnosis_values],
+    )
+    records = []
+    for combination in product(*values):
+        key = tuple(combination)
+        records.append(
+            _risk_record(
+                key,
+                summary_rows.get(key),
+                {
+                    name: rows.get(key, [])
+                    for name, rows in section_rows.items()
+                },
+                options,
+            )
+        )
+    return records
 
 
 def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
@@ -1017,10 +1487,9 @@ def build_records(
         & F.col("los").isNotNull()
     )
     cost_frame = scoped.where(F.col("valid_money"))
-    common = summary_metrics(scoped)
     overall = {
         name: rows(scoped, name, limit=None)
-        for name in ("age", "payment", "diagnosis", "severity")
+        for name in ("age", "diagnosis", "severity")
     }
 
     def option_values(name: str) -> list[str]:
@@ -1035,7 +1504,10 @@ def build_records(
             .collect()
         ]
 
-    dashboard_frame = frame.where(F.coalesce(F.col("in_scope"), F.lit(False)))
+    dashboard_frame = frame.where(
+        F.coalesce(F.col("in_scope"), F.lit(False))
+        & F.col("los").isNotNull()
+    )
     dashboard = build_dashboard_record(dashboard_frame)
     records: list[dict[str, Any]] = [dashboard]
 
@@ -1199,45 +1671,16 @@ def build_records(
         )
     )
 
-    high_risk = scoped.where(F.col("severity").isin("Major", "Extreme"))
-    records.append(
-        record(
-            "risks",
-            "age=*|diagnosis=*",
-            "病情严重程度与风险分析",
-            "群体统计，不构成诊断、治疗或因果判断。",
-            summary_metrics(high_risk),
-            [
-                section("severity", "严重程度分布", overall["severity"][:10]),
-                section("mortality", "死亡风险分布", rows(scoped, "mortality")),
-                section("disposition", "高风险记录离院去向", rows(high_risk, "disposition")),
-                section("age", "高风险年龄结构", rows(high_risk, "age")),
-                section("diseases", "高风险疾病", rows(high_risk, "diagnosis")),
-            ],
-            {"age_group": option_values("age")},
-            {},
-        )
-    )
-    records.append(
-        record(
-            "payments",
-            "payment=*|age=*",
-            "支付方式分析",
-            "核心支付维度为 Payment Typology 1。",
-            common,
-            [
-                section("payment", "主支付方式结构", overall["payment"][:10]),
-                section("charges", "不同支付方式平均收费", rows(cost_frame, "payment", "charges")),
-                section("age", "年龄结构", overall["age"][:10]),
-                section("diseases", "主要疾病", overall["diagnosis"][:10]),
-            ],
+    records.extend(
+        build_risk_records(
+            scoped,
             {
-                "payment_type": option_values("payment"),
                 "age_group": option_values("age"),
+                "diagnosis_code": diagnosis_options,
             },
-            {},
         )
     )
+    records.extend(build_payment_records(scoped))
 
     out_of_scope = frame.where(~F.coalesce(F.col("in_scope"), F.lit(False))).count()
     invalid_money = frame.where(
@@ -1320,6 +1763,8 @@ def build_document(
     records = (
         [build_dashboard_record(dashboard_frame)]
         if module == "dashboard"
+        else build_payment_records(dashboard_frame)
+        if module == "payments"
         else build_records(cleaned, raw_count, execution_status)
     )
     document = {
@@ -1342,9 +1787,17 @@ def main() -> None:
     parser.add_argument("--generated-at")
     parser.add_argument(
         "--module",
-        choices=("all", "dashboard"),
+        choices=("all", "dashboard", "payments"),
         default="all",
-        help="默认生成全量共享快照；dashboard 只生成 #43 的 dashboard/overview。",
+        help=(
+            "默认生成全量共享快照；dashboard 只生成 dashboard/overview；"
+            "payments 只生成支付方式模块，仍复用统一清洗帧。"
+        ),
+    )
+    parser.add_argument(
+        "--master",
+        default="local[1]",
+        help="Spark master；默认使用 1 个本地 worker，避免验收电脑耗尽内存。",
     )
     args = parser.parse_args()
 
@@ -1352,9 +1805,10 @@ def main() -> None:
     digest = sha256_file(input_path)
     generated_at = normalize_generated_at(args.generated_at)
     spark = (
-        SparkSession.builder.master("local[*]")
+        SparkSession.builder.master(args.master)
         .appName("yishuyunce-full-analytics")
         .config("spark.ui.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "4")
         .getOrCreate()
     )
     cleaned = None
@@ -1380,20 +1834,25 @@ def main() -> None:
         json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     dashboard = next(
-        record
-        for record in document["records"]
-        if record["module_key"] == "dashboard"
-        and record["entity_key"] == "overview"
+        (
+            record
+            for record in document["records"]
+            if record["module_key"] == "dashboard"
+            and record["entity_key"] == "overview"
+        ),
+        None,
     )
-    print(
-        json.dumps(
+    summary: dict[str, Any] = {
+        "status": "PASS",
+        "module": args.module,
+        "records": len(document["records"]),
+        "raw_rows": raw_count,
+        "data_version": document["data_version"],
+        "generated_at": document["generated_at"],
+    }
+    if dashboard is not None:
+        summary.update(
             {
-                "status": "PASS",
-                "module": args.module,
-                "records": len(document["records"]),
-                "raw_rows": raw_count,
-                "data_version": document["data_version"],
-                "generated_at": document["generated_at"],
                 "dashboard_metric_keys": [
                     item["key"] for item in dashboard["payload"]["metrics"]
                 ],
@@ -1401,7 +1860,15 @@ def main() -> None:
                     section_value["key"]: len(section_value["items"])
                     for section_value in dashboard["payload"]["sections"]
                 },
-            },
+            }
+        )
+    if args.module == "payments":
+        summary["payment_key_count"] = sum(
+            record["module_key"] == "payments" for record in document["records"]
+        )
+    print(
+        json.dumps(
+            summary,
             ensure_ascii=False,
             indent=2,
         )
