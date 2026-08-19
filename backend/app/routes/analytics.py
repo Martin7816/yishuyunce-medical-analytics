@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import MethodNotAllowed
 
@@ -25,6 +27,12 @@ HOSPITAL_METRIC_KEYS = frozenset(
         "severe_rate",
     }
 )
+COST_FILTER_PARAMETERS = frozenset({"diagnosis_code", "facility_id", "severity"})
+COST_ENTITY_DIMENSIONS = (
+    ("diagnosis_code", "diagnosis"),
+    ("facility_id", "facility"),
+    ("severity", "severity"),
+)
 
 
 def _ok(data: dict):
@@ -46,7 +54,7 @@ def enforce_read_only_request() -> None:
         )
 
 
-def _reject_unknown(allowed: set[str]) -> None:
+def _reject_unknown(allowed: Iterable[str]) -> None:
     reject_unknown_query_parameters(allowed)
 
 
@@ -242,8 +250,7 @@ def cohort_summary():
 
 @analytics_bp.get("/api/v1/costs/overview")
 def cost_overview():
-    allowed = {"diagnosis_code", "facility_id", "severity"}
-    _reject_unknown(allowed)
+    _reject_unknown(COST_FILTER_PARAMETERS)
     diagnosis_code = query_value("diagnosis_code")
     facility_id = query_value("facility_id")
     severity = query_value("severity")
@@ -251,6 +258,7 @@ def cost_overview():
         raise InvalidRequestError(
             "INVALID_QUERY_PARAMETER",
             "diagnosis_code and facility_id are mutually exclusive.",
+            {"parameters": ["diagnosis_code", "facility_id"]},
         )
     # Full whitelists are published by the disease and hospital modules.
     if diagnosis_code is not None:
@@ -270,20 +278,18 @@ def cost_overview():
     base = _get("costs", "diagnosis=*|facility=*|severity=*")
     _validate_option("severity", severity, base)
     selected = {
-        name: value
-        for name, value in (
-            ("diagnosis_code", diagnosis_code),
-            ("facility_id", facility_id),
-            ("severity", severity),
+        parameter: value
+        for parameter, value in (
+            (parameter, query_value(parameter))
+            for parameter, _ in COST_ENTITY_DIMENSIONS
         )
         if value is not None
     }
     if not selected:
         return _ok(base)
-    entity = "diagnosis={}|facility={}|severity={}".format(
-        selected.get("diagnosis_code", "*"),
-        selected.get("facility_id", "*"),
-        selected.get("severity", "*"),
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, entity_name in COST_ENTITY_DIMENSIONS
     )
     return _ok(_get_or_empty("costs", entity, base, selected))
 

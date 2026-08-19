@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -277,6 +278,69 @@ def test_mysql_payload_json_damage_is_a_service_result_error(monkeypatch):
     assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
 
 
+def test_mysql_adapter_reads_cost_entity_with_bound_parameters(monkeypatch):
+    import pymysql
+
+    fixture_path = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "fixtures"
+        / "analytics_snapshot_success.json"
+    )
+    document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    cost = next(
+        record
+        for record in document["records"]
+        if record["module_key"] == "costs"
+    )
+    entity = "diagnosis=NVS005|facility=*|severity=Major"
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params):
+            self.query = query
+            self.params = params
+
+        def fetchone(self):
+            return {
+                "payload_json": json.dumps(cost["payload"]),
+                "data_version": document["data_version"],
+                "generated_at": document["generated_at"],
+            }
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self):
+            return None
+
+    connection = Connection()
+    monkeypatch.setattr(pymysql, "connect", lambda **kwargs: connection)
+    repository = MySQLAnalyticsSnapshotRepository(
+        {
+            "MYSQL_HOST": "db",
+            "MYSQL_USER": "reader",
+            "MYSQL_DATABASE": "analytics",
+        }
+    )
+
+    record = repository.fetch("costs", entity)
+
+    assert record["payload"] == cost["payload"]
+    assert connection.cursor_instance.params == ("costs", entity)
+    assert "module_key" in connection.cursor_instance.query
+    assert "entity_key" in connection.cursor_instance.query
+
+
 def test_unknown_and_non_whitelisted_filters_are_rejected():
     client = fixture_app().test_client()
     assert client.get("/api/v1/cohorts/summary?sql=select").status_code == 400
@@ -364,6 +428,174 @@ def test_cost_dimensions_are_mutually_exclusive():
         "/api/v1/costs/overview?diagnosis_code=NVS005&facility_id=1"
     )
     assert response.status_code == 400
+    assert response.get_json()["details"] == {
+        "parameters": ["diagnosis_code", "facility_id"]
+    }
+
+
+class RecordingCostRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+        self.calls = []
+
+    def fetch(self, module_key, entity_key):
+        self.calls.append((module_key, entity_key))
+        return self.delegate.fetch(module_key, entity_key)
+
+
+def test_cost_overview_unfiltered_preserves_published_snapshot():
+    response = fixture_app().test_client().get("/api/v1/costs/overview")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == {}
+    assert [metric["key"] for metric in data["metrics"]] == [
+        "avg_charges",
+        "median_charges",
+        "p90_charges",
+        "avg_costs",
+        "charge_cost_gap",
+        "daily_charges",
+    ]
+    assert [section["key"] for section in data["sections"]] == [
+        "quantiles",
+        "severity",
+    ]
+    assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_filter", "expected_entity", "expected_calls"),
+    [
+        (
+            "diagnosis_code=NVS005",
+            {"diagnosis_code": "NVS005"},
+            "diagnosis=NVS005|facility=*|severity=*",
+            [
+                ("diseases", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=NVS005|facility=*|severity=*"),
+            ],
+        ),
+        (
+            "facility_id=1",
+            {"facility_id": "1"},
+            "diagnosis=*|facility=1|severity=*",
+            [
+                ("hospitals", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=*|facility=1|severity=*"),
+            ],
+        ),
+        (
+            "severity=Major",
+            {"severity": "Major"},
+            "diagnosis=*|facility=*|severity=Major",
+            [
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=*|facility=*|severity=Major"),
+            ],
+        ),
+        (
+            "diagnosis_code=NVS005&severity=Major",
+            {"diagnosis_code": "NVS005", "severity": "Major"},
+            "diagnosis=NVS005|facility=*|severity=Major",
+            [
+                ("diseases", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=NVS005|facility=*|severity=Major"),
+            ],
+        ),
+    ],
+)
+def test_cost_filters_use_service_seam_and_frozen_entity_order(
+    query, expected_filter, expected_entity, expected_calls
+):
+    repository = RecordingCostRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        f"/api/v1/costs/overview?{query}"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == expected_filter
+    assert data["metrics"] == []
+    assert data["sections"] == []
+    assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
+    assert repository.calls == expected_calls
+    assert repository.calls[-1][1] == expected_entity
+
+
+@pytest.mark.parametrize(
+    ("query", "details"),
+    [
+        ("sql=select", {"parameters": ["sql"]}),
+        ("diagnosis_code=UNKNOWN", {"parameter": "diagnosis_code"}),
+        ("facility_id=UNKNOWN", {"parameter": "facility_id"}),
+        ("severity=UNKNOWN", {"parameter": "severity"}),
+        (
+            "diagnosis_code=NVS005&diagnosis_code=INF012",
+            {"parameters": ["diagnosis_code"]},
+        ),
+    ],
+)
+def test_cost_filters_reject_unknown_invalid_and_repeated_values(query, details):
+    response = fixture_app().test_client().get(f"/api/v1/costs/overview?{query}")
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_QUERY_PARAMETER"
+    assert response.get_json()["details"] == details
+    assert "UNKNOWN" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (ResultNotReadyError(), 503, "RESULT_NOT_READY"),
+        (DatabaseUnavailableError(), 503, "DATABASE_UNAVAILABLE"),
+        (InvalidServiceResultError(), 500, "SERVICE_RESULT_INVALID"),
+    ],
+)
+def test_cost_base_dependency_failures_keep_stable_public_errors(error, status, code):
+    class RaisingRepository:
+        def fetch(self, module_key, entity_key):
+            assert (module_key, entity_key) == (
+                "costs",
+                "diagnosis=*|facility=*|severity=*",
+            )
+            raise error
+
+    response = fixture_app(analytics_repository=RaisingRepository()).test_client().get(
+        "/api/v1/costs/overview"
+    )
+
+    assert response.status_code == status
+    assert response.get_json()["code"] == code
+    assert "diagnosis=*" not in response.get_data(as_text=True)
+
+
+def test_cost_endpoint_rejects_body_and_non_get_methods():
+    client = fixture_app().test_client()
+
+    body = client.get(
+        "/api/v1/costs/overview",
+        data="{}",
+        content_type="application/json",
+    )
+    assert body.status_code == 400
+    assert body.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+    for method in ("post", "head", "options"):
+        response = getattr(client, method)("/api/v1/costs/overview")
+        assert response.status_code == 405
+        if method != "head":
+            assert response.get_json()["code"] == "METHOD_NOT_ALLOWED"
 
 
 def test_valid_unpublished_filter_is_a_legal_empty_result():
