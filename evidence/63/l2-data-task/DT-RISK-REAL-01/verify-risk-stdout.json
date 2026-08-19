@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "module": "risks",
+  "raw_rows": 2101588,
+  "scoped_rows": 2101588,
+  "risk_key_count": 2868,
+  "nonempty_combination_count": 2614,
+  "empty_combination_count": 254,
+  "option_counts": {
+    "age_group": 5,
+    "diagnosis_code": 477
+  },
+  "wildcard_record_count": 2101588,
+  "wildcard_high_risk_count": 700276,
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

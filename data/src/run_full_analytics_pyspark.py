@@ -70,6 +70,14 @@ COHORT_OPTION_KEYS = {
     "admission": "admission_type",
 }
 
+RISK_MISSING = "__RISK_MISSING__"
+RISK_FIELDS = ("age", "diagnosis_code")
+RISK_ENTITY_FIELDS = ("age", "diagnosis")
+RISK_OPTION_KEYS = {
+    "age": "age_group",
+    "diagnosis_code": "diagnosis_code",
+}
+
 PAYMENT_MISSING = "__PAYMENT_MISSING__"
 PAYMENT_FIELDS = ("payment", "age")
 PAYMENT_OPTION_KEYS = {
@@ -802,6 +810,254 @@ def record(
     return {"module_key": module, "entity_key": entity, "payload": payload}
 
 
+def _risk_dimension_frame(frame: DataFrame) -> DataFrame:
+    """Add non-null cube dimensions while preserving wildcard semantics."""
+
+    result = frame
+    for field in RISK_FIELDS:
+        result = result.withColumn(
+            f"_risk_{field}",
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(RISK_MISSING)),
+        )
+    return result
+
+
+def _risk_valid_rollup(row_field: str, options: list[str]) -> Any:
+    """Accept wildcard cube rows and only published finite option values."""
+
+    return F.col(row_field).isNull() | F.col(row_field).isin(options)
+
+
+def _risk_tuple_from_row(row: Any) -> tuple[str | None, str | None]:
+    return tuple(
+        None if row[f"_risk_{field}"] is None else str(row[f"_risk_{field}"])
+        for field in RISK_FIELDS
+    )  # type: ignore[return-value]
+
+
+def _risk_summary_aggregation_expressions() -> list[Any]:
+    high_risk = F.col("severity").isin("Major", "Extreme")
+    return [
+        F.count("*").alias("record_count"),
+        F.sum(F.when(high_risk, 1).otherwise(0)).alias("high_risk_count"),
+        F.avg(
+            F.when(high_risk & (F.col("los") >= 0), F.col("los"))
+        ).alias("high_risk_avg_los"),
+        F.avg(
+            F.when(high_risk & (F.col("charges") >= 0), F.col("charges"))
+        ).alias("high_risk_avg_charges"),
+        F.avg(
+            F.when(high_risk & (F.col("costs") >= 0), F.col("costs"))
+        ).alias("high_risk_avg_costs"),
+    ]
+
+
+def _risk_summary_rows(
+    frame: DataFrame, options: dict[str, Any]
+) -> dict[tuple[str | None, str | None], Any]:
+    """Aggregate wildcard and every finite risk filter in one cube."""
+
+    decorated = _risk_dimension_frame(frame)
+    grouped = decorated.cube(
+        *(f"_risk_{field}" for field in RISK_FIELDS)
+    ).agg(*_risk_summary_aggregation_expressions())
+    valid = grouped.where(
+        _risk_valid_rollup("_risk_age", options["age_group"])
+        & _risk_valid_rollup("_risk_diagnosis_code", options["diagnosis_code_values"])
+    )
+    return {
+        _risk_tuple_from_row(row): row
+        for row in valid.collect()
+        if int(row["record_count"] or 0) > 0
+    }
+
+
+def _risk_section_rows(
+    frame: DataFrame,
+    group: str,
+    options: dict[str, Any],
+    *,
+    limit: int | None,
+) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
+    """Aggregate one risk section for every legal wildcard/finite filter."""
+
+    decorated = _risk_dimension_frame(frame).withColumn(
+        "_risk_item",
+        F.when(
+            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            F.col(group),
+        ),
+    )
+    grouped = decorated.cube(
+        *(f"_risk_{field}" for field in RISK_FIELDS),
+        "_risk_item",
+    ).count()
+    valid = grouped.where(
+        F.col("_risk_item").isNotNull()
+        & _risk_valid_rollup("_risk_age", options["age_group"])
+        & _risk_valid_rollup(
+            "_risk_diagnosis_code", options["diagnosis_code_values"]
+        )
+    )
+    ordered = valid.orderBy(
+        F.asc("_risk_age"),
+        F.asc("_risk_diagnosis_code"),
+        F.desc("count"),
+        F.asc("_risk_item"),
+    )
+    result: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+    for row in ordered.collect():
+        key = _risk_tuple_from_row(row)
+        values = result.setdefault(key, [])
+        if limit is None or len(values) < limit:
+            values.append(
+                {
+                    "name": str(row["_risk_item"]),
+                    "value": _rounded(row["count"], integer=True),
+                }
+            )
+    return result
+
+
+def _risk_metrics_from_row(row: Any) -> list[dict[str, Any]]:
+    denominator = int(row["record_count"] or 0)
+    if denominator == 0:
+        return []
+
+    high_risk_count = int(row["high_risk_count"] or 0)
+    metrics = [
+        metric(
+            "high_risk_count",
+            "Major/Extreme记录数",
+            high_risk_count,
+            "条",
+        ),
+        metric(
+            "high_risk_rate",
+            "Major/Extreme比例",
+            _rate(high_risk_count, denominator),
+            "%",
+        ),
+    ]
+    if high_risk_count:
+        metrics.extend(
+            [
+                metric(
+                    "avg_los",
+                    "高风险平均住院时长",
+                    _rounded(row["high_risk_avg_los"]),
+                    "天",
+                ),
+                metric(
+                    "avg_charges",
+                    "高风险平均收费",
+                    _rounded(row["high_risk_avg_charges"]),
+                    "美元",
+                ),
+                metric(
+                    "avg_costs",
+                    "高风险平均成本",
+                    _rounded(row["high_risk_avg_costs"]),
+                    "美元",
+                ),
+            ]
+        )
+    return metrics
+
+
+def _risk_entity_key(values: tuple[str | None, str | None]) -> str:
+    return "|".join(
+        f"{field}={value if value is not None else '*'}"
+        for field, value in zip(RISK_ENTITY_FIELDS, values)
+    )
+
+
+def _risk_record(
+    values: tuple[str | None, str | None],
+    summary_row: Any | None,
+    section_values: dict[str, list[dict[str, Any]]],
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    filters = {
+        RISK_OPTION_KEYS[field]: value
+        for field, value in zip(RISK_FIELDS, values)
+        if value is not None
+    }
+    if summary_row is None:
+        metrics: list[dict[str, Any]] = []
+        sections: list[dict[str, Any]] = []
+    else:
+        metrics = _risk_metrics_from_row(summary_row)
+        sections = [
+            section("severity", "严重程度分布", section_values["severity"]),
+            section("mortality", "死亡风险分布", section_values["mortality"]),
+            section("disposition", "高风险记录离院去向", section_values["disposition"]),
+            section("age", "高风险年龄结构", section_values["age"]),
+            section("diseases", "高风险疾病 TOP10", section_values["diseases"]),
+        ]
+    return record(
+        "risks",
+        _risk_entity_key(values),
+        "病情严重程度与风险分析",
+        "群体统计，不构成诊断、治疗或因果判断。",
+        metrics,
+        sections,
+        options if values == (None, None) else None,
+        filters,
+    )
+
+
+def build_risk_records(
+    frame: DataFrame,
+    options: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build the wildcard and complete risk filter snapshot matrix."""
+
+    diagnosis_values = [
+        item["value"] if isinstance(item, dict) else str(item)
+        for item in options["diagnosis_code"]
+    ]
+    cube_options = {
+        "age_group": options["age_group"],
+        "diagnosis_code_values": diagnosis_values,
+    }
+    summary_rows = _risk_summary_rows(frame, cube_options)
+    high_risk = frame.where(F.col("severity").isin("Major", "Extreme"))
+    section_rows = {
+        "severity": _risk_section_rows(frame, "severity", cube_options, limit=None),
+        "mortality": _risk_section_rows(frame, "mortality", cube_options, limit=None),
+        "disposition": _risk_section_rows(
+            high_risk, "disposition", cube_options, limit=None
+        ),
+        "age": _risk_section_rows(high_risk, "age", cube_options, limit=None),
+        "diseases": _risk_section_rows(
+            high_risk, "diagnosis", cube_options, limit=10
+        ),
+    }
+    values = (
+        [None, *options["age_group"]],
+        [None, *diagnosis_values],
+    )
+    records = []
+    for combination in product(*values):
+        key = tuple(combination)
+        records.append(
+            _risk_record(
+                key,
+                summary_rows.get(key),
+                {
+                    name: rows.get(key, [])
+                    for name, rows in section_rows.items()
+                },
+                options,
+            )
+        )
+    return records
+
+
 def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
     """Build the complete, unfiltered ``dashboard/overview`` payload."""
 
@@ -1415,23 +1671,13 @@ def build_records(
         )
     )
 
-    high_risk = scoped.where(F.col("severity").isin("Major", "Extreme"))
-    records.append(
-        record(
-            "risks",
-            "age=*|diagnosis=*",
-            "病情严重程度与风险分析",
-            "群体统计，不构成诊断、治疗或因果判断。",
-            summary_metrics(high_risk),
-            [
-                section("severity", "严重程度分布", overall["severity"][:10]),
-                section("mortality", "死亡风险分布", rows(scoped, "mortality")),
-                section("disposition", "高风险记录离院去向", rows(high_risk, "disposition")),
-                section("age", "高风险年龄结构", rows(high_risk, "age")),
-                section("diseases", "高风险疾病", rows(high_risk, "diagnosis")),
-            ],
-            {"age_group": option_values("age")},
-            {},
+    records.extend(
+        build_risk_records(
+            scoped,
+            {
+                "age_group": option_values("age"),
+                "diagnosis_code": diagnosis_options,
+            },
         )
     )
     records.extend(build_payment_records(scoped))
