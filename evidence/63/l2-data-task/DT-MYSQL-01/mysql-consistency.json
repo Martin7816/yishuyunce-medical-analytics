@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "rows": 3558,
+  "expected_rows": 3558,
+  "versions": 1,
+  "timestamps": 1,
+  "risk_rows": 2868,
+  "risk_payload_mismatches": 0,
+  "missing_or_extra_keys": 0,
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

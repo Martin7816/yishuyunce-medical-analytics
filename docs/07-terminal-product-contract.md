@@ -62,12 +62,33 @@
 
 合法但尚未发布的筛选仍返回 `200`，保留标题、描述、版本和时间，将 `metrics`、`sections` 置为空；非法参数、未知字段和非白名单值返回 `400`。
 
+支付快照补充约定：`payments` 的 wildcard 记录键为
+`payment=*|age=*`，其 `options.payment_type` 只来自清洗帧中的非空
+`Payment Typology 1`，`options.age_group` 只来自清洗帧中的非空年龄组。
+支付记录按当前键对应的有效住院出院记录计算 `record_count`，金额指标只使用
+可解析且非负的 `Total Charges`；`avg_charges` 为算术平均，
+`median_charges` 使用 `percentile_approx(charges, 0.5, 10000)`，单位均为美元。
+`sections` 固定按 `payment`、`charges`、`age`、`diseases` 输出；其中支付方式、年龄和疾病
+排行排除空分组并按 value 降序、name 升序，疾病严格 TOP10，支付方式费用只展示有有效收费的方式。
+wildcard 和每个有限 `payment_type × age_group` 组合都必须有记录；无数据组合保留合法空
+`metrics`/`sections`，不能省略。缺失支付字段仍计入 wildcard 的记录分母，但不进入支付方式排行。
+
 `entity_key` 中的枚举值按发布的字符串原样保存，因此允许年龄等枚举值内部的普通空格（例如 `age=50 to 69|gender=*|admission=*`）；模块键和实体键仍禁止首尾空白、换行、回车和制表控制字符。请求 URL 中的空格按 HTTP 客户端规则编码，服务端解码后使用同一实体键顺序。
 
 医院模块补充约束：`hospitals/index.options.facilities[].value` 和
 `hospitals/profile:{facility_id}` 的 `facility_id` 均按字符串处理；医院画像的病例量
 指标键固定为 `case_count`，平均金额的单位为 `美元`，比例指标的单位为 `%` 且值域为
 `0—1`。医院排行和画像都以 `facility_id` 聚合，医院名称只作为展示标签，避免同名机构被合并。
+
+风险模块补充约束：`risks` 同时发布 `age=*|diagnosis=*`、每个年龄枚举、每个诊断编码以及年龄×诊断编码的完整笛卡尔积。指标 `high_risk_count` 和 `high_risk_rate` 使用当前筛选记录作分母，`high_risk_rate` 保持 `0—1` 比例；`avg_los`、`avg_charges`、`avg_costs` 只对 `Major`/`Extreme` 记录中各自可用的非负字段求平均。`severity`、`mortality` 使用当前筛选分母，`disposition`、`age`、`diseases` 只描述高风险记录；`diseases` 严格 TOP10。所有 section item 按数量降序、名称升序，空组合保留合法空 payload。
+
+### 2.2 费用与成本模块补充约束
+
+`costs` 只允许使用 `diagnosis_code` 或 `facility_id` 其中一个筛选维度，`severity` 为可叠加维度。`costs` 的合法实体键集合为：未筛选、每个诊断值、每个医院值，分别与未筛选或每个严重程度值组合；不生成诊断和医院同时指定的实体键。键顺序始终为 `diagnosis=*|facility=*|severity=*` 的三段顺序，值来自同一快照中已发布的白名单。
+
+费用 payload 的指标键冻结为 `record_count`、`avg_charges`、`median_charges`、`p25_charges`、`p75_charges`、`p90_charges`、`avg_costs`、`median_costs`、`p25_costs`、`p75_costs`、`p90_costs`、`charge_cost_gap`、`daily_charges`、`daily_costs`。记录数单位为 `条`，金额单位为 `美元`，单日金额单位为 `美元/天`。均值、收费成本差和单日金额使用当前过滤后的有效金额记录；单日金额只使用 `los > 0` 的记录；P25/P50/P75/P90 使用 `percentile_approx(..., accuracy=10000)`，其中 P50 对外键名为 `median_*`。
+
+非空费用 payload 至少包含收费分位数、成本分位数和收费/成本分布 section；在对应维度未筛选时增加疾病、医院或严重程度比较 section，比较项按数值降序、名称升序排序并严格截取 TOP10。合法但无记录的费用实体键仍返回 `200` 可读 payload，且 `metrics` 和 `sections` 必须为空数组；非法筛选值或同时提交诊断与医院筛选仍由 API 返回参数错误。
 
 ## 3. API
 
