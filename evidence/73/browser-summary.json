@@ -1,0 +1,31 @@
+{
+  "route": "/data-quality",
+  "source": "backend/app/fixtures/analytics_snapshot_success.json",
+  "states": {
+    "success": {
+      "desktop_1280": {
+        "innerWidth": 1280,
+        "bodyScrollWidth": 1265,
+        "documentScrollWidth": 1265,
+        "clientWidth": 1265,
+        "state": "success"
+      },
+      "mobile_390": {
+        "innerWidth": 390,
+        "bodyScrollWidth": 374,
+        "documentScrollWidth": 390,
+        "clientWidth": 390,
+        "state": "success"
+      }
+    },
+    "empty": { "desktop_1280": { "documentScrollWidth": 1280, "state": "state-panel empty" } },
+    "error": { "desktop_1280": { "documentScrollWidth": 1280, "state": "state-panel error", "code": "RESULT_NOT_READY", "trace_id": "mock-quality-error" } },
+    "loading": { "desktop_1280": { "documentScrollWidth": 1280, "state": "state-panel loading" } }
+  },
+  "real_api_handoff": {
+    "endpoint": "GET /api/v1/data-quality/summary",
+    "status": "PASS",
+    "evidence": "../39/l3-api/real-mysql-summary.txt",
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219"
+  }
+}

@@ -37,7 +37,7 @@ const configs = {
   payments: { endpoint: '/payments/overview', eyebrow: '主支付方式结构', title: '支付方式分析', layout: 'payments', alwaysShowClear: true, filters: [
     { key: 'payment_type', option: 'payment_type', label: '支付方式' }, { key: 'age_group', option: 'age_group', label: '年龄组' },
   ] },
-  quality: { endpoint: '/data-quality/summary', eyebrow: '批次与任务只读状态', filters: [
+  quality: { endpoint: '/data-quality/summary', eyebrow: '批次与任务只读状态', title: '数据质量与任务管理', layout: 'quality', alwaysShowClear: true, filters: [
     { key: 'data_version', label: '分析批次', valuesFrom: 'data_version', includeAll: false, placeholder: '当前批次' },
   ] },
 }
