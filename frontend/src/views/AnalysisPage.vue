@@ -150,6 +150,12 @@ function updateFilter(key, value) {
   scheduleLoad()
 }
 
+function isFilterDisabled(filter) {
+  const mutuallyExclusive = props.config.mutuallyExclusive || []
+  if (!mutuallyExclusive.includes(filter.key)) return false
+  return mutuallyExclusive.some(key => key !== filter.key && filters[key])
+}
+
 function clearFilters() {
   for (const filter of props.config.filters || []) filters[filter.key] = ''
   scheduleLoad()
@@ -199,6 +205,7 @@ onBeforeUnmount(() => {
           :id="`filter-${filter.key}`"
           :value="filters[filter.key] || ''"
           :aria-label="filter.label"
+          :disabled="isFilterDisabled(filter)"
           @change="updateFilter(filter.key, $event.target.value)"
         >
           <option value="">{{ filter.includeAll === false ? (filter.placeholder || '请选择') : '全部' }}</option>
@@ -237,7 +244,14 @@ onBeforeUnmount(() => {
         </section>
       </template>
       <template v-else>
-        <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
+        <section class="metric-grid">
+          <MetricCard
+            v-for="item in data.metrics"
+            :key="item.key"
+            :metric="item"
+            :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key))"
+          />
+        </section>
         <section
           class="section-grid"
           :class="{
