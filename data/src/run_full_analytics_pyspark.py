@@ -1444,6 +1444,104 @@ def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
     )
 
 
+def build_data_quality_record(
+    frame: DataFrame,
+    raw_count: int,
+    execution_status: str,
+) -> dict[str, Any]:
+    """Build #71 from one named aggregate over the cached clean frame."""
+
+    in_scope = F.coalesce(F.col("in_scope"), F.lit(False))
+    valid_record = in_scope & F.col("los").isNotNull()
+    invalid_money = in_scope & ~F.coalesce(
+        F.col("valid_money"), F.lit(False)
+    )
+    diagnosis_missing = in_scope & (
+        F.col("diagnosis").isNull() | (F.length(F.col("diagnosis")) == 0)
+    )
+    los_capped = in_scope & F.coalesce(F.col("los_capped"), F.lit(False))
+
+    quality_summary_frame = frame.agg(
+        F.sum(F.when(valid_record, 1).otherwise(0)).alias("valid_rows"),
+        F.sum(F.when(~in_scope, 1).otherwise(0)).alias("out_of_scope_rows"),
+        F.sum(F.when(invalid_money, 1).otherwise(0)).alias(
+            "money_parse_or_negative"
+        ),
+        F.sum(
+            F.when(in_scope & F.col("los").isNull(), 1).otherwise(0)
+        ).alias("missing_los"),
+        F.sum(F.when(diagnosis_missing, 1).otherwise(0)).alias(
+            "diagnosis_missing"
+        ),
+        F.sum(F.when(los_capped, 1).otherwise(0)).alias("los_capped"),
+    )
+    quality = quality_summary_frame.collect()[0]
+    mysql_status = (
+        "CHECK_REQUIRED"
+        if execution_status == "FIXTURE_ONLY"
+        else "NOT_PUBLISHED"
+    )
+
+    return record(
+        "data_quality",
+        "summary",
+        "数据质量与任务管理",
+        "只读展示当前批次与管道检查。",
+        [
+            metric("raw_rows", "原始记录", raw_count, "条"),
+            metric(
+                "valid_rows",
+                "纳入分析记录",
+                _rounded(quality["valid_rows"], integer=True),
+                "条",
+            ),
+            metric(
+                "out_of_scope_rows",
+                "范围外记录",
+                _rounded(quality["out_of_scope_rows"], integer=True),
+                "条",
+            ),
+            metric(
+                "money_parse_or_negative",
+                "费用解析/负值异常",
+                _rounded(quality["money_parse_or_negative"], integer=True),
+                "条",
+            ),
+            metric(
+                "missing_los",
+                "住院时长解析异常",
+                _rounded(quality["missing_los"], integer=True),
+                "条",
+            ),
+            metric(
+                "diagnosis_missing",
+                "主诊断描述缺失",
+                _rounded(quality["diagnosis_missing"], integer=True),
+                "条",
+            ),
+            metric(
+                "los_capped",
+                "住院时长120+截断",
+                _rounded(quality["los_capped"], integer=True),
+                "条",
+            ),
+        ],
+        [
+            section(
+                "storage",
+                "存储与任务状态",
+                [
+                    {"name": "HDFS", "value": "CHECK_REQUIRED"},
+                    {"name": "Hive", "value": "CHECK_REQUIRED"},
+                    {"name": "MySQL", "value": mysql_status},
+                    {"name": "PySpark任务", "value": execution_status},
+                ],
+                "status",
+            )
+        ],
+    )
+
+
 def _legacy_build_records(
     frame: DataFrame,
     raw_count: int,
@@ -1924,51 +2022,7 @@ def build_records(
     )
     records.extend(build_payment_records(scoped))
 
-    out_of_scope = frame.where(~F.coalesce(F.col("in_scope"), F.lit(False))).count()
-    invalid_money = frame.where(
-        F.coalesce(F.col("in_scope"), F.lit(False))
-        & ~F.coalesce(F.col("valid_money"), F.lit(False))
-    ).count()
-    missing_los = frame.where(
-        F.coalesce(F.col("in_scope"), F.lit(False)) & F.col("los").isNull()
-    ).count()
-    records.append(
-        record(
-            "data_quality",
-            "summary",
-            "数据质量与任务管理",
-            "只读展示当前批次与管道检查。",
-            [
-                metric("raw_rows", "原始记录", raw_count, "条"),
-                metric("valid_rows", "纳入分析记录", scoped.count(), "条"),
-                metric("out_of_scope_rows", "范围外记录", out_of_scope, "条"),
-                metric("money_parse_or_negative", "费用解析/负值异常", invalid_money, "条"),
-                metric("missing_los", "住院时长解析异常", missing_los, "条"),
-                metric(
-                    "diagnosis_missing",
-                    "诊断缺失",
-                    scoped.where(
-                        F.col("diagnosis").isNull() | (F.length("diagnosis") == 0)
-                    ).count(),
-                    "条",
-                ),
-                metric("los_capped", "住院时长120+截断", frame.where("los_capped").count(), "条"),
-            ],
-            [
-                section(
-                    "storage",
-                    "存储与服务检查",
-                    [
-                        {"name": "HDFS", "value": "CHECK_REQUIRED"},
-                        {"name": "Hive", "value": "CHECK_REQUIRED"},
-                        {"name": "MySQL", "value": "NOT_PUBLISHED"},
-                        {"name": "PySpark任务", "value": execution_status},
-                    ],
-                    "status",
-                )
-            ],
-        )
-    )
+    records.append(build_data_quality_record(frame, raw_count, execution_status))
     return records
 
 
@@ -1993,9 +2047,10 @@ def build_document(
     """Materialize the shared frame once and build the requested snapshot."""
 
     raw_count = cleaned.count()
+    fixture_root = (REPO_ROOT / "data" / "fixtures").resolve()
     execution_status = (
         "FIXTURE_ONLY"
-        if input_path.resolve() == (REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv").resolve()
+        if input_path.resolve().parent == fixture_root
         else "PASS"
     )
     dashboard_frame = cleaned.where(
