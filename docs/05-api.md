@@ -22,11 +22,114 @@
 
 预测请求只接受 `age_group`、`gender`、`race`、`ethnicity`、`hospital_service_area`、`facility_id`、`admission_type`、`emergency_indicator`。AI 请求只接受 `{"message":"..."}`。两者均拒绝额外字段；预测接口专门返回 `LEAKAGE_FIELD_FORBIDDEN` 拦截目标或出院后字段。
 
+## 1.0 疾病画像接口（Issue #52）
+
+疾病模块只读取统一快照服务，不在路由中读取 CSV、执行 SQL、重新聚合、排序、截断、换单位或修补空值。对应的快照实体键固定为：
+
+| 请求 | 快照读取 | 请求约束 |
+|---|---|---|
+| `GET /api/v1/diseases` | `diseases/index` | 不接受查询参数或请求体 |
+| `GET /api/v1/diseases/{diagnosis_code}` | 先读取 `diseases/index` 校验枚举，再读取 `diseases/profile:{diagnosis_code}` | `diagnosis_code` 必须来自 `index.options.diagnoses`，不接受查询参数或请求体 |
+| `GET /api/v1/diseases/top10` | 历史 TOP10 服务结果 | 保持第 2—12 节的 M1 兼容契约 |
+
+疾病索引的 `data` 是快照 payload 加上 `data_version`、`generated_at`，其中 `options.diagnoses` 是唯一允许的画像选择来源，`sections.top10` 保留上游已发布顺序。画像 payload 的指标至少覆盖住院出院记录数、平均住院时长、平均收费、平均成本和急诊率；分区覆盖年龄、性别、严重程度、死亡风险、常见操作和主要医院。具体指标键、单位、顺序和数值均以快照为准，API 不做二次解释。
+
+合法枚举已发布但对应 `profile:{diagnosis_code}` 尚未发布时，返回 `200 OK`，保留索引的标题、描述、版本和生成时间，并返回 `filters: {"diagnosis_code": "..."}`、空 `metrics` 和空 `sections`。索引本身未发布、MySQL 不可用或快照契约校验失败时，不降级为空结果，分别返回 `503 RESULT_NOT_READY`、`503 DATABASE_UNAVAILABLE` 或 `500 SERVICE_RESULT_INVALID`；未知路径参数/查询字段返回 `400 INVALID_QUERY_PARAMETER`，details 只列安全字段名。
+
+## 医院运营分析 API（Issue #48）
+
+医院接口只读取统一快照服务，不读取 CSV/HDFS，不在路由中重新聚合、排序、换算单位或修补空值。`FixtureAnalyticsSnapshotRepository` 和 `MySQLAnalyticsSnapshotRepository` 均通过同一个 `AnalyticsSnapshotService.get(module_key, entity_key)` seam 读取：
+
+| 方法 | 路径 | 参数/实体键 |
+|---|---|---|
+| `GET` | `/api/v1/hospitals` | `facility_a`、`facility_b`、`metric`；无筛选读取 `hospitals/index` |
+| `GET` | `/api/v1/hospitals/{facility_id}` | `facility_id` 来自 `hospitals/index.options.facilities[].value`；读取 `hospitals/profile:{facility_id}` |
+
+`facility_a`、`facility_b` 只能使用快照枚举中的字符串机构编码；`metric` 只能是 `case_count`、`avg_los`、`avg_charges`、`avg_costs`、`emergency_rate` 或 `severe_rate`。未知参数、重复参数、非法枚举和相同的 A/B 机构返回 `400 INVALID_QUERY_PARAMETER`；所有医院读取接口严格 GET-only，携带请求体返回 `400 INVALID_REQUEST_FORMAT`，`HEAD`、`OPTIONS`、其他方法返回 `405 METHOD_NOT_ALLOWED`。
+
+成功响应继续使用统一信封。无筛选时 `data` 就是索引快照；存在筛选时，`data.filters` 回显已接受的白名单字符串，并在选择机构后增加 `comparison` 数组。`comparison` 是 API 响应层对完整 profile 快照的稳定顺序组合，不是数据库 payload 的新增字段，profile 内的指标顺序、单位和数值原样保留。
+
+下面以“机构已在索引枚举中、profile 尚未发布”的合法空结果为例；profile 已发布时 `metrics`、`sections` 和 `comparison` 会携带快照原值。
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "医院运营分析",
+    "description": "比较医疗机构病例量、住院时长、费用与重症结构。",
+    "options": {"facilities": [{"value": "001456", "label": "Mount Sinai Hospital"}]},
+    "filters": {"facility_a": "001456", "metric": "avg_charges"},
+    "metrics": [],
+    "sections": [],
+    "comparison": [],
+    "data_version": "sparcs_2021_20231012_sha256_<input-sha256>",
+    "generated_at": "2026-08-18T12:00:00.000000Z"
+  },
+  "trace_id": "<uuid>"
+}
+```
+
+合法机构已在 `index` 枚举中发布、但对应 profile 尚未发布时，返回 `200 OK` 并保留 `title`、`description`、`filters`、`data_version`、`generated_at`，同时令 `metrics`、`sections`、`comparison` 为空；索引本身未发布仍返回 `503 RESULT_NOT_READY`。MySQL 连接/查询失败返回 `503 DATABASE_UNAVAILABLE`；配置缺失返回 `500 SERVER_MISCONFIGURED`；快照 JSON 或结构校验失败返回 `500 SERVICE_RESULT_INVALID`。错误响应不包含 SQL、连接地址、密码、绝对路径或堆栈。
+
+最小调用示例：
+
+```powershell
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals'
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals/001456'
+curl.exe 'http://127.0.0.1:5000/api/v1/hospitals?facility_a=001456&facility_b=000541&metric=avg_charges'
+```
+
+固定 fixture 验证：`python -m pytest backend/tests/test_analytics_api.py -q`；完整回归：`python -m pytest backend/tests data/tests -q`。真实验收时将 `ANALYTICS_DATA_SOURCE` 切换为 `mysql`，使用已发布的医院 `index/profile` 快照重复无筛选、单院、双院、指标和错误路径，并对照 [Issue #47 医院快照证据](../evidence/47/README.md) 的 `data_version`、`generated_at`、206 条医院记录和 payload 一致性结果。
+
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
 > 当前状态：`FROZEN`
 > 冻结记录：2026-08-18，Issue #10 的字段、四态和边界语义已按 Resolution、真实服务结果和 `backend/tests/test_disease_top10_api.py` 复核；后续公共字段变更必须先说明上下游影响。
 > 上游依据：`02-metrics-and-data-contract.md` V1.1（Issue #7、#9，`FROZEN`）
+
+## 0. Issue #40 统一分析快照读取基础
+
+终局分析页面通过一个只读 Service interface 获取已发布快照，不在路由中连接数据库、解析 JSON 或重新计算指标：
+
+```python
+AnalyticsSnapshotService.get(module_key, entity_key) -> dict
+```
+
+返回值是冻结 `payload` 加上同一批次的 `data_version` 和 `generated_at`。`FixtureAnalyticsSnapshotRepository` 与 `MySQLAnalyticsSnapshotRepository` 是这个 interface 的两个 adapter；MySQL adapter 只读取 `analysis_snapshot_result`，查询参数使用绑定变量，不读取 CSV/HDFS。
+
+### 0.1 数据源和配置
+
+`ANALYTICS_DATA_SOURCE` 必须显式设置为 `fixture` 或 `mysql`，未知、缺失值不会悄悄回退到 fixture，而是在请求时返回 `500 SERVER_MISCONFIGURED`。fixture 只用于联调和契约测试；真实模式还必须提供 `MYSQL_HOST`、`MYSQL_USER`、`MYSQL_DATABASE`，密码只放在未提交的 `backend/.env` 中。
+
+公共快照的结构校验位于 `shared/analytics_snapshot_contract.py`，Repository 负责读取和依赖错误映射，`AnalyticsSnapshotService` 负责统一验证和时间格式化。MySQL 已发布快照的 JSON 损坏、字段未知、版本/时间或 payload 不符合结构时返回 `500 SERVICE_RESULT_INVALID`；fixture 文件无法读取或配置错误时返回 `500 SERVER_MISCONFIGURED`，两者都不会降级为空答案。
+
+### 0.2 分析路由的参数和实体键
+
+所有分析 GET 路由严格拒绝 `HEAD`、`OPTIONS`、其他 HTTP 方法和请求体。查询参数先经过 `backend/app/routes/parameters.py` 的白名单检查，再按索引快照的 `options` 校验枚举值；重复参数也会返回 `400 INVALID_QUERY_PARAMETER`。费用路由的 `diagnosis_code` 与 `facility_id` 互斥。
+
+实体键只能由服务端按以下顺序拼接，调用方不得自行改顺序：
+
+| 场景 | entity_key |
+|---|---|
+| 总览、索引、汇总 | `overview`、`index` 或固定 `summary` |
+| 医院画像 | `profile:{facility_id}` |
+| 疾病画像 | `profile:{diagnosis_code}` |
+| 群体 | `age={age_group}\|gender={gender}\|admission={admission_type}` |
+| 费用 | `diagnosis={diagnosis_code}\|facility={facility_id}\|severity={severity}` |
+| 风险 | `age={age_group}\|diagnosis={diagnosis_code}` |
+| 支付 | `payment={payment_type}\|age={age_group}` |
+
+合法枚举值对应的具体快照尚未发布时，接口返回 `200`，保留标题、描述、版本和时间，并将 `metrics`、`sections` 置为空；整个模块的基础快照未发布时仍返回 `503 RESULT_NOT_READY`。数据库连接/查询失败返回 `503 DATABASE_UNAVAILABLE`。
+
+### 0.3 Issue #40 验证命令
+
+```powershell
+python -m pip install -r backend/requirements.txt
+python -m pytest -q backend/tests/test_analytics_api.py backend/tests/test_disease_top10_api.py
+```
+
+测试覆盖统一响应信封和 `X-Trace-ID`、未知/重复参数、枚举校验、费用互斥、实体键顺序、合法空结果、方法/请求体错误、配置缺失、数据库依赖错误和损坏快照。完整的终局字段和模块清单见 [07-terminal-product-contract.md](07-terminal-product-contract.md)。
 
 ## 1. 范围和基本原则
 

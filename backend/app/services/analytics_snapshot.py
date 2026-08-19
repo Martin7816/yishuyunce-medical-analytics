@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from shared.analytics_snapshot_contract import (
     SnapshotContractError,
     normalize_utc_timestamp,
@@ -23,11 +25,11 @@ class AnalyticsSnapshotService:
     def get(self, module_key: str, entity_key: str) -> dict:
         try:
             record = self.repository.fetch(module_key, entity_key)
-            payload = validate_payload(record["payload"])
+            payload = deepcopy(validate_payload(record["payload"]))
             version = validate_data_version(record["data_version"])
             result = dict(payload)
             result["data_version"] = version
             result["generated_at"] = _format_utc(record["generated_at"])
             return result
-        except (KeyError, TypeError, SnapshotContractError) as error:
+        except (KeyError, TypeError, OverflowError, SnapshotContractError) as error:
             raise InvalidServiceResultError() from error

@@ -1,0 +1,72 @@
+{
+  "route": "/hospitals",
+  "browser": "Codex In-app Browser",
+  "fixture": {
+    "success": {
+      "data_version": "fixture:sparcs_full_analytics:v1",
+      "facility_options": 2,
+      "ranking_charts": 1,
+      "fixture_warning": true
+    },
+    "single_profile": {
+      "comparison_cards": 1,
+      "profile_sections": ["主要疾病 TOP5", "内外科结构"],
+      "charts": 2,
+      "base_metric_cards": 0
+    },
+    "double_profile": {
+      "comparison_cards": 2,
+      "profile_sections": 4,
+      "charts": 4,
+      "highlighted_metric_cards": 2,
+      "request": "/api/v1/hospitals?facility_a=1&facility_b=2&metric=avg_charges"
+    },
+    "empty": {
+      "route": "/cohorts",
+      "state": "state-panel empty",
+      "selected_filter": "50 to 69",
+      "clear_filter_button": true,
+      "charts": 0
+    },
+    "error": {
+      "state": "state-panel error",
+      "code": "HTTP_ERROR",
+      "retry_button": true,
+      "old_charts": 0
+    }
+  },
+  "real": {
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+    "facility_count": 205,
+    "index": {
+      "ranking_charts": 1,
+      "fixture_warning": false
+    },
+    "single_profile": {
+      "facility_id": "001456",
+      "comparison_cards": 1,
+      "profile_sections": ["主要疾病 TOP5", "内外科结构"],
+      "charts": 2,
+      "base_metric_cards": 0
+    },
+    "double_profile": {
+      "facility_ids": ["001456", "000541"],
+      "profile_titles": ["Mount Sinai Hospital", "North Shore University Hospital"],
+      "comparison_cards": 2,
+      "profile_sections": 4,
+      "charts": 4,
+      "highlighted_metric_cards": 2,
+      "footer_data_version_consistent": true
+    },
+    "responsive": {
+      "desktop": {"client_width": 1265, "scroll_width": 1265, "filter_count": 3},
+      "mobile": {"client_width": 375, "scroll_width": 375, "comparison_cards": 2, "charts": 4, "top_nav_internal_overflow": true}
+    }
+  },
+  "console": {
+    "real_error_or_warning_entries": 0,
+    "fixture_error_or_warning_entries": 0,
+    "error_page_error_or_warning_entries": 0,
+    "chart_resize_loop_reproduced_after_scheduling_fix": false
+  }
+}
