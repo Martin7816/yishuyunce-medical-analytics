@@ -1,0 +1,18 @@
+Issue #65 verification — 2026-08-19 Asia/Shanghai
+
+frontend> npm.cmd run build
+vite v8.2.1
+621 modules transformed
+PASS — built in 592ms
+
+repo> python -m pytest backend/tests data/tests -q
+63 passed, 6 skipped in 1.33s
+
+repo> git diff --check
+PASS
+
+Browser console after fixture and real MySQL runs:
+errors=[]
+warnings=[]
+
+Note: Vite reports the existing ECharts chunk-size advisory; it is non-fatal and does not affect #65 acceptance.

@@ -1,0 +1,38 @@
+{
+  "/api/v1/hospitals": {
+    "code": "OK",
+    "comparison_count": 0,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "filters": null,
+    "status": 200,
+    "trace_id": "ca19a05d-46e3-4eb9-95a3-576c59b2bc47"
+  },
+  "/api/v1/hospitals/1": {
+    "code": "OK",
+    "comparison_count": 0,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "filters": null,
+    "status": 200,
+    "trace_id": "8e00d024-3c79-4846-9a11-b532af496843"
+  },
+  "/api/v1/hospitals?facility_a=1": {
+    "code": "OK",
+    "comparison_count": 1,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "filters": {"facility_a": "1"},
+    "status": 200,
+    "trace_id": "856b5113-34ef-4fb0-a8cc-bbe0856b7332"
+  },
+  "/api/v1/hospitals?facility_a=1&facility_b=2&metric=avg_charges": {
+    "code": "OK",
+    "comparison_count": 2,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "filters": {
+      "facility_a": "1",
+      "facility_b": "2",
+      "metric": "avg_charges"
+    },
+    "status": 200,
+    "trace_id": "edc06586-3b77-4124-b53d-ab0df63e5606"
+  }
+}

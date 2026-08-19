@@ -1,0 +1,10 @@
+{
+  "status": "BLOCKED",
+  "operation": "publish and module-level MySQL comparison",
+  "targets": [
+    {"host": "192.168.219.128", "port": 3306, "tcp": false, "result": "timeout"},
+    {"host": "192.168.57.16", "port": 3306, "tcp": false, "result": "timeout"}
+  ],
+  "safety": "publisher could not open a connection, so no delete/insert transaction started",
+  "next_step": "start the shared MySQL VM or confirm its current address, then rerun publish --apply and verify_disease_snapshot.py --mysql"
+}

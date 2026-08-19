@@ -1,0 +1,64 @@
+{
+  "route": "/risks",
+  "fixture_success": {
+    "metrics": 4,
+    "sections": ["severity", "mortality", "disposition", "age", "diseases"],
+    "fixture_warning": true,
+    "disposition_grid_column": "1 / -1"
+  },
+  "loading": {
+    "state": "state-panel loading",
+    "aria_busy": true,
+    "old_metrics": 0,
+    "old_charts": 0,
+    "filters_retained": 2,
+    "boundary_visible": true
+  },
+  "empty": {
+    "selected_age_group": "50 to 69",
+    "state": "state-panel empty",
+    "old_metrics": 0,
+    "old_charts": 0,
+    "clear_filter_button": true,
+    "boundary_visible": true
+  },
+  "error": {
+    "state": "state-panel error",
+    "code": "SERVER_MISCONFIGURED",
+    "trace_id_visible": true,
+    "retry_button": true,
+    "old_metrics": 0,
+    "old_charts": 0,
+    "boundary_visible": true
+  },
+  "stale_response": {
+    "scenario": "slow age_group=50 to 69 request followed by fast clear-filter request",
+    "final_selected_age_group": "",
+    "final_state_after_slow_response_arrived": "success",
+    "final_metric_high_risk_count": "696,524",
+    "charts": 5
+  },
+  "responsive": {
+    "desktop_viewport_width": 1280,
+    "desktop_client_width": 1265,
+    "desktop_scroll_width": 1265,
+    "mobile_viewport_width": 390,
+    "mobile_client_width": 375,
+    "mobile_scroll_width": 375,
+    "mobile_section_columns": 1,
+    "top_nav_client_width": 375,
+    "top_nav_scroll_width": 440,
+    "top_nav_internal_overflow_allowed": true
+  },
+  "real_success": {
+    "fixture_warning": false,
+    "age_options": 5,
+    "diagnosis_options": 477,
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+    "filtered_age_group": "70 or Older",
+    "filtered_diagnosis_code": "INF002",
+    "filtered_high_risk_count": "55,467",
+    "filtered_high_risk_rate": "83.96%"
+  },
+  "console": { "errors": [], "warnings": [] }
+}

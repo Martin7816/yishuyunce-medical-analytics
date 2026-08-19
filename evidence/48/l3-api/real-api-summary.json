@@ -1,0 +1,27 @@
+{
+  "source": "Existing hospital real-success browser acceptance artifact from Issue #49; copied here as the backend handoff summary.",
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "index": {
+    "facility_count": 205,
+    "ranking_charts": 1,
+    "fixture_warning": false
+  },
+  "single_profile": {
+    "facility_id": "001456",
+    "comparison_cards": 1,
+    "profile_sections": ["主要疾病 TOP5", "内外科结构"],
+    "charts": 2
+  },
+  "double_profile": {
+    "facility_ids": ["001456", "000541"],
+    "profile_titles": ["Mount Sinai Hospital", "North Shore University Hospital"],
+    "comparison_cards": 2,
+    "profile_sections": 4,
+    "charts": 4,
+    "highlighted_metric_cards": 2,
+    "footer_data_version_consistent": true
+  },
+  "console": {
+    "real_error_or_warning_entries": 0
+  }
+}
