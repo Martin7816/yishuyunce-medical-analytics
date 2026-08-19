@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "mode": "dry-run",
+  "rows": 47,
+  "cohort_rows": 36,
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215"
+}

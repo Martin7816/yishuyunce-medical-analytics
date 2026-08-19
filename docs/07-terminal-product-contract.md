@@ -62,6 +62,8 @@
 
 合法但尚未发布的筛选仍返回 `200`，保留标题、描述、版本和时间，将 `metrics`、`sections` 置为空；非法参数、未知字段和非白名单值返回 `400`。
 
+`entity_key` 中的枚举值按发布的字符串原样保存，因此允许年龄等枚举值内部的普通空格（例如 `age=50 to 69|gender=*|admission=*`）；模块键和实体键仍禁止首尾空白、换行、回车和制表控制字符。请求 URL 中的空格按 HTTP 客户端规则编码，服务端解码后使用同一实体键顺序。
+
 医院模块补充约束：`hospitals/index.options.facilities[].value` 和
 `hospitals/profile:{facility_id}` 的 `facility_id` 均按字符串处理；医院画像的病例量
 指标键固定为 `case_count`，平均金额的单位为 `美元`，比例指标的单位为 `%` 且值域为

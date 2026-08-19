@@ -255,6 +255,29 @@ python data/src/verify_hospital_snapshot.py `
 
 固定边界样例、真实全量医院键清单与独立核对结果见 [`evidence/47/README.md`](../evidence/47/README.md)。
 
+### 4.4 住院记录群体分析快照（Issue #55）
+
+群体模块继续复用 `run_full_analytics_pyspark.py` 已持久化的统一清洗帧，不重新读取 CSV。任务从 `age_group`、`gender`、`admission_type` 的有效枚举构造完整笛卡尔积：每个维度都包含 `*` wildcard，生成 `age={值或*}|gender={值或*}|admission={值或*}`；无记录组合也保留为 `metrics=[]/sections=[]` 的合法空 payload。
+
+非空组合的记录数、急诊率、平均住院时长、平均收费和平均成本使用当前筛选后的记录分母；费用和住院时长平均值只使用对应的可解析非负值。主要疾病严格 TOP10，严重程度、年龄结构和性别结构按 `value` 降序、`name` 升序发布。`%` 值保持 0—1 比例，金额单位为美元，记录数单位为条。
+
+固定边界样例和真实全量均使用独立标准库脚本复核：
+
+```powershell
+python data/src/run_full_analytics_pyspark.py `
+  --input "<本地 CSV>" `
+  --output "<本地临时目录>\cohorts-full.json" `
+  --module all `
+  --generated-at 2026-08-19T00:00:00Z
+python data/src/verify_cohort_snapshot.py `
+  --input "<本地 CSV>" `
+  --snapshot "<本地临时目录>\cohorts-full.json"
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<本地临时目录>\cohorts-full.json"
+```
+
+真实 CSV、快照和数据库凭证不提交 Git；#55 的实际键数量、空组合数量、版本、MySQL 对照和回滚结果以 `evidence/55/README.md` 为准。后端使用 `GET /api/v1/cohorts/summary` 按相同 entity key 读取，前端只渲染返回顺序，不在请求或页面重新聚合。
+
 ## 5. VM 启动、健康检查与停止
 
 ### 5.1 启动前检查

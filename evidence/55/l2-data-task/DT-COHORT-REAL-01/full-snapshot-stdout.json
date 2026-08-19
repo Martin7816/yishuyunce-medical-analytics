@@ -1,0 +1,55 @@
+{
+  "status": "PASS",
+  "input": "Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv",
+  "raw_rows": 2101588,
+  "records_without_model": 857,
+  "dashboard_metric_keys": [
+    "record_count",
+    "avg_los",
+    "avg_charges",
+    "avg_costs",
+    "emergency_rate",
+    "surgical_rate",
+    "severe_rate"
+  ],
+  "cohort_key_count": 168,
+  "cohort_nonempty_combination_count": 154,
+  "cohort_empty_combination_count": 14,
+  "age_group_options": [
+    "0 to 17",
+    "18 to 29",
+    "30 to 49",
+    "50 to 69",
+    "70 or Older"
+  ],
+  "gender_options": ["F", "M", "U"],
+  "admission_type_options": [
+    "Elective",
+    "Emergency",
+    "Newborn",
+    "Not Available",
+    "Trauma",
+    "Urgent"
+  ],
+  "wildcard_metrics": {
+    "record_count": 2101588,
+    "avg_los": 5.74,
+    "avg_charges": 73305.42,
+    "avg_costs": 21990.13,
+    "emergency_rate": 0.6263,
+    "surgical_rate": 0.2348,
+    "severe_rate": 0.3332
+  },
+  "sample_finite_key": {
+    "entity_key": "age=50 to 69|gender=F|admission=Emergency",
+    "record_count": 192898,
+    "avg_los": 6.62,
+    "avg_charges": 80067.94,
+    "avg_costs": 23883.61,
+    "emergency_rate": 0.9444,
+    "surgical_rate": 0.1429,
+    "severe_rate": 0.4486
+  },
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

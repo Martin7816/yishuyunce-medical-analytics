@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "operation": "temporary delete inside transaction followed by injected failure",
+  "before": {
+    "total_rows": 858,
+    "distinct_data_versions": 1,
+    "distinct_generated_at": 1
+  },
+  "after": {
+    "total_rows": 858,
+    "distinct_data_versions": 1,
+    "distinct_generated_at": 1
+  },
+  "rolled_back": true
+}
