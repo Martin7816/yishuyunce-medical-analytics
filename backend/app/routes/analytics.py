@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, g, jsonify
+from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import MethodNotAllowed
 
 from ..errors import InvalidRequestError, ResultNotReadyError

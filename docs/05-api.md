@@ -22,6 +22,20 @@
 
 预测请求只接受 `age_group`、`gender`、`race`、`ethnicity`、`hospital_service_area`、`facility_id`、`admission_type`、`emergency_indicator`。AI 请求只接受 `{"message":"..."}`。两者均拒绝额外字段；预测接口专门返回 `LEAKAGE_FIELD_FORBIDDEN` 拦截目标或出院后字段。
 
+## 1.0 疾病画像接口（Issue #52）
+
+疾病模块只读取统一快照服务，不在路由中读取 CSV、执行 SQL、重新聚合、排序、截断、换单位或修补空值。对应的快照实体键固定为：
+
+| 请求 | 快照读取 | 请求约束 |
+|---|---|---|
+| `GET /api/v1/diseases` | `diseases/index` | 不接受查询参数或请求体 |
+| `GET /api/v1/diseases/{diagnosis_code}` | 先读取 `diseases/index` 校验枚举，再读取 `diseases/profile:{diagnosis_code}` | `diagnosis_code` 必须来自 `index.options.diagnoses`，不接受查询参数或请求体 |
+| `GET /api/v1/diseases/top10` | 历史 TOP10 服务结果 | 保持第 2—12 节的 M1 兼容契约 |
+
+疾病索引的 `data` 是快照 payload 加上 `data_version`、`generated_at`，其中 `options.diagnoses` 是唯一允许的画像选择来源，`sections.top10` 保留上游已发布顺序。画像 payload 的指标至少覆盖住院出院记录数、平均住院时长、平均收费、平均成本和急诊率；分区覆盖年龄、性别、严重程度、死亡风险、常见操作和主要医院。具体指标键、单位、顺序和数值均以快照为准，API 不做二次解释。
+
+合法枚举已发布但对应 `profile:{diagnosis_code}` 尚未发布时，返回 `200 OK`，保留索引的标题、描述、版本和生成时间，并返回 `filters: {"diagnosis_code": "..."}`、空 `metrics` 和空 `sections`。索引本身未发布、MySQL 不可用或快照契约校验失败时，不降级为空结果，分别返回 `503 RESULT_NOT_READY`、`503 DATABASE_UNAVAILABLE` 或 `500 SERVICE_RESULT_INVALID`；未知路径参数/查询字段返回 `400 INVALID_QUERY_PARAMETER`，details 只列安全字段名。
+
 ## 医院运营分析 API（Issue #48）
 
 医院接口只读取统一快照服务，不读取 CSV/HDFS，不在路由中重新聚合、排序、换算单位或修补空值。`FixtureAnalyticsSnapshotRepository` 和 `MySQLAnalyticsSnapshotRepository` 均通过同一个 `AnalyticsSnapshotService.get(module_key, entity_key)` seam 读取：
