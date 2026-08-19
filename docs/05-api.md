@@ -124,6 +124,59 @@ python -m pytest -q backend/tests/test_analytics_api.py
 > 冻结记录：2026-08-18，Issue #10 的字段、四态和边界语义已按 Resolution、真实服务结果和 `backend/tests/test_disease_top10_api.py` 复核；后续公共字段变更必须先说明上下游影响。
 > 上游依据：`02-metrics-and-data-contract.md` V1.1（Issue #7、#9，`FROZEN`）
 
+## 支付方式分析 API（Issue #68）
+
+`GET /api/v1/payments/overview` 只通过统一的 `AnalyticsSnapshotService.get(module_key, entity_key)` 读取 `payments` 已发布快照。路由只负责查询参数白名单、快照枚举校验、固定实体键和统一响应信封；不读取 CSV/MySQL、不执行 SQL、不重新聚合、排序、截断、换单位或修补空值。
+
+| 参数 | 是否必填 | 枚举来源 | 实体键片段 |
+|---|---|---|---|
+| `payment_type` | 否 | `payments` 基础快照 `options.payment_type`；对应清洗字段 `Payment Typology 1` 的非空值 | `payment={值或*}` |
+| `age_group` | 否 | `payments` 基础快照 `options.age_group` | `age={值或*}` |
+
+服务端始终按 `payment`、`age` 顺序构造实体键。无筛选读取 `payments/payment=*|age=*`；例如：
+
+```text
+GET /api/v1/payments/overview?payment_type=Medicare&age_group=50%20to%2069
+payments/payment=Medicare|age=50 to 69
+```
+
+成功响应保留快照 payload 的 `title`、`description`、`options`、`filters`、`metrics`、`sections`，并附加同一批次的 `data_version`、`generated_at`。支付快照的 `sections` 固定按 `payment`、`charges`、`age`、`diseases` 顺序返回；记录数、平均/中位收费、支付方式费用、年龄结构和主要疾病均由上游快照提供。支付排行与费用排行排除空支付值，疾病 section 严格 TOP10；API 不改写这些结果。
+
+最小调用和成功响应示例：
+
+```powershell
+curl.exe 'http://127.0.0.1:5000/api/v1/payments/overview'
+curl.exe 'http://127.0.0.1:5000/api/v1/payments/overview?payment_type=Medicare&age_group=50%20to%2069'
+```
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "支付方式分析",
+    "filters": {"payment_type": "Medicare", "age_group": "50 to 69"},
+    "metrics": [],
+    "sections": [],
+    "data_version": "sparcs_2021_20231012_sha256_<input-sha256>",
+    "generated_at": "2026-08-19T00:00:00.000000Z"
+  },
+  "trace_id": "<uuid>"
+}
+```
+
+上例表示合法枚举组合尚未发布时的 `200` 合法空结果；保留标题、描述、选项、过滤条件、版本和生成时间，并令 `metrics=[]`、`sections=[]`。真实快照必须发布 wildcard 与每个有限 `payment_type × age_group` 组合；整个模块未发布仍返回 `503 RESULT_NOT_READY`。
+
+未知/重复查询参数或非法枚举返回 `400 INVALID_QUERY_PARAMETER`；GET 请求体返回 `400 INVALID_REQUEST_FORMAT`；`HEAD`、`OPTIONS`、POST、PUT、DELETE 返回 `405 METHOD_NOT_ALLOWED`；MySQL 连接/查询失败返回 `503 DATABASE_UNAVAILABLE`；配置缺失返回 `500 SERVER_MISCONFIGURED`；payload JSON 损坏或公共结构校验失败返回 `500 SERVICE_RESULT_INVALID`。错误响应的 `details` 只列安全参数名，不包含 SQL、连接串、绝对路径、堆栈或密钥。
+
+固定 fixture 验证：
+
+```powershell
+python -m pytest -q backend/tests/test_payments_api.py
+python -m pytest -q backend/tests
+```
+
+真实 MySQL/API 验收按 `ANALYTICS_DATA_SOURCE=mysql` 重复 wildcard、每个单筛选、合法组合和合法空组合请求，并把响应 payload、`data_version`、`generated_at` 与 `analysis_snapshot_result` 的对应行逐项对照。#67 已提供 60 个支付实体键和完整 payload 发布证据；#68 的后端 API 复验记录在 [evidence/68/README.md](../evidence/68/README.md)，#69 可直接按本节路径和错误码消费。
 ## 0. Issue #40 统一分析快照读取基础
 
 终局分析页面通过一个只读 Service interface 获取已发布快照，不在路由中连接数据库、解析 JSON 或重新计算指标：
