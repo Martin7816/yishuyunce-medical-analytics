@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "operation": "temporary delete inside transaction followed by injected failure",
+  "before": {
+    "total_rows": 7197,
+    "distinct_data_versions": 1,
+    "distinct_generated_at": 1,
+    "cost_rows": 3415
+  },
+  "during_uncommitted_delete": {
+    "total_rows": 0,
+    "distinct_data_versions": 0,
+    "distinct_generated_at": 0,
+    "cost_rows": 0
+  },
+  "after_rollback": {
+    "total_rows": 7197,
+    "distinct_data_versions": 1,
+    "distinct_generated_at": 1,
+    "cost_rows": 3415
+  },
+  "net_change": false
+}
