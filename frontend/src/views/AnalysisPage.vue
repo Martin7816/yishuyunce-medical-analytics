@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
     <header class="page-heading">
       <div>
         <p class="eyebrow">{{ config.eyebrow }}</p>
-        <h1>{{ data?.title || '医数云策分析模块' }}</h1>
+        <h1>{{ data?.title || config.title || '医数云策分析模块' }}</h1>
         <p>{{ data?.description || '正在读取统一分析快照。' }}</p>
       </div>
       <span v-if="data?.data_version" class="version-pill" :title="data.data_version">批次 {{ data.data_version }}</span>
@@ -212,27 +212,39 @@ onBeforeUnmount(() => {
     <PageState v-if="state !== 'success' && !validationMessage" :state="state" :error="error" @retry="load" />
     <template v-else-if="state === 'success'">
       <p v-if="config.disclaimer" class="warning-note">{{ config.disclaimer }}</p>
-      <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
-      <section v-if="data.comparison?.length" class="comparison-grid">
-        <article v-for="profile in data.comparison" :key="profile.title" class="content-card">
-          <h2>{{ profile.title }}</h2>
-          <div class="compact-metrics">
-            <MetricCard
-              v-for="item in profile.metrics"
-              :key="item.key"
-              :metric="item"
-              :highlighted="Boolean(config.highlightMetricKey && filters[config.highlightMetricKey] === item.key)"
-            />
-          </div>
-        </article>
-      </section>
-      <section class="section-grid">
-        <article v-for="section in data.sections" :key="section.key" class="content-card">
-          <h2>{{ section.title }}</h2>
-          <AnalyticsChart v-if="section.items?.length" :section="section" />
-          <p v-else class="section-empty">当前条件没有可展示的条目。</p>
-        </article>
-      </section>
+      <template v-if="data.comparison?.length">
+        <section class="comparison-grid">
+          <article v-for="(profile, profileIndex) in data.comparison" :key="`comparison-${profileIndex}`" class="content-card comparison-card">
+            <h2>{{ profile.title }}</h2>
+            <p v-if="profile.description" class="profile-description">{{ profile.description }}</p>
+            <div class="compact-metrics">
+              <MetricCard
+                v-for="item in profile.metrics"
+                :key="item.key"
+                :metric="item"
+                :highlighted="Boolean(config.highlightMetricKey && filters[config.highlightMetricKey] === item.key)"
+              />
+            </div>
+            <div v-if="profile.sections?.length" class="profile-section-grid">
+              <section v-for="(section, sectionIndex) in profile.sections" :key="`${profileIndex}-${section.key}-${sectionIndex}`" class="profile-section">
+                <h3>{{ section.title }}</h3>
+                <AnalyticsChart v-if="section.items?.length" :section="section" />
+                <p v-else class="section-empty">当前条件没有可展示的条目。</p>
+              </section>
+            </div>
+          </article>
+        </section>
+      </template>
+      <template v-else>
+        <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
+        <section class="section-grid">
+          <article v-for="section in data.sections" :key="section.key" class="content-card">
+            <h2>{{ section.title }}</h2>
+            <AnalyticsChart v-if="section.items?.length" :section="section" />
+            <p v-else class="section-empty">当前条件没有可展示的条目。</p>
+          </article>
+        </section>
+      </template>
       <footer class="data-footer"><span>数据版本：{{ data.data_version }}</span><span>生成时间：{{ data.generated_at }}</span><span>记录统计不等同于患者人数</span></footer>
     </template>
   </div>

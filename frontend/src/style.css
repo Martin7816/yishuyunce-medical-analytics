@@ -30,9 +30,10 @@ button { cursor: pointer; }
 .section-grid, .comparison-grid, .model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; margin-top: 17px; }
 .content-card, .ask-card, .answer-sheet { padding: 22px; border: 1px solid #dfe8e9; border-radius: 14px; background: white; box-shadow: 0 8px 26px #1d424a0b; }
 .content-card h2 { margin: 0 0 15px; color: #25464d; font-size: 16px; }.chart-canvas { width: 100%; height: 300px; }
+.comparison-card { min-width: 0; }.comparison-card h2 { margin-bottom: 6px; }.profile-description { margin: 0 0 16px; color: #71818a; font-size: 12px; }.profile-section-grid { display: grid; gap: 14px; margin-top: 18px; }.profile-section { min-width: 0; padding-top: 16px; border-top: 1px solid #e5eded; }.profile-section h3 { margin: 0 0 10px; color: #416169; font-size: 13px; }.profile-section .chart-canvas { height: 240px; }
 .status-grid { display: grid; gap: 8px; }.status-grid div { display: flex; justify-content: space-between; gap: 20px; padding: 12px; border-radius: 8px; background: #f4f8f8; }.status-grid span { color: #647980; }.status-grid strong { color: #28767a; }
 .compact-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.compact-metrics .metric-card { padding: 12px; box-shadow: none; }.compact-metrics .metric-card strong { font-size: 18px; }
-.data-footer { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; padding-top: 16px; border-top: 1px solid #dfe7e8; color: #7b8c93; font-size: 11px; }
+.data-footer { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; padding-top: 16px; border-top: 1px solid #dfe7e8; color: #7b8c93; font-size: 11px; }.data-footer span { min-width: 0; overflow-wrap: anywhere; }
 .warning-note { padding: 11px 14px; border-left: 3px solid #c0913e; border-radius: 5px; color: #695329; background: #fff8e9; font-size: 12px; }
 .filter-notice { margin: -8px 0 18px; padding: 10px 13px; border-left: 3px solid #b56c42; border-radius: 5px; color: #7a452e; background: #fff2eb; font-size: 13px; }
 .section-empty { margin: 0; padding: 52px 14px; border-radius: 8px; color: #7c8d92; text-align: center; background: #f5f9f9; }

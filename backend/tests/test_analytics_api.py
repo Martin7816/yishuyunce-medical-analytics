@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app import create_app
+from app.errors import DatabaseUnavailableError, ResultNotReadyError, ServerMisconfiguredError
+from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotRepository
+from werkzeug.test import EnvironBuilder
 
 
 def fixture_app(**kwargs):
@@ -15,6 +20,29 @@ def fixture_app(**kwargs):
         },
         **kwargs,
     )
+
+
+class RaisingAnalyticsRepository:
+    def __init__(self, error):
+        self.error = error
+
+    def fetch(self, module_key, entity_key):
+        raise self.error
+
+
+class RecordingAnalyticsRepository:
+    def __init__(self):
+        self.keys = []
+        self.delegate = FixtureAnalyticsSnapshotRepository(
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+
+    def fetch(self, module_key, entity_key):
+        self.keys.append((module_key, entity_key))
+        return self.delegate.fetch(module_key, entity_key)
 
 
 def test_all_read_endpoints_share_envelope_and_version():
@@ -34,6 +62,128 @@ def test_all_read_endpoints_share_envelope_and_version():
         assert response.headers["X-Trace-ID"] == body["trace_id"]
         versions.add(body["data"]["data_version"])
     assert versions == {"fixture:sparcs_full_analytics:v1"}
+
+
+def test_dashboard_success_uses_the_frozen_read_interface():
+    response = fixture_app().test_client().get("/api/v1/dashboard/overview")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["code"] == "OK"
+    assert body["message"] == "success"
+    assert response.headers["X-Trace-ID"] == body["trace_id"]
+    assert body["data"]["data_version"] == "fixture:sparcs_full_analytics:v1"
+    assert [item["key"] for item in body["data"]["metrics"]] == [
+        "record_count",
+        "facility_count",
+        "avg_los",
+        "avg_charges",
+        "avg_costs",
+        "emergency_rate",
+        "surgical_rate",
+        "severe_rate",
+    ]
+    assert [section["key"] for section in body["data"]["sections"]] == [
+        "age",
+        "payment",
+        "disease_top10",
+        "hospital_top10",
+        "severity",
+    ]
+
+
+def test_dashboard_get_body_is_rejected():
+    response = fixture_app().test_client().get(
+        "/api/v1/dashboard/overview", json={"module_key": "dashboard"}
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+
+def test_dashboard_unknown_query_parameter_is_rejected():
+    response = fixture_app().test_client().get(
+        "/api/v1/dashboard/overview?facility_id=1"
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["code"] == "INVALID_QUERY_PARAMETER"
+    assert body["details"] == {"parameters": ["facility_id"]}
+
+
+def test_chunked_dashboard_get_body_is_rejected():
+    client = fixture_app().test_client()
+    environ = EnvironBuilder(
+        path="/api/v1/dashboard/overview",
+        method="GET",
+        data=b'{"module_key":"dashboard"}',
+        headers={"Transfer-Encoding": "chunked"},
+    ).get_environ()
+    environ.pop("CONTENT_LENGTH", None)
+    environ["wsgi.input_terminated"] = True
+
+    response = client.open(environ)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+
+def test_analytics_endpoints_reject_implicit_head_and_options():
+    client = fixture_app().test_client()
+
+    head = client.head("/api/v1/dashboard/overview")
+    options = client.options("/api/v1/dashboard/overview")
+
+    assert head.status_code == 405
+    assert options.status_code == 405
+    assert options.get_json()["code"] == "METHOD_NOT_ALLOWED"
+
+
+def test_dashboard_reads_stable_entity_key_without_route_query_logic():
+    repository = RecordingAnalyticsRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        "/api/v1/dashboard/overview"
+    )
+
+    assert response.status_code == 200
+    assert repository.keys == [("dashboard", "overview")]
+
+
+def test_filter_entity_key_order_is_frozen_for_downstream_modules():
+    repository = RecordingAnalyticsRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        "/api/v1/cohorts/summary?gender=F&age_group=50%20to%2069&admission_type=Emergency"
+    )
+
+    assert response.status_code == 200
+    assert repository.keys == [
+        ("cohorts", "age=*|gender=*|admission=*"),
+        ("cohorts", "age=50 to 69|gender=F|admission=Emergency"),
+    ]
+    assert response.get_json()["data"]["metrics"] == []
+    assert response.get_json()["data"]["sections"] == []
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (ResultNotReadyError(), 503, "RESULT_NOT_READY"),
+        (DatabaseUnavailableError(), 503, "DATABASE_UNAVAILABLE"),
+        (ServerMisconfiguredError(), 500, "SERVER_MISCONFIGURED"),
+    ],
+)
+def test_dashboard_dependency_errors_keep_stable_public_mapping(error, status, code):
+    response = fixture_app(
+        analytics_repository=RaisingAnalyticsRepository(error)
+    ).test_client().get("/api/v1/dashboard/overview")
+
+    assert response.status_code == status
+    body = response.get_json()
+    assert body["code"] == code
+    assert body["data"] is None
+    assert "password" not in response.get_data(as_text=True).lower()
+    assert "select" not in response.get_data(as_text=True).lower()
 
 
 def test_hospital_comparison_is_server_composed():
