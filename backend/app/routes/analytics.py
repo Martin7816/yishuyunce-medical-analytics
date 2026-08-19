@@ -33,6 +33,12 @@ COST_ENTITY_DIMENSIONS = (
     ("facility_id", "facility"),
     ("severity", "severity"),
 )
+RISK_FILTER_PARAMETERS = frozenset({"age_group", "diagnosis_code"})
+RISK_BASE_ENTITY = "age=*|diagnosis=*"
+RISK_ENTITY_DIMENSIONS = (
+    ("age_group", "age"),
+    ("diagnosis_code", "diagnosis"),
+)
 
 
 def _ok(data: dict):
@@ -296,8 +302,7 @@ def cost_overview():
 
 @analytics_bp.get("/api/v1/risks/overview")
 def risk_overview():
-    allowed = {"age_group", "diagnosis_code"}
-    _reject_unknown(allowed)
+    _reject_unknown(RISK_FILTER_PARAMETERS)
     age_group = query_value("age_group")
     diagnosis_code = query_value("diagnosis_code")
     if diagnosis_code is not None:
@@ -307,7 +312,7 @@ def risk_overview():
             _get("diseases", "index"),
             option_name="diagnoses",
         )
-    base = _get("risks", "age=*|diagnosis=*")
+    base = _get("risks", RISK_BASE_ENTITY)
     _validate_option("age_group", age_group, base)
     selected = {
         name: value
@@ -319,8 +324,9 @@ def risk_overview():
     }
     if not selected:
         return _ok(base)
-    entity = "age={}|diagnosis={}".format(
-        selected.get("age_group", "*"), selected.get("diagnosis_code", "*")
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, entity_name in RISK_ENTITY_DIMENSIONS
     )
     return _ok(_get_or_empty("risks", entity, base, selected))
 
