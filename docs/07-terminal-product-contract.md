@@ -69,6 +69,8 @@
 指标键固定为 `case_count`，平均金额的单位为 `美元`，比例指标的单位为 `%` 且值域为
 `0—1`。医院排行和画像都以 `facility_id` 聚合，医院名称只作为展示标签，避免同名机构被合并。
 
+风险模块补充约束：`risks` 同时发布 `age=*|diagnosis=*`、每个年龄枚举、每个诊断编码以及年龄×诊断编码的完整笛卡尔积。指标 `high_risk_count` 和 `high_risk_rate` 使用当前筛选记录作分母，`high_risk_rate` 保持 `0—1` 比例；`avg_los`、`avg_charges`、`avg_costs` 只对 `Major`/`Extreme` 记录中各自可用的非负字段求平均。`severity`、`mortality` 使用当前筛选分母，`disposition`、`age`、`diseases` 只描述高风险记录；`diseases` 严格 TOP10。所有 section item 按数量降序、名称升序，空组合保留合法空 payload。
+
 ## 3. API
 
 | 模块 | 方法与路径 | 白名单参数 |
