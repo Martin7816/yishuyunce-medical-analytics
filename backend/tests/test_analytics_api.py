@@ -378,6 +378,65 @@ def test_valid_unpublished_filter_is_a_legal_empty_result():
     assert risk.get_json()["data"]["metrics"] == []
 
 
+class RecordingCohortRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+        self.calls = []
+
+    def fetch(self, module_key, entity_key):
+        self.calls.append((module_key, entity_key))
+        if module_key == "cohorts" and entity_key != "age=*|gender=*|admission=*":
+            raise ResultNotReadyError()
+        return self.delegate.fetch(module_key, entity_key)
+
+
+def test_cohort_filters_use_frozen_order_and_return_legal_empty_results():
+    repository = RecordingCohortRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        "/api/v1/cohorts/summary?admission_type=Emergency&gender=F&age_group=50%20to%2069"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == {
+        "age_group": "50 to 69",
+        "gender": "F",
+        "admission_type": "Emergency",
+    }
+    assert data["metrics"] == []
+    assert data["sections"] == []
+    assert repository.calls == [
+        ("cohorts", "age=*|gender=*|admission=*"),
+        ("cohorts", "age=50 to 69|gender=F|admission=Emergency"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_filter"),
+    [
+        ("age_group=0%20to%2017", {"age_group": "0 to 17"}),
+        ("gender=U", {"gender": "U"}),
+        ("admission_type=Trauma", {"admission_type": "Trauma"}),
+    ],
+)
+def test_each_cohort_filter_is_validated_against_published_options(
+    query, expected_filter
+):
+    response = fixture_app().test_client().get(f"/api/v1/cohorts/summary?{query}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == expected_filter
+    assert data["metrics"] == []
+    assert data["sections"] == []
+
+
 def test_prediction_rejects_leakage_and_returns_versioned_result():
     client = fixture_app().test_client()
     features = {

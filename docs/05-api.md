@@ -122,7 +122,19 @@ AnalyticsSnapshotService.get(module_key, entity_key) -> dict
 
 合法枚举值对应的具体快照尚未发布时，接口返回 `200`，保留标题、描述、版本和时间，并将 `metrics`、`sections` 置为空；整个模块的基础快照未发布时仍返回 `503 RESULT_NOT_READY`。数据库连接/查询失败返回 `503 DATABASE_UNAVAILABLE`。
 
-### 0.3 Issue #40 验证命令
+### 0.3 住院记录群体分析接口
+
+`GET /api/v1/cohorts/summary` 只读取 `cohorts` 快照，允许的查询参数为 `age_group`、`gender`、`admission_type`。每个值都必须来自基础快照 `options` 中对应的有限枚举；参数可以单独使用或组合使用，未知参数、重复参数和非法枚举返回 `400 INVALID_QUERY_PARAMETER`。
+
+服务端始终按固定顺序组成实体键：
+
+```text
+age={age_group}|gender={gender}|admission={admission_type}
+```
+
+未选择筛选时读取 `age=*|gender=*|admission=*`。合法枚举但尚未发布对应聚合时返回 `200`，保留基础快照的标题、描述、筛选选项、`data_version` 和 `generated_at`，并将 `metrics`、`sections` 置为空；不会在 API 层重新聚合或排序。成功和错误响应均使用统一 `code/message/data/trace_id` 信封，并在 `X-Trace-ID` 返回同一追踪编号。
+
+### 0.4 Issue #40 验证命令
 
 ```powershell
 python -m pip install -r backend/requirements.txt

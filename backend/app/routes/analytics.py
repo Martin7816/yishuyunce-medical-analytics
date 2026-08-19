@@ -198,10 +198,16 @@ def disease_profile(diagnosis_code: str):
     )
 
 
-def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
+def _filtered_snapshot(
+    module: str,
+    base_entity: str,
+    dimensions: tuple[tuple[str, str, str], ...],
+):
+    # Each dimension maps a query parameter and published option to a frozen
+    # entity-key segment. The tuple order is server-owned.
     base = _get(module, base_entity)
-    values = {parameter: query_value(parameter) for parameter in options}
-    for parameter, option_name in options.items():
+    values = {parameter: query_value(parameter) for parameter, _, _ in dimensions}
+    for parameter, option_name, _ in dimensions:
         _validate_option(parameter, values[parameter], base, option_name=option_name)
     selected = {
         parameter: value
@@ -210,27 +216,26 @@ def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
     }
     if not selected:
         return base
-    parts = []
-    for parameter in options:
-        value = selected.get(parameter, "*")
-        parts.append(f"{parameter.replace('_group', '').replace('_type', '')}={value}")
-    entity = "|".join(parts)
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, _, entity_name in dimensions
+    )
     return _get_or_empty(module, entity, base, selected)
 
 
 @analytics_bp.get("/api/v1/cohorts/summary")
 def cohort_summary():
-    allowed = {"age_group", "gender", "admission_type"}
-    _reject_unknown(allowed)
+    dimensions = (
+        ("age_group", "age_group", "age"),
+        ("gender", "gender", "gender"),
+        ("admission_type", "admission_type", "admission"),
+    )
+    _reject_unknown({parameter for parameter, _, _ in dimensions})
     return _ok(
         _filtered_snapshot(
             "cohorts",
             "age=*|gender=*|admission=*",
-            {
-                "age_group": "age_group",
-                "gender": "gender",
-                "admission_type": "admission_type",
-            },
+            dimensions,
         )
     )
 
@@ -316,13 +321,16 @@ def risk_overview():
 
 @analytics_bp.get("/api/v1/payments/overview")
 def payment_overview():
-    allowed = {"payment_type", "age_group"}
-    _reject_unknown(allowed)
+    dimensions = (
+        ("payment_type", "payment_type", "payment"),
+        ("age_group", "age_group", "age"),
+    )
+    _reject_unknown({parameter for parameter, _, _ in dimensions})
     return _ok(
         _filtered_snapshot(
             "payments",
             "payment=*|age=*",
-            {"payment_type": "payment_type", "age_group": "age_group"},
+            dimensions,
         )
     )
 
