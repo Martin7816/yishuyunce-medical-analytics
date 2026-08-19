@@ -1,0 +1,64 @@
+{
+  "fixture_success_desktop": {
+    "route": "/payments",
+    "viewport": {"width": 1280, "height": 900},
+    "client_width": 1265,
+    "scroll_width": 1265,
+    "no_document_overflow": true,
+    "filters": ["支付方式", "年龄组"],
+    "metric_cards": 3,
+    "section_titles": ["主支付方式结构", "不同支付方式平均收费", "年龄结构", "主要疾病"],
+    "fixture_warning": true,
+    "console_errors": 0
+  },
+  "fixture_empty": {
+    "selection": {"payment_type": "Medicare"},
+    "state": "state-panel empty",
+    "message": "当前条件暂无数据",
+    "metric_cards": 0,
+    "charts": 0,
+    "clear_filter_button": true
+  },
+  "fixture_error": {
+    "state": "state-panel error",
+    "code": "HTTP_ERROR",
+    "retry_button": true,
+    "old_metric_cards": 0,
+    "old_charts": 0
+  },
+  "retry_recovery": {
+    "state": "success",
+    "metric_cards": 3,
+    "section_count": 4,
+    "selection": {"payment_type": "", "age_group": ""}
+  },
+  "real_success_desktop": {
+    "route": "/payments",
+    "viewport": {"width": 1280, "height": 900},
+    "client_width": 1265,
+    "scroll_width": 1265,
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+    "fixture_warning": false,
+    "metric_values": ["2,101,588", "73,305.42", "38,416.97"],
+    "option_counts": {"payment_type": 9, "age_group": 5},
+    "section_count": 4,
+    "console_errors": 0
+  },
+  "real_filtered_success": {
+    "selection": {"payment_type": "Medicare", "age_group": "70 or Older"},
+    "metric_values": ["565,451", "87,013.14", "53,689.48"],
+    "section_count": 4
+  },
+  "fixture_success_mobile": {
+    "route": "/payments",
+    "viewport": {"width": 390, "height": 844},
+    "client_width": 375,
+    "scroll_width": 375,
+    "no_document_overflow": true,
+    "metric_cards": 3,
+    "section_count": 4,
+    "clear_filter_button": true,
+    "fixture_warning": true,
+    "console_errors": 0
+  }
+}
