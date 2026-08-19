@@ -33,8 +33,8 @@ const configs = {
   ], mutuallyExclusive: ['diagnosis_code', 'facility_id'] },
   risks: { endpoint: '/risks/overview', eyebrow: '严重程度与风险结构', title: '病情严重程度与风险分析', layout: 'risk', alwaysShowClear: true, boundaryNotice: '本页仅展示住院出院记录的群体统计，不构成个人诊断、治疗建议或因果判断。', filters: [
     { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病' },
-  ] },
-  payments: { endpoint: '/payments/overview', eyebrow: '主支付方式结构', filters: [
+  ], disclaimer: '群体统计不构成个人诊断、治疗建议或因果判断。' },
+  payments: { endpoint: '/payments/overview', eyebrow: '主支付方式结构', title: '支付方式分析', layout: 'payments', alwaysShowClear: true, filters: [
     { key: 'payment_type', option: 'payment_type', label: '支付方式' }, { key: 'age_group', option: 'age_group', label: '年龄组' },
   ] },
   quality: { endpoint: '/data-quality/summary', eyebrow: '批次与任务只读状态', filters: [

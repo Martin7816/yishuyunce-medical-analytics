@@ -33,6 +33,8 @@ button { cursor: pointer; }
 .risk-section-grid { align-items: start; }
 .risk-section-grid .content-card { min-width: 0; }
 .risk-section-grid .section-card-disposition { grid-column: 1 / -1; }
+.payment-section-grid { align-items: start; }
+.payment-section-grid .content-card { min-width: 0; }
 .content-card, .ask-card, .answer-sheet { padding: 22px; border: 1px solid #dfe8e9; border-radius: 14px; background: white; box-shadow: 0 8px 26px #1d424a0b; }
 .content-card h2 { margin: 0 0 15px; color: #25464d; font-size: 16px; }.chart-canvas { width: 100%; height: 300px; }
 .comparison-card { min-width: 0; }.comparison-card h2 { margin-bottom: 6px; }.profile-description { margin: 0 0 16px; color: #71818a; font-size: 12px; }.profile-section-grid { display: grid; gap: 14px; margin-top: 18px; }.profile-section { min-width: 0; padding-top: 16px; border-top: 1px solid #e5eded; }.profile-section h3 { margin: 0 0 10px; color: #416169; font-size: 13px; }.profile-section .chart-canvas { height: 240px; }

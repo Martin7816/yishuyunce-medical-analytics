@@ -252,7 +252,14 @@ onBeforeUnmount(() => {
             :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key))"
           />
         </section>
-        <section class="section-grid" :class="{ 'cohort-section-grid': config.layout === 'cohort', 'risk-section-grid': config.layout === 'risk' }">
+        <section
+          class="section-grid"
+          :class="{
+            'cohort-section-grid': config.layout === 'cohort',
+            'risk-section-grid': config.layout === 'risk',
+            'payment-section-grid': config.layout === 'payments',
+          }"
+        >
           <article v-for="section in data.sections" :key="section.key" class="content-card" :class="{ 'section-card-disposition': section.key === 'disposition' }">
             <h2>{{ section.title }}</h2>
             <AnalyticsChart v-if="section.items?.length" :section="section" />

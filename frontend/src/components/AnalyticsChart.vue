@@ -38,9 +38,17 @@ function option() {
   if (props.section.type === 'pie') return { tooltip: { trigger: 'item', valueFormatter: format }, legend: { bottom: 0 }, series: [{ type: 'pie', radius: ['42%', '70%'], data: items }] }
   return {
     animationDuration: 350, grid: { left: 18, right: 34, top: 14, bottom: 22, containLabel: true },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: format },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const point = Array.isArray(params) ? params[0] : params
+        if (!point) return ''
+        return `${point.name}<br/>${format(point.value)}`
+      },
+    },
     xAxis: { type: 'value', axisLabel: { formatter: format }, splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
-    yAxis: { type: 'category', inverse: true, data: items.map(item => item.name), axisLabel: { width: 135, overflow: 'truncate' } },
+    yAxis: { type: 'category', inverse: true, data: items.map(item => item.name), axisLabel: { width: 150, overflow: 'truncate' } },
     series: [{ type: 'bar', data: items.map(item => item.value), barMaxWidth: 20, itemStyle: { color: '#297b7f', borderRadius: [0, 5, 5, 0] } }],
   }
 }
