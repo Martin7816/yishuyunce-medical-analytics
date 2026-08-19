@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "raw_rows": 4,
+  "scoped_rows": 3,
+  "cost_key_count": 15,
+  "nonempty_combination_count": 6,
+  "empty_combination_count": 9,
+  "option_counts": {
+    "diagnosis_code": 2,
+    "facility_id": 2,
+    "severity": 2
+  },
+  "wildcard_metrics": {
+    "record_count": 2,
+    "avg_charges": 150.0,
+    "avg_costs": 60.0,
+    "charge_cost_gap": 90.0,
+    "daily_charges": 50.0,
+    "daily_costs": 17.5,
+    "p25_charges": 100.0,
+    "p25_costs": 20.0,
+    "p75_charges": 200.0,
+    "p75_costs": 100.0,
+    "p90_charges": 200.0,
+    "p90_costs": 100.0,
+    "median_charges": 100.0,
+    "median_costs": 20.0
+  },
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}
