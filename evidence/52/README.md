@@ -17,7 +17,7 @@
 | A-02 | 画像实体键与必需分区 | PASS | 专项测试确认调用顺序为 `diseases/index`、`diseases/profile:NVS005`，并确认六个分区顺序 |
 | A-03 | 合法空结果 | PASS | 合法 `INF012` profile 缺失时返回 200，保留 filters、标题/描述、版本和时间，metrics/sections 为空 |
 | A-04 | 非法请求与安全错误 | PASS | 专项测试及 `backend/tests/test_analytics_api.py` 覆盖未知参数、非法枚举、重复参数、请求体、HEAD/OPTIONS/POST/PUT/DELETE、依赖失败和损坏 payload |
-| A-05 | 快照契约与回归 | PASS | fixture contract PASS；`57 passed, 1 skipped`；`compileall` PASS；`git diff --check` PASS |
+| A-05 | 快照契约与后端回归 | PASS | fixture contract PASS；`backend/tests` 49 passed；`compileall` 和 `git diff --check` PASS |
 | A-06 | 真实 MySQL/API 联调 | PASS | `ANALYTICS_DATA_SOURCE=mysql` 下索引、全部 477 个合法画像、兼容 TOP10 和 MySQL payload 对照均通过；未使用 fixture 冒充真实成功 |
 
 ## 自动化结果
@@ -29,8 +29,11 @@ python -m pytest backend/tests/test_analytics_api.py -q
 python -m pytest backend/tests/test_disease_analytics_api.py -q
 7 passed in 0.17s
 
-python -m pytest backend/tests data/tests -q
-57 passed, 1 skipped in 1.07s
+python -m pytest backend/tests -q
+49 passed in 0.61s
+
+python -m pytest data/tests -q -k not pyspark_disease_snapshot_matches_independent_verifier
+11 passed, 2 skipped, 1 deselected in 0.18s
 
 fixture contract PASS records=13
 
@@ -45,6 +48,8 @@ GET /api/v1/diseases/top10                   200 OK
 MySQL payload vs API payload                 PASS
 invalid/query/body/method contract           PASS
 ```
+
+合并 #55 后的完整 `backend/tests data/tests` 还会触发一个与 #52 无关的 PySpark 子进程测试；当前 bundled Python 环境没有 `pyspark`，该测试返回 `ModuleNotFoundError`。疾病后端专项和真实 MySQL/API 验收不依赖该环境，已分别通过；未修改数据测试来掩盖该限制。
 
 ## 真实快照边界
 
