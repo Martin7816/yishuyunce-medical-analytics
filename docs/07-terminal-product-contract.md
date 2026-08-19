@@ -62,6 +62,11 @@
 
 合法但尚未发布的筛选仍返回 `200`，保留标题、描述、版本和时间，将 `metrics`、`sections` 置为空；非法参数、未知字段和非白名单值返回 `400`。
 
+医院模块补充约束：`hospitals/index.options.facilities[].value` 和
+`hospitals/profile:{facility_id}` 的 `facility_id` 均按字符串处理；医院画像的病例量
+指标键固定为 `case_count`，平均金额的单位为 `美元`，比例指标的单位为 `%` 且值域为
+`0—1`。医院排行和画像都以 `facility_id` 聚合，医院名称只作为展示标签，避免同名机构被合并。
+
 ## 3. API
 
 | 模块 | 方法与路径 | 白名单参数 |
