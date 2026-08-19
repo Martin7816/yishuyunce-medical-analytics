@@ -301,6 +301,32 @@ python data/src/publish_analytics_snapshot_mysql.py `
 
 风险快照的固定样例为 12 个键（8 个非空、4 个空组合）；本次真实 CSV 为 2,868 个键（2,614 个非空、254 个空组合），5 个年龄枚举、477 个诊断编码，原始/纳入记录均为 2,101,588。独立核对、MySQL 逐键比较和事务回滚的实际输出见 [`evidence/63/README.md`](../evidence/63/README.md)。
 
+### 4.6 医疗费用与成本分析快照（Issue #59）
+
+费用模块复用统一清洗帧中的有效金额记录，按 `diagnosis_code`、`facility_id`、`severity` 构造有限筛选矩阵。诊断和医院是互斥筛选维度，严重程度可以叠加；每个合法键同时包含未筛选的 `*` 与已发布枚举值。正式聚合只在 Spark DataFrame 中完成，最终只 collect 小型聚合汇总表，不收集原始行。
+
+```powershell
+python data/src/run_full_analytics_pyspark.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --output "<本地临时目录>\real-full.json" `
+  --module all `
+  --master local[1] `
+  --generated-at 2026-08-19T00:00:00Z
+python data/src/verify_cost_snapshot.py `
+  --input "<本地完整 SPARCS CSV 路径>" `
+  --snapshot "<本地临时目录>\real-full.json"
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<本地临时目录>\real-full.json"
+python data/src/publish_analytics_snapshot_mysql.py `
+  --input "<本地临时目录>\real-full.json" --apply
+python data/src/verify_cost_mysql.py `
+  --snapshot "<本地临时目录>\real-full.json"
+```
+
+`--master local[1]` 是本机复现的资源边界，脚本默认值相同，并将 shuffle 分区设为 4；这不改变聚合口径。费用指标按当前筛选后的有效金额记录计算：均值为算术平均，P25/P50/P75/P90 使用 `percentile_approx(..., accuracy=10000)`，收费成本差为 `avg(charges - costs)`，单日收费/成本为 `avg(charges / los)` 与 `avg(costs / los)`，且只纳入住院时长大于 0 的记录；金额统一保留两位小数。
+
+合法键数量为 `(1 + diagnosis_count + facility_count) × (1 + severity_count)`，不生成诊断与医院同时指定的组合。无记录但合法的组合仍发布标题、描述、过滤器和版本，`metrics=[]/sections=[]`。真实全量本次输出 7,197 条统一快照记录，其中 `costs` 为 3,415 条，3,310 条非空、105 条合法空组合；独立标准库复核、发布器 dry-run、MySQL `--apply`、逐成本键 payload/版本/时间比对及事务回滚探针均为 `PASS`。输入文件 SHA-256、数据版本、精确命令和 stdout 摘要见 [`evidence/59/README.md`](../evidence/59/README.md)。
+
 ## 5. VM 启动、健康检查与停止
 
 ### 5.1 启动前检查

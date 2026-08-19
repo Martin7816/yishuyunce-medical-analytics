@@ -85,6 +85,11 @@ PAYMENT_OPTION_KEYS = {
     "age": "age_group",
 }
 
+COST_DIMENSIONS = ("diagnosis_code", "facility_id", "severity")
+COST_MISSING = "__COST_MISSING__"
+COST_PERCENTILES = (("p25", 0.25), ("p50", 0.5), ("p75", 0.75), ("p90", 0.9))
+COST_COMPARISON_LIMIT = 10
+
 
 def clean_frame(raw: DataFrame) -> DataFrame:
     """Select the frozen columns and apply the shared cleaning rules."""
@@ -782,6 +787,287 @@ def build_payment_records(frame: DataFrame) -> list[dict[str, Any]]:
                     for name, rows in section_rows.items()
                 },
                 options,
+            )
+        )
+    return records
+
+
+def _cost_aggregation_expressions() -> list[Any]:
+    """Return the named Spark aggregate shared by all legal cost filters."""
+
+    expressions: list[Any] = [
+        F.count("*").alias("record_count"),
+        F.avg("charges").alias("avg_charges"),
+        F.avg("costs").alias("avg_costs"),
+        F.avg(F.col("charges") - F.col("costs")).alias("charge_cost_gap"),
+        F.avg(
+            F.when(F.col("los") > 0, F.col("charges") / F.col("los"))
+        ).alias("daily_charges"),
+        F.avg(
+            F.when(F.col("los") > 0, F.col("costs") / F.col("los"))
+        ).alias("daily_costs"),
+    ]
+    for name, percentile in COST_PERCENTILES:
+        expressions.extend(
+            [
+                F.percentile_approx("charges", percentile, 10000).alias(
+                    f"{name}_charges"
+                ),
+                F.percentile_approx("costs", percentile, 10000).alias(
+                    f"{name}_costs"
+                ),
+            ]
+        )
+    return expressions
+
+
+def _cost_summary_rows(frame: DataFrame) -> dict[tuple[Any, Any, Any], Any]:
+    """Collect only the small aggregate cube, never raw records."""
+
+    decorated = frame
+    grouped_dimensions = []
+    for field in COST_DIMENSIONS:
+        grouped_field = f"_cost_{field}"
+        grouped_dimensions.append(grouped_field)
+        decorated = decorated.withColumn(
+            grouped_field,
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(COST_MISSING)),
+        )
+    aggregate = decorated.cube(*grouped_dimensions).agg(
+        *_cost_aggregation_expressions()
+    )
+    return {
+        tuple(
+            None
+            if row[f"_cost_{field}"] is None
+            else row[f"_cost_{field}"]
+            for field in COST_DIMENSIONS
+        ): row
+        for row in aggregate.collect()
+        if int(row["record_count"] or 0) > 0
+    }
+
+
+def _cost_entity_key(
+    diagnosis_code: str | None,
+    facility_id: str | None,
+    severity: str | None,
+) -> str:
+    return "|".join(
+        (
+            f"diagnosis={diagnosis_code if diagnosis_code is not None else '*'}",
+            f"facility={facility_id if facility_id is not None else '*'}",
+            f"severity={severity if severity is not None else '*'}",
+        )
+    )
+
+
+def _cost_metrics_from_row(row: Any) -> list[dict[str, Any]]:
+    return [
+        metric("record_count", "有效费用记录", _rounded(row["record_count"], integer=True), "条"),
+        metric("avg_charges", "平均收费", _rounded(row["avg_charges"]), "美元"),
+        metric("median_charges", "收费中位数", _rounded(row["p50_charges"]), "美元"),
+        metric("p25_charges", "收费P25", _rounded(row["p25_charges"]), "美元"),
+        metric("p75_charges", "收费P75", _rounded(row["p75_charges"]), "美元"),
+        metric("p90_charges", "收费P90", _rounded(row["p90_charges"]), "美元"),
+        metric("avg_costs", "平均成本", _rounded(row["avg_costs"]), "美元"),
+        metric("median_costs", "成本中位数", _rounded(row["p50_costs"]), "美元"),
+        metric("p25_costs", "成本P25", _rounded(row["p25_costs"]), "美元"),
+        metric("p75_costs", "成本P75", _rounded(row["p75_costs"]), "美元"),
+        metric("p90_costs", "成本P90", _rounded(row["p90_costs"]), "美元"),
+        metric("charge_cost_gap", "平均收费成本差", _rounded(row["charge_cost_gap"]), "美元"),
+        metric("daily_charges", "平均单日收费", _rounded(row["daily_charges"]), "美元/天"),
+        metric("daily_costs", "平均单日成本", _rounded(row["daily_costs"]), "美元/天"),
+    ]
+
+
+def _cost_comparison_items(
+    summaries: dict[tuple[Any, Any, Any], Any],
+    current: tuple[str | None, str | None, str | None],
+    dimension: str,
+    options: list[str | dict[str, str]],
+    value_field: str,
+    labels: dict[str, str],
+) -> list[dict[str, Any]]:
+    positions = {name: index for index, name in enumerate(COST_DIMENSIONS)}
+    items = []
+    selected = current[positions[dimension]]
+    candidate_options = [selected] if selected is not None else options
+    for option in candidate_options:
+        value = str(option["value"]) if isinstance(option, dict) else str(option)
+        key = list(current)
+        key[positions[dimension]] = value
+        row = summaries.get(tuple(key))
+        if row is None:
+            continue
+        items.append({"name": labels.get(value, value), "value": _rounded(row[value_field])})
+    return sorted(items, key=lambda item: (-item["value"], item["name"]))[:COST_COMPARISON_LIMIT]
+
+
+def _cost_sections(
+    summaries: dict[tuple[Any, Any, Any], Any],
+    current: tuple[str | None, str | None, str | None],
+    row: Any,
+    diagnosis_options: list[dict[str, str]],
+    facility_options: list[dict[str, str]],
+    severity_options: list[str],
+) -> list[dict[str, Any]]:
+    diagnosis_labels = {item["value"]: item["label"] for item in diagnosis_options}
+    facility_labels = {item["value"]: item["label"] for item in facility_options}
+    sections = [
+        section(
+            "charges_quantiles",
+            "收费分位数",
+            [
+                {"name": name.upper(), "value": _rounded(row[f"{name}_charges"])}
+                for name, _ in COST_PERCENTILES
+            ],
+        ),
+        section(
+            "costs_quantiles",
+            "成本分位数",
+            [
+                {"name": name.upper(), "value": _rounded(row[f"{name}_costs"])}
+                for name, _ in COST_PERCENTILES
+            ],
+        ),
+        section(
+            "charge_cost_distribution",
+            "收费与成本分布",
+            [
+                {"name": "收费均值", "value": _rounded(row["avg_charges"])},
+                {"name": "收费中位数", "value": _rounded(row["p50_charges"])},
+                {"name": "成本均值", "value": _rounded(row["avg_costs"])},
+                {"name": "成本中位数", "value": _rounded(row["p50_costs"])},
+            ],
+            "table",
+        ),
+    ]
+    diagnosis, facility, _ = current
+    if diagnosis is None:
+        sections.extend(
+            [
+                section(
+                    "diagnosis_charges",
+                    "按疾病比较：平均收费",
+                    _cost_comparison_items(
+                        summaries, current, "diagnosis_code", diagnosis_options,
+                        "avg_charges", diagnosis_labels
+                    ),
+                ),
+                section(
+                    "diagnosis_costs",
+                    "按疾病比较：平均成本",
+                    _cost_comparison_items(
+                        summaries, current, "diagnosis_code", diagnosis_options,
+                        "avg_costs", diagnosis_labels
+                    ),
+                ),
+            ]
+        )
+    if facility is None:
+        sections.extend(
+            [
+                section(
+                    "facility_charges",
+                    "按医院比较：平均收费",
+                    _cost_comparison_items(
+                        summaries, current, "facility_id", facility_options,
+                        "avg_charges", facility_labels
+                    ),
+                ),
+                section(
+                    "facility_costs",
+                    "按医院比较：平均成本",
+                    _cost_comparison_items(
+                        summaries, current, "facility_id", facility_options,
+                        "avg_costs", facility_labels
+                    ),
+                ),
+            ]
+        )
+    sections.extend(
+        [
+            section(
+                "severity_charges",
+                "按严重程度比较：平均收费",
+                _cost_comparison_items(
+                    summaries, current, "severity", severity_options,
+                    "avg_charges", {value: value for value in severity_options}
+                ),
+            ),
+            section(
+                "severity_costs",
+                "按严重程度比较：平均成本",
+                _cost_comparison_items(
+                    summaries, current, "severity", severity_options,
+                    "avg_costs", {value: value for value in severity_options}
+                ),
+            ),
+        ]
+    )
+    return sections
+
+
+def build_cost_records(
+    cost_frame: DataFrame,
+    diagnosis_options: list[dict[str, str]],
+    facility_options: list[dict[str, str]],
+    severity_options: list[str],
+) -> list[dict[str, Any]]:
+    """Build the wildcard and finite legal cost filter matrix."""
+
+    summaries = _cost_summary_rows(cost_frame)
+    diagnosis_values = [item["value"] for item in diagnosis_options]
+    facility_values = [item["value"] for item in facility_options]
+    keys: list[tuple[str | None, str | None, str | None]] = [
+        (None, None, severity) for severity in [None, *severity_options]
+    ]
+    keys.extend(
+        (diagnosis, None, severity)
+        for diagnosis in diagnosis_values
+        for severity in [None, *severity_options]
+    )
+    keys.extend(
+        (None, facility, severity)
+        for facility in facility_values
+        for severity in [None, *severity_options]
+    )
+
+    records = []
+    for current in keys:
+        row = summaries.get(current)
+        filters = {
+            name: value
+            for name, value in zip(("diagnosis_code", "facility_id", "severity"), current)
+            if value is not None
+        }
+        wildcard = current == (None, None, None)
+        options = {"severity": severity_options} if wildcard else None
+        common = (
+            "医疗费用与成本分析",
+            "费用与成本均值、分位数及有限筛选比较；分位数使用 percentile_approx(accuracy=10000)。",
+        )
+        if row is None:
+            records.append(
+                record(
+                    "costs", _cost_entity_key(*current), common[0], common[1],
+                    options=options, filters=filters
+                )
+            )
+            continue
+        records.append(
+            record(
+                "costs", _cost_entity_key(*current), common[0], common[1],
+                _cost_metrics_from_row(row),
+                _cost_sections(
+                    summaries, current, row, diagnosis_options,
+                    facility_options, severity_options
+                ),
+                options, filters,
             )
         )
     return records
@@ -1618,56 +1904,12 @@ def build_records(
 
     records.extend(build_cohort_records(scoped))
 
-    quantiles = cost_frame.agg(
-        *[
-            F.percentile_approx("charges", percentile, 10000).alias(
-                f"p{int(percentile * 100)}"
-            )
-            for percentile in (0.25, 0.5, 0.75, 0.9)
-        ],
-        F.avg("charges").alias("avg_charges"),
-        F.avg("costs").alias("avg_costs"),
-        F.avg(F.col("charges") - F.col("costs")).alias("gap"),
-        F.avg(F.col("charges") / F.when(F.col("los") > 0, F.col("los"))).alias(
-            "daily_charges"
-        ),
-        F.avg(F.col("costs") / F.when(F.col("los") > 0, F.col("los"))).alias(
-            "daily_costs"
-        ),
-    ).first()
-    cost_metrics = [
-        metric("avg_charges", "平均收费", _rounded(quantiles.avg_charges), "美元"),
-        metric("median_charges", "收费中位数", _rounded(quantiles.p50), "美元"),
-        metric("p90_charges", "收费P90", _rounded(quantiles.p90), "美元"),
-        metric("avg_costs", "平均成本", _rounded(quantiles.avg_costs), "美元"),
-        metric("charge_cost_gap", "平均收费成本差", _rounded(quantiles.gap), "美元"),
-        metric("daily_charges", "平均单日收费", _rounded(quantiles.daily_charges), "美元/天"),
-        metric("daily_costs", "平均单日成本", _rounded(quantiles.daily_costs), "美元/天"),
-    ]
-    records.append(
-        record(
-            "costs",
-            "diagnosis=*|facility=*|severity=*",
-            "医疗费用与成本分析",
-            "分位数使用 percentile_approx(accuracy=10000)。",
-            cost_metrics,
-            [
-                section(
-                    "quantiles",
-                    "收费分位数",
-                    [
-                        {"name": name, "value": _rounded(quantiles[name.lower()])}
-                        for name in ("P25", "P50", "P75", "P90")
-                    ],
-                ),
-                section(
-                    "severity",
-                    "不同严重程度平均收费",
-                    rows(cost_frame, "severity", "charges"),
-                ),
-            ],
-            {"severity": option_values("severity")},
-            {},
+    records.extend(
+        build_cost_records(
+            cost_frame,
+            diagnosis_options,
+            facility_options,
+            option_values("severity"),
         )
     )
 

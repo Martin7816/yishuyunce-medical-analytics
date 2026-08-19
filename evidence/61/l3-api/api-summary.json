@@ -1,0 +1,59 @@
+{
+  "endpoint": "GET /api/v1/costs/overview",
+  "wildcard": {
+    "http": 200,
+    "code": "OK",
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+    "generated_at": "2026-08-19T00:00:00.000000Z",
+    "filters": {},
+    "metric_count": 14,
+    "metric_keys": [
+      "record_count",
+      "avg_charges",
+      "median_charges",
+      "p25_charges",
+      "p75_charges",
+      "p90_charges",
+      "avg_costs",
+      "median_costs",
+      "p25_costs",
+      "p75_costs",
+      "p90_costs",
+      "charge_cost_gap",
+      "daily_charges",
+      "daily_costs"
+    ],
+    "units": {
+      "record_count": "条",
+      "amounts": "美元",
+      "daily_amounts": "美元/天"
+    },
+    "sections": [
+      "charges_quantiles",
+      "costs_quantiles",
+      "charge_cost_distribution",
+      "diagnosis_charges",
+      "diagnosis_costs",
+      "facility_charges",
+      "facility_costs",
+      "severity_charges",
+      "severity_costs"
+    ],
+    "section_count": 9,
+    "trace_id_present": true
+  },
+  "diagnosis_filter": {
+    "query": "?diagnosis_code=BLD001",
+    "http": 200,
+    "filters": {"diagnosis_code": "BLD001"},
+    "metric_count": 14,
+    "section_count": 7,
+    "facility_select_disabled_in_page": true
+  },
+  "fixture_empty": {
+    "query": "?diagnosis_code=NVS005",
+    "http": 200,
+    "metrics": [],
+    "sections": []
+  }
+}
