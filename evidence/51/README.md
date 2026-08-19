@@ -58,9 +58,9 @@ PySpark 结果：`PASS`，2,101,588 条原始记录，690 条基础快照记录�
 
 为保留同一批次已有的模型记录，将模型记录合并回真实基础快照后，发布工件共 691 行；发布器 dry-run 为 `PASS`，见 [`publish-dry-run.json`](publish-dry-run.json)。
 
-本轮 `--apply` 未完成：工作区 `.env` 中的 `192.168.219.128:3306` 超时，工作区数据库说明中的 `192.168.57.16:3306` 也未连通；因此没有声称 MySQL PASS，也没有发生删除旧快照的事务。当前状态是 `BLOCKED`，原因是共享 MySQL/VM 未运行或地址不可达，不是代码或快照校验失败，见 [`mysql-blocked.json`](mysql-blocked.json)。
+首次连通性探测曾记录在 [`mysql-blocked.json`](mysql-blocked.json)；随后共享 MySQL 恢复可用，本轮 `--apply` 已完成 `PASS`，实际发布 691 行，见 [`mysql-apply.json`](mysql-apply.json)。发布后独立校验同样为 `PASS`：数据库中 `diseases` 模块共 478 行（`index` 加 477 个 profile），payload 不一致数为 0，只有一个 `data_version` 和一个 `generated_at`，见 [`mysql-verify.json`](mysql-verify.json)。本次没有触发回滚；发布器已有完整性失败时保留旧批次的回滚单元测试覆盖。
 
-VM/数据库恢复后，使用管理员确认的最新地址加载环境变量并依次执行：
+复核命令为：
 
 ```powershell
 python data/src/publish_analytics_snapshot_mysql.py `
@@ -72,7 +72,7 @@ python data/src/verify_disease_snapshot.py `
   --mysql
 ```
 
-预期：发布 691 行；`diseases` 模块查询 478 行（`index` 加 477 个 profile），payload、主键、`data_version` 和 `generated_at` 全部一致。仓库已有的发布器回滚单元测试覆盖完整性校验失败时旧批次仍可读；本次真实数据库回滚证据需在数据库恢复后补录。
+结果：发布 691 行；`diseases` 模块查询 478 行（`index` 加 477 个 profile），payload、主键、`data_version` 和 `generated_at` 全部一致。
 
 ## 下游交接
 
