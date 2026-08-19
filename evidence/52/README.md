@@ -17,8 +17,8 @@
 | A-02 | 画像实体键与必需分区 | PASS | 专项测试确认调用顺序为 `diseases/index`、`diseases/profile:NVS005`，并确认六个分区顺序 |
 | A-03 | 合法空结果 | PASS | 合法 `INF012` profile 缺失时返回 200，保留 filters、标题/描述、版本和时间，metrics/sections 为空 |
 | A-04 | 非法请求与安全错误 | PASS | 专项测试及 `backend/tests/test_analytics_api.py` 覆盖未知参数、非法枚举、重复参数、请求体、HEAD/OPTIONS/POST/PUT/DELETE、依赖失败和损坏 payload |
-| A-05 | 快照契约与回归 | PASS | fixture contract PASS；`57 passed, 1 skipped`；`compileall` PASS；`git diff --check` PASS |
-| A-06 | 真实 MySQL/API 联调 | BLOCKED | 当前配置的数据库端口不可达，API 返回 `503 DATABASE_UNAVAILABLE`；未将 fixture 或本地生成快照冒充真实 MySQL 通过 |
+| A-05 | 快照契约与后端回归 | PASS | fixture contract PASS；`backend/tests` 49 passed；`compileall` 和 `git diff --check` PASS |
+| A-06 | 真实 MySQL/API 联调 | PASS | `ANALYTICS_DATA_SOURCE=mysql` 下索引、全部 477 个合法画像、兼容 TOP10 和 MySQL payload 对照均通过；未使用 fixture 冒充真实成功 |
 
 ## 自动化结果
 
@@ -29,17 +29,31 @@ python -m pytest backend/tests/test_analytics_api.py -q
 python -m pytest backend/tests/test_disease_analytics_api.py -q
 7 passed in 0.17s
 
-python -m pytest backend/tests data/tests -q
-57 passed, 1 skipped in 1.07s
+python -m pytest backend/tests -q
+49 passed in 0.61s
+
+python -m pytest data/tests -q -k not pyspark_disease_snapshot_matches_independent_verifier
+11 passed, 2 skipped, 1 deselected in 0.18s
 
 fixture contract PASS records=13
+
+真实 MySQL/API 验证：
+
+```text
+GET /api/v1/diseases                         200 OK
+diagnosis options                            477
+GET /api/v1/diseases/{each legal code}       477/477 PASS
+GET /api/v1/diseases/BLD001                  200 OK
+GET /api/v1/diseases/top10                   200 OK
+MySQL payload vs API payload                 PASS
+invalid/query/body/method contract           PASS
 ```
+
+合并 #55 后的完整 `backend/tests data/tests` 还会触发一个与 #52 无关的 PySpark 子进程测试；当前 bundled Python 环境没有 `pyspark`，该测试返回 `ModuleNotFoundError`。疾病后端专项和真实 MySQL/API 验收不依赖该环境，已分别通过；未修改数据测试来掩盖该限制。
 
 ## 真实快照边界
 
-本机已有真实数据生成的未提交快照工件，契约校验结果为 PASS：`data_version=sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`、`generated_at=2026-08-18T11:11:56.038631Z`、疾病索引 478 条、疾病画像 477 条、样例画像六个分区。该工件证明生成结果可通过快照契约，不等于 MySQL/API 已完成真实联调。
-
-解除数据库阻塞后，需要在 `ANALYTICS_DATA_SOURCE=mysql` 下重复疾病索引、合法诊断画像、合法空画像、非法诊断、请求体/方法错误和数据库故障场景，并逐项对照同一 `data_version`、`generated_at` 与 MySQL payload。
+真实快照与 MySQL/API 使用同一 `data_version`：`sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`；生成时间为 `2026-08-18T11:11:56.038631Z`。真实数据库索引包含 477 个诊断选项，全部 477 个合法 profile 均返回 200，画像分区顺序为 age、gender、severity、mortality、procedures、hospitals；直接读取的 MySQL payload 与 API data 逐项一致。合法未发布空结果仍由 fixture 专项测试覆盖，真实批次没有缺失 profile。
 
 ## 下游交接
 
@@ -50,4 +64,4 @@ fixture contract PASS records=13
 
 ## 关闭状态
 
-代码、fixture 测试、文档和安全边界已完成；真实 MySQL 联调仍是关闭前唯一未完成项。数据库恢复后复跑 A-06，并由主责在 #50 发布独立 Resolution 后关闭 #52。
+代码已合入 `main`，fixture/真实 MySQL 测试、文档和安全边界均完成。关闭前还需在 #50 发布独立 Resolution，记录本证据、主干提交和真实 `data_version`，再关闭 #52。
