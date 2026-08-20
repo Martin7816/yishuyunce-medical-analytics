@@ -554,3 +554,33 @@ generated_at_match=true
 测试结果：`8 passed`。受控故障测试避免在共享真实数据库中故意写入半批次；发布器生产代码对任何异常统一 rollback 后重新抛出。
 
 第十步状态：**PASS**。D-06 已完成；D-07 下游交接仍未完成。
+
+## 17. 第十一步：下游交接包
+
+### 17.1 交接给 #72（后端）
+
+- 数据库键：`module_key=data_quality`、`entity_key=summary`。
+- API：`GET /api/v1/data-quality/summary`；仅允许可选参数 `data_version`。
+- 路由只读取快照，不重新计算、排序、换单位或修补空值。
+- payload 顶层字段：`title`、`description`、`metrics`、`sections`。
+- 七项 metric key：`raw_rows`、`valid_rows`、`out_of_scope_rows`、`money_parse_or_negative`、`missing_los`、`diagnosis_missing`、`los_capped`；单位均为 `条`。
+- 状态 section：`key=storage`、`type=status`；item 名称固定为 `HDFS`、`Hive`、`MySQL`、`PySpark任务`。
+- 当前真实批次：`data_version=sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`，`generated_at=2026-08-20T01:23:35.486156Z`。
+- 当前真实状态：HDFS/Hive=`CHECK_REQUIRED`、MySQL=`VERIFIED`、PySpark任务=`PASS`。
+- MySQL 已验证 857 条快照记录，且 payload、版本、时间与最终工件逐项一致。
+
+### 17.2 交接给 #73（前端）
+
+- 页面路由：`/data-quality`；数据来自 `GET /api/v1/data-quality/summary`。
+- 指标卡按 API 返回的 `metrics` 原顺序展示，不在页面计算或重排。
+- `storage` 使用公共 `status` renderer；状态字符串按原值展示，不推断未验证状态。
+- `CHECK_REQUIRED` 表示尚无对应环境检查证据；`VERIFIED` 表示已经取得存储验证证据；`PASS` 表示真实 PySpark 任务成功。
+- fixture 的 `data_version` 必须以 `fixture:` 开头，且 HDFS/Hive/MySQL=`CHECK_REQUIRED`、PySpark任务=`FIXTURE_ONLY`；页面必须明确提示 fixture，不能当作真实验收。
+- 真实批次的七项值依次为：2,101,588、2,101,588、0、0、0、1,634、1,561。
+- loading/success/empty/error/retry 继续使用公共四态；页面不得直连 MySQL，也不得触发数据任务。
+
+### 17.3 D-07 完成边界
+
+上述内容是可复制到 #72、#73 的冻结交接包。D-07 只有在两个 Issue 均留下交接评论或维护者在 #71/#70 给出等效确认后才能由 `HANDOFF_READY` 改为 `PASS`；本文不替代 GitHub 评论证据。
+
+第十一步状态：**HANDOFF_READY**。
