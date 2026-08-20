@@ -101,10 +101,16 @@ npm run dev
   --input "<SPARCS CSV 路径>" `
   --artifact "<工件目录>\high-cost-model.json" `
   --metrics "<工件目录>\high-cost-metrics.json" `
-  --snapshot "<工件目录>\analytics-snapshot.json"
+  --snapshot "<工件目录>\analytics-snapshot.json" `
+  --repetitions 2 `
+  --reproducibility "<工件目录>\reproducibility.json"
 ```
 
-`--snapshot` 把模型指标写入待发布的同批分析快照。模型工件供预测接口读取，指标快照供模型页面展示。
+`--snapshot` 把模型指标写入待发布的同批分析快照；正式验收追加两次固定切分复现，比较阈值、规模、五项指标、混淆矩阵、类别结构和系数宽度。模型工件供预测接口读取，指标快照供模型页面展示。模型训练依赖以 `data/requirements.txt` 为准；脚本复用本任务的清洗口径，并将真实 SPARCS 的 `Hospital Service Area` 兼容映射为 `hospital_service_area`。
+
+### #75 高费用病例分类模型交接
+
+2026-08-20 使用同一真实 CSV 和 `data_version` 完成两次连续训练：训练集 1,681,301 条、测试集 420,287 条，训练集收费 P75 为 77,202.39 美元，模型版本为 `high_cost_lr_seed_20260818_185808e20900`。训练工件只暴露八个入院时类别特征，真实 `Hospital Service Area` 已映射到 `hospital_service_area`；两次训练的阈值、规模、Accuracy、Precision、Recall、F1、AUC、混淆矩阵、类别结构和系数宽度均通过复现检查。最终快照发布器 dry-run 为 7,198 条记录，模型与快照使用同一 `data_version`。详细摘要与命令见 [`evidence/75/README.md`](../evidence/75/README.md)。
 
 ### 3.4 准备 MySQL
 
