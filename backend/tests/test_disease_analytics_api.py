@@ -180,7 +180,7 @@ def test_unknown_diagnosis_code_is_rejected_without_profile_lookup():
     assert response.status_code == 400
     body = response.get_json()
     assert body["code"] == "INVALID_QUERY_PARAMETER"
-    assert body["details"] == {"parameter": "diagnoses"}
+    assert body["details"] == {"parameter": "diagnosis_code"}
     assert repository.calls == [("diseases", "index")]
 
 
