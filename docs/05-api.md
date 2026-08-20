@@ -156,6 +156,14 @@ GET /api/v1/data-quality/summary?data_version=<当前响应中的版本>
 
 `data_version` 只接受当前发布版本。该页面集中展示基础记录总体、严重程度有效/缺失数，以及当前业务使用字段的有效记录数和非零缺失数；`data.options.audit` 还提供适用数、有效数、缺失数、比例分子/分母、筛选条件和 `formula_version`，`data_version` 与 `generated_at` 继续使用既有响应元数据。其他业务页面只保留简要口径说明。
 
+#### Issue #72 后端交接
+
+路由只读取统一快照服务的 `data_quality/summary`（`module_key=data_quality`、`entity_key=summary`），不读取 CSV、HDFS 或 MySQL，不重新聚合、排序、截断或触发任务。fixture 和 MySQL 适配器都通过 `AnalyticsSnapshotService.get(module_key, entity_key)` 读取同一 interface。
+
+`data_version` 是唯一可选参数，只接受当前已发布版本；未知/重复参数、非法版本和 GET 请求体分别返回 `400 INVALID_QUERY_PARAMETER` 或 `400 INVALID_REQUEST_FORMAT`，`HEAD`、`OPTIONS`、`POST` 等返回 `405 METHOD_NOT_ALLOWED`。未发布快照和数据库故障分别返回 `503 RESULT_NOT_READY`、`503 DATABASE_UNAVAILABLE`；配置缺失和 payload 契约损坏分别返回 `500 SERVER_MISCONFIGURED`、`500 SERVICE_RESULT_INVALID`。所有响应使用统一 `code/message/data/trace_id` 信封，`X-Trace-ID` 与正文一致，错误 details 只包含安全字段名。
+
+合法空 payload 保留 `data_version`、`generated_at`，并返回空的 `metrics`、`sections`，不把未知版本伪装成空结果。专项测试和真实批次交接证据见 [`evidence/72`](../evidence/72/README.md)；fixture 版本只证明接口契约，真实 MySQL/API 证据沿用 [`evidence/39/l3-api/real-mysql-summary.txt`](../evidence/39/l3-api/real-mysql-summary.txt)。
+
 ## 4. 高费用记录分类
 
 ### 4.1 模型指标
