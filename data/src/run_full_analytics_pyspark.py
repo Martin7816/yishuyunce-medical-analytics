@@ -1448,6 +1448,7 @@ def build_data_quality_record(
     frame: DataFrame,
     raw_count: int,
     execution_status: str,
+    mysql_status: str,
 ) -> dict[str, Any]:
     """Build #71 from one named aggregate over the cached clean frame."""
 
@@ -1476,12 +1477,6 @@ def build_data_quality_record(
         F.sum(F.when(los_capped, 1).otherwise(0)).alias("los_capped"),
     )
     quality = quality_summary_frame.collect()[0]
-    mysql_status = (
-        "CHECK_REQUIRED"
-        if execution_status == "FIXTURE_ONLY"
-        else "NOT_PUBLISHED"
-    )
-
     return record(
         "data_quality",
         "summary",
@@ -1863,6 +1858,7 @@ def build_records(
     frame: DataFrame,
     raw_count: int,
     execution_status: str = "PASS",
+    mysql_status: str = "NOT_PUBLISHED",
 ) -> list[dict[str, Any]]:
     """Build all modules with batched grouped actions over the cached frame."""
 
@@ -2022,7 +2018,11 @@ def build_records(
     )
     records.extend(build_payment_records(scoped))
 
-    records.append(build_data_quality_record(frame, raw_count, execution_status))
+    records.append(
+        build_data_quality_record(
+            frame, raw_count, execution_status, mysql_status
+        )
+    )
     return records
 
 
@@ -2043,6 +2043,7 @@ def build_document(
     digest: str,
     generated_at: str,
     module: str,
+    mysql_status: str,
 ) -> tuple[dict[str, Any], int]:
     """Materialize the shared frame once and build the requested snapshot."""
 
@@ -2053,6 +2054,11 @@ def build_document(
         if input_path.resolve().parent == fixture_root
         else "PASS"
     )
+    effective_mysql_status = (
+        "CHECK_REQUIRED"
+        if execution_status == "FIXTURE_ONLY"
+        else mysql_status
+    )
     dashboard_frame = cleaned.where(
         F.coalesce(F.col("in_scope"), F.lit(False))
         & F.col("los").isNotNull()
@@ -2062,7 +2068,12 @@ def build_document(
         if module == "dashboard"
         else build_payment_records(dashboard_frame)
         if module == "payments"
-        else build_records(cleaned, raw_count, execution_status)
+        else build_records(
+            cleaned,
+            raw_count,
+            execution_status,
+            effective_mysql_status,
+        )
     )
     document = {
         "data_version": build_data_version(input_path, digest),
@@ -2096,6 +2107,12 @@ def main() -> None:
         default="local[1]",
         help="Spark master；默认使用 1 个本地 worker，避免验收电脑耗尽内存。",
     )
+    parser.add_argument(
+        "--mysql-status",
+        choices=("NOT_PUBLISHED", "VERIFIED"),
+        default="NOT_PUBLISHED",
+        help="真实 MySQL 发布证据取得前保持 NOT_PUBLISHED；取得证据后才可使用 VERIFIED。",
+    )
     args = parser.parse_args()
 
     input_path = args.input.resolve()
@@ -2119,7 +2136,12 @@ def main() -> None:
         _validate_input_columns(raw)
         cleaned = clean_frame(raw).persist(StorageLevel.MEMORY_AND_DISK)
         document, raw_count = build_document(
-            cleaned, input_path, digest, generated_at, args.module
+            cleaned,
+            input_path,
+            digest,
+            generated_at,
+            args.module,
+            args.mysql_status,
         )
     finally:
         if cleaned is not None:

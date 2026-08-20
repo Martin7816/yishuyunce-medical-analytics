@@ -365,7 +365,7 @@ python data/src/verify_data_quality_snapshot.py \
 | D-03 | 指标公式 | 标准库核对器独立计算七项指标，expected 与 actual 全部一致；篡改指标可被拒绝 | PASS |
 | D-04 | 快照键 | 唯一 `data_quality / summary`；input 文件名、SHA-256、raw_rows、fixture 版本和 generated_at 一致 | PASS |
 | D-05 | 排序单位 | 本模块无排行；七项指标单位均为 `条`，storage section 类型为 `status` | PASS |
-| D-06 | 事务发布 | 等待真实 MySQL 发布、工件逐项比较、重复发布和失败回滚证据 | TODO |
+| D-06 | 事务发布 | 857 条真实快照事务发布；最终工件与 MySQL 逐项一致；重复发布和失败回滚通过 | PASS |
 | D-07 | 下游交接 | 等待向 #72、#73 发布字段、枚举、状态和 Mock 交接评论 | TODO |
 
 ### 14.2 最终 fixture 工件
@@ -469,4 +469,88 @@ Windows 本地 Spark 仍报告 `winutils.exe` 和退出时 PID 清理警告，�
 | MySQL | `NOT_PUBLISHED` | 尚未执行第十步事务发布 |
 | PySpark任务 | `PASS` | 真实全量运行和独立核对通过 |
 
-第九步状态：**PASS**。真实 CSV、真实全量 PySpark、七项独立核对、版本和路径泄漏检查均已完成；D-06 MySQL 与 D-07 下游交接仍未完成。
+第九步状态：**PASS**。真实 CSV、真实全量 PySpark、七项独立核对、版本和路径泄漏检查均已完成；MySQL 发布证据见第十步，D-07 下游交接仍未完成。
+
+## 16. 第十步：MySQL 事务发布验收
+
+### 16.1 发布前校验
+
+真实工件执行发布器 dry-run：
+
+| 项目 | 实际结果 | 状态 |
+|---|---:|---|
+| 模式 | `dry-run` | PASS |
+| 快照记录数 | 857 | PASS |
+| data_version | `sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` | PASS |
+| 公共结构与主键校验 | 通过 | PASS |
+
+### 16.2 首次发布与逐项比较
+
+- 发布模式：`mysql`；
+- 发布器状态：PASS；
+- 事务发布行数：857；
+- 发布后总行数：857；
+- distinct data_version：1；
+- distinct generated_at：1；
+- `data_quality / summary` 行数：1；
+- payload 与发布工件：一致；
+- data_version：一致；
+- generated_at：一致。
+
+### 16.3 重复发布
+
+对同一真实工件再次执行 `--apply`：
+
+- 发布器状态：PASS；
+- 发布后总行数仍为 857；
+- 未产生重复主键；
+- 未产生混合版本或混合时间；
+- 后续只读核对继续 PASS。
+
+### 16.4 发布状态闭环
+
+首次发布和数据库查询提供了真实 MySQL 成功证据。生成器新增显式 `--mysql-status` 参数：
+
+- 默认真实工件为 `NOT_PUBLISHED`；
+- 只有取得实际发布证据后才使用 `--mysql-status VERIFIED`；
+- fixture 无论传入何值都强制使用 `CHECK_REQUIRED`，避免 fixture 伪装真实验收。
+
+最终真实工件：`.tmp/issue-71/real-snapshot-verified.json`。
+
+| 项目 | 最终结果 | 状态 |
+|---|---|---|
+| 记录数 | 857 | PASS |
+| generated_at | `2026-08-20T01:23:35.486156Z` | PASS |
+| HDFS | `CHECK_REQUIRED` | PASS |
+| Hive | `CHECK_REQUIRED` | PASS |
+| MySQL | `VERIFIED` | PASS |
+| PySpark任务 | `PASS` | PASS |
+| 七项标准库独立核对 | 全部一致 | PASS |
+
+最终工件发布后，`verify_data_quality_mysql.py` 只读查询结果：
+
+```text
+status=PASS
+total_rows=857
+expected_total_rows=857
+distinct_data_versions=1
+distinct_generated_at=1
+data_quality_rows=1
+expected_data_quality_rows=1
+payload_match=true
+data_version_match=true
+generated_at_match=true
+```
+
+### 16.5 回滚证据
+
+`data/tests/test_snapshot_publisher.py` 使用故障注入让发布后完整性检查失败，验证：
+
+- 已开启事务；
+- 调用 rollback；
+- 未调用 commit；
+- 连接正确关闭。
+
+测试结果：`8 passed`。受控故障测试避免在共享真实数据库中故意写入半批次；发布器生产代码对任何异常统一 rollback 后重新抛出。
+
+第十步状态：**PASS**。D-06 已完成；D-07 下游交接仍未完成。

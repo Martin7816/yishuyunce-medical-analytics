@@ -42,6 +42,8 @@ def data_quality_artifact(tmp_path_factory):
             str(snapshot_path),
             "--generated-at",
             "2026-08-19T00:00:00Z",
+            "--mysql-status",
+            "VERIFIED",
         ],
         cwd=REPO_ROOT,
         env=environment,
