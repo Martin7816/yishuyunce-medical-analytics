@@ -1,0 +1,41 @@
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "数据质量与任务管理",
+    "description": "只读展示当前分析批次和存储检查，不在网页执行任务。",
+    "metrics": [
+      {"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"},
+      {"key": "valid_diagnosis_rows", "label": "有效诊断记录", "value": 2099954, "unit": "条"},
+      {"key": "parse_errors", "label": "解析异常", "value": 0, "unit": "条"},
+      {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}
+    ],
+    "sections": [
+      {
+        "key": "storage",
+        "title": "存储与服务检查",
+        "type": "status",
+        "items": [
+          {"name": "HDFS", "value": "CHECK_REQUIRED"},
+          {"name": "Hive", "value": "CHECK_REQUIRED"},
+          {"name": "MySQL", "value": "CHECK_REQUIRED"},
+          {"name": "PySpark任务", "value": "FIXTURE_ONLY"}
+        ]
+      },
+      {
+        "key": "fields",
+        "title": "关键字段完整性",
+        "type": "bar",
+        "items": [
+          {"name": "诊断", "value": 0.9992},
+          {"name": "医院", "value": 0.995},
+          {"name": "费用", "value": 1.0},
+          {"name": "住院时长", "value": 1.0}
+        ]
+      }
+    ],
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "generated_at": "2026-08-18T08:00:00.000000Z"
+  },
+  "trace_id": "<runtime-uuid>"
+}

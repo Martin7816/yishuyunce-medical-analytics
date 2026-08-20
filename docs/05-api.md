@@ -117,6 +117,54 @@ python -m pytest -q backend/tests/test_analytics_api.py
 ~~~
 
 真实联调时将 ANALYTICS_DATA_SOURCE=mysql，重复无筛选、两个单筛选、组合筛选、合法空组合和依赖失败请求；与 #63 已发布快照的 data_version、2,868 个风险键、5 个年龄枚举、477 个诊断编码及 MySQL 逐键一致性对照。数据发布和底层核对证据见 evidence/63/README.md，API 复验摘要见 evidence/64/README.md。
+## 数据质量与任务管理 API（Issue #72）
+
+数据质量接口只读取统一快照服务中的 `data_quality/summary`，路由不读取 CSV、HDFS 或 MySQL，不执行聚合、排序、截断或任务控制。fixture 和 MySQL 适配器都通过同一个 `AnalyticsSnapshotService.get(module_key, entity_key)` 接口读取，因此下游只需要依赖下面这一条 endpoint。
+
+| 项目 | 契约 |
+|---|---|
+| 方法与路径 | `GET /api/v1/data-quality/summary` |
+| 快照实体 | `module_key=data_quality`、`entity_key=summary` |
+| 查询参数 | 可选 `data_version`；只能填写当前已发布版本 |
+| 请求体 | 无；GET 携带请求体返回 `400 INVALID_REQUEST_FORMAT` |
+| 方法限制 | 仅 GET；`HEAD`、`OPTIONS`、`POST`、`PUT`、`DELETE` 返回 `405 METHOD_NOT_ALLOWED` |
+
+成功响应使用统一的 `code/message/data/trace_id` 信封，`X-Trace-ID` 与正文中的 `trace_id` 相同。`data` 原样保留快照的 `title`、`description`、`metrics`、`sections`、`data_version` 和 `generated_at`；指标单位、状态值和 section 顺序由数据发布结果决定，API 不二次解释。fixture 的响应示例为：
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "数据质量与任务管理",
+    "description": "只读展示当前分析批次和存储检查，不在网页执行任务。",
+    "metrics": [
+      {"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"},
+      {"key": "valid_diagnosis_rows", "label": "有效诊断记录", "value": 2099954, "unit": "条"},
+      {"key": "parse_errors", "label": "解析异常", "value": 0, "unit": "条"},
+      {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}
+    ],
+    "sections": [
+      {"key": "storage", "title": "存储与服务检查", "type": "status", "items": []},
+      {"key": "fields", "title": "关键字段完整性", "type": "bar", "items": []}
+    ],
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "generated_at": "2026-08-18T08:00:00.000000Z"
+  },
+  "trace_id": "<uuid>"
+}
+```
+
+合法但没有可展示指标的已发布 payload 仍返回 `200 OK`，保留版本和时间并返回 `metrics: []`、`sections: []`；接口没有自由筛选，不把任意未知版本伪装成空结果。未发布快照返回 `503 RESULT_NOT_READY`，MySQL 连接或查询失败返回 `503 DATABASE_UNAVAILABLE`，配置缺失或快照契约损坏返回 `500 SERVER_MISCONFIGURED` 或 `500 SERVICE_RESULT_INVALID`。未知/重复参数、非白名单版本和非法请求格式均返回 `400`，details 只列安全的参数名，不返回 SQL、连接串、绝对路径、堆栈或密钥。
+
+专项验收命令：
+
+```powershell
+python -m pytest -q backend/tests/test_data_quality_api.py
+python -m pytest -q backend/tests data/tests
+```
+
+真实 MySQL 读取证据沿用统一快照发布验收，见 [Issue #39 API 证据](../evidence/39/l3-api/real-mysql-summary.txt)：`GET /api/v1/data-quality/summary` 返回 `200 OK`，并与其他模块共享 `data_version=sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`。前端 #73 直接使用本 endpoint，不触发任务、不连接数据库、不重算正式指标。
 
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
