@@ -82,12 +82,101 @@ curl.exe 'http://127.0.0.1:5000/api/v1/hospitals?facility_a=001456&facility_b=00
 
 固定 fixture 验证：`python -m pytest backend/tests/test_analytics_api.py -q`；完整回归：`python -m pytest backend/tests data/tests -q`。真实验收时将 `ANALYTICS_DATA_SOURCE` 切换为 `mysql`，使用已发布的医院 `index/profile` 快照重复无筛选、单院、双院、指标和错误路径，并对照 [Issue #47 医院快照证据](../evidence/47/README.md) 的 `data_version`、`generated_at`、206 条医院记录和 payload 一致性结果。
 
+## 病情严重程度与风险分析 API（Issue #64）
+
+GET /api/v1/risks/overview 只读取 AnalyticsSnapshotService 的 risks 快照。路由不读取 CSV/MySQL、不聚合、不重排、不换算单位，也不把用户输入拼接为 SQL 或排序表达式。
+
+| 参数 | 是否必填 | 枚举来源 | 快照实体键片段 |
+|---|---|---|---|
+| age_group | 否 | risks 基础快照 options.age_group | age={值} |
+| diagnosis_code | 否 | diseases/index.options.diagnoses[].value | diagnosis={值} |
+
+无筛选读取 risks/age=*|diagnosis=*；有筛选时服务端固定按年龄、诊断顺序构造实体键。例如：
+
+~~~
+GET /api/v1/risks/overview?diagnosis_code=NVS005&age_group=50%20to%2069
+risks/age=50 to 69|diagnosis=NVS005
+~~~
+
+成功 data 原样保留快照的 data_version、generated_at、options、filters、metrics 和 sections。指标键固定由已发布快照提供，当前包括 high_risk_count、high_risk_rate、avg_los、avg_charges、avg_costs；比例保持 0—1 且单位为 %，记录数为 条，住院时长为 天，金额为 美元。section 顺序为 severity、mortality、disposition、age、diseases，其中疾病 section 严格 TOP10；所有排序和空值语义由上游快照负责。
+
+合法枚举但对应组合尚未发布时返回 200，保留基础快照的标题、描述、选项、过滤条件、版本和生成时间，并将 metrics、sections 置为空；整个 risks 基础快照未发布仍返回 503 RESULT_NOT_READY。未知/重复参数和非法枚举返回 400 INVALID_QUERY_PARAMETER；GET 请求体返回 400 INVALID_REQUEST_FORMAT；HEAD、OPTIONS、POST 等方法返回 405 METHOD_NOT_ALLOWED；MySQL 连接失败、配置缺失和 payload 损坏分别返回 503 DATABASE_UNAVAILABLE、500 SERVER_MISCONFIGURED、500 SERVICE_RESULT_INVALID。错误响应不暴露 SQL、连接串、绝对路径、堆栈或密钥。
+
+最小调用示例：
+
+~~~powershell
+curl.exe 'http://127.0.0.1:5000/api/v1/risks/overview'
+curl.exe 'http://127.0.0.1:5000/api/v1/risks/overview?age_group=50%20to%2069'
+curl.exe 'http://127.0.0.1:5000/api/v1/risks/overview?diagnosis_code=NVS005&age_group=50%20to%2069'
+~~~
+
+固定 fixture 验证：
+
+~~~powershell
+python -m pytest -q backend/tests/test_analytics_api.py
+~~~
+
+真实联调时将 ANALYTICS_DATA_SOURCE=mysql，重复无筛选、两个单筛选、组合筛选、合法空组合和依赖失败请求；与 #63 已发布快照的 data_version、2,868 个风险键、5 个年龄枚举、477 个诊断编码及 MySQL 逐键一致性对照。数据发布和底层核对证据见 evidence/63/README.md，API 复验摘要见 evidence/64/README.md。
+
 > 文档版本：V1.0  
 > 更新日期：2026-08-17  
 > 当前状态：`FROZEN`
 > 冻结记录：2026-08-18，Issue #10 的字段、四态和边界语义已按 Resolution、真实服务结果和 `backend/tests/test_disease_top10_api.py` 复核；后续公共字段变更必须先说明上下游影响。
 > 上游依据：`02-metrics-and-data-contract.md` V1.1（Issue #7、#9，`FROZEN`）
 
+## 支付方式分析 API（Issue #68）
+
+`GET /api/v1/payments/overview` 只通过统一的 `AnalyticsSnapshotService.get(module_key, entity_key)` 读取 `payments` 已发布快照。路由只负责查询参数白名单、快照枚举校验、固定实体键和统一响应信封；不读取 CSV/MySQL、不执行 SQL、不重新聚合、排序、截断、换单位或修补空值。
+
+| 参数 | 是否必填 | 枚举来源 | 实体键片段 |
+|---|---|---|---|
+| `payment_type` | 否 | `payments` 基础快照 `options.payment_type`；对应清洗字段 `Payment Typology 1` 的非空值 | `payment={值或*}` |
+| `age_group` | 否 | `payments` 基础快照 `options.age_group` | `age={值或*}` |
+
+服务端始终按 `payment`、`age` 顺序构造实体键。无筛选读取 `payments/payment=*|age=*`；例如：
+
+```text
+GET /api/v1/payments/overview?payment_type=Medicare&age_group=50%20to%2069
+payments/payment=Medicare|age=50 to 69
+```
+
+成功响应保留快照 payload 的 `title`、`description`、`options`、`filters`、`metrics`、`sections`，并附加同一批次的 `data_version`、`generated_at`。支付快照的 `sections` 固定按 `payment`、`charges`、`age`、`diseases` 顺序返回；记录数、平均/中位收费、支付方式费用、年龄结构和主要疾病均由上游快照提供。支付排行与费用排行排除空支付值，疾病 section 严格 TOP10；API 不改写这些结果。
+
+最小调用和成功响应示例：
+
+```powershell
+curl.exe 'http://127.0.0.1:5000/api/v1/payments/overview'
+curl.exe 'http://127.0.0.1:5000/api/v1/payments/overview?payment_type=Medicare&age_group=50%20to%2069'
+```
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "支付方式分析",
+    "filters": {"payment_type": "Medicare", "age_group": "50 to 69"},
+    "metrics": [],
+    "sections": [],
+    "data_version": "sparcs_2021_20231012_sha256_<input-sha256>",
+    "generated_at": "2026-08-19T00:00:00.000000Z"
+  },
+  "trace_id": "<uuid>"
+}
+```
+
+上例表示合法枚举组合尚未发布时的 `200` 合法空结果；保留标题、描述、选项、过滤条件、版本和生成时间，并令 `metrics=[]`、`sections=[]`。真实快照必须发布 wildcard 与每个有限 `payment_type × age_group` 组合；整个模块未发布仍返回 `503 RESULT_NOT_READY`。
+
+未知/重复查询参数或非法枚举返回 `400 INVALID_QUERY_PARAMETER`；GET 请求体返回 `400 INVALID_REQUEST_FORMAT`；`HEAD`、`OPTIONS`、POST、PUT、DELETE 返回 `405 METHOD_NOT_ALLOWED`；MySQL 连接/查询失败返回 `503 DATABASE_UNAVAILABLE`；配置缺失返回 `500 SERVER_MISCONFIGURED`；payload JSON 损坏或公共结构校验失败返回 `500 SERVICE_RESULT_INVALID`。错误响应的 `details` 只列安全参数名，不包含 SQL、连接串、绝对路径、堆栈或密钥。
+
+固定 fixture 验证：
+
+```powershell
+python -m pytest -q backend/tests/test_payments_api.py
+python -m pytest -q backend/tests
+```
+
+真实 MySQL/API 验收按 `ANALYTICS_DATA_SOURCE=mysql` 重复 wildcard、每个单筛选、合法组合和合法空组合请求，并把响应 payload、`data_version`、`generated_at` 与 `analysis_snapshot_result` 的对应行逐项对照。#67 已提供 60 个支付实体键和完整 payload 发布证据；#68 的后端 API 复验记录在 [evidence/68/README.md](../evidence/68/README.md)，#69 可直接按本节路径和错误码消费。
 ## 0. Issue #40 统一分析快照读取基础
 
 终局分析页面通过一个只读 Service interface 获取已发布快照，不在路由中连接数据库、解析 JSON 或重新计算指标：
@@ -122,7 +211,50 @@ AnalyticsSnapshotService.get(module_key, entity_key) -> dict
 
 合法枚举值对应的具体快照尚未发布时，接口返回 `200`，保留标题、描述、版本和时间，并将 `metrics`、`sections` 置为空；整个模块的基础快照未发布时仍返回 `503 RESULT_NOT_READY`。数据库连接/查询失败返回 `503 DATABASE_UNAVAILABLE`。
 
-### 0.3 Issue #40 验证命令
+### 0.3 Issue #60 费用与成本分析接口
+
+`GET /api/v1/costs/overview` 只读取 `costs` 模块的已发布快照。路由只负责白名单、枚举校验、固定实体键和统一响应，不在 API 层重新计算收费、成本、住院时长或分位数。
+
+| 参数 | 是否必填 | 枚举来源 | 约束 |
+|---|---|---|---|
+| `diagnosis_code` | 否 | `diseases/index.options.diagnoses[].value` | 与 `facility_id` 互斥 |
+| `facility_id` | 否 | `hospitals/index.options.facilities[].value` | 与 `diagnosis_code` 互斥 |
+| `severity` | 否 | `costs` 基础快照 `options.severity` | 可与任一单维度筛选组合 |
+
+无筛选读取 `diagnosis=*|facility=*|severity=*`。存在筛选时，服务端始终按 `diagnosis`、`facility`、`severity` 的顺序构造实体键；例如：
+
+```text
+GET /api/v1/costs/overview?diagnosis_code=NVS005&severity=Major
+diagnosis=NVS005|facility=*|severity=Major
+```
+
+快照发布器提供的费用指标和分区原样返回，当前字段包括平均收费/成本、收费中位数与 P90、收费成本差、单日收费/成本，以及 P25/P50/P75/P90 收费分位数和严重程度分布。单日指标只使用 `los > 0` 的记录；分位数口径为 `percentile_approx(accuracy=10000)`。API 不排序、换单位、补空值或改写这些值。
+
+成功响应仍为 `code/message/data/trace_id`，并在 `X-Trace-ID` 返回同一 UUID。合法枚举但对应实体尚未发布时返回 `200`，保留基础快照的标题、描述、选项、`data_version` 和 `generated_at`，并令 `filters` 回显已接受的筛选、`metrics=[]`、`sections=[]`。基础 `costs` 快照未发布返回 `503 RESULT_NOT_READY`。
+
+未知/重复参数、非法枚举或同时提供 `diagnosis_code` 与 `facility_id` 返回 `400 INVALID_QUERY_PARAMETER`；GET 请求体返回 `400 INVALID_REQUEST_FORMAT`；`HEAD`、`OPTIONS`、POST 等方法返回 `405 METHOD_NOT_ALLOWED`；MySQL 连接/查询失败返回 `503 DATABASE_UNAVAILABLE`；配置缺失或快照结构损坏分别返回 `500 SERVER_MISCONFIGURED` 或 `500 SERVICE_RESULT_INVALID`。错误响应不暴露 SQL、连接信息、绝对路径、堆栈或密钥。
+
+固定 fixture 验证：
+
+```powershell
+python -m pytest -q backend/tests/test_analytics_api.py
+```
+
+真实验收时设置 `ANALYTICS_DATA_SOURCE=mysql`，对同一批 `data_version` 重复无筛选、单筛选、允许组合、空结果和依赖失败请求，并逐项对照 MySQL `analysis_snapshot_result` 中 `costs` 的 payload；不得把 fixture 结果当作真实验收结论。
+
+### 0.4 住院记录群体分析接口
+
+`GET /api/v1/cohorts/summary` 只读取 `cohorts` 快照，允许的查询参数为 `age_group`、`gender`、`admission_type`。每个值都必须来自基础快照 `options` 中对应的有限枚举；参数可以单独使用或组合使用，未知参数、重复参数和非法枚举返回 `400 INVALID_QUERY_PARAMETER`。
+
+服务端始终按固定顺序组成实体键：
+
+```text
+age={age_group}|gender={gender}|admission={admission_type}
+```
+
+未选择筛选时读取 `age=*|gender=*|admission=*`。合法枚举但尚未发布对应聚合时返回 `200`，保留基础快照的标题、描述、筛选选项、`data_version` 和 `generated_at`，并将 `metrics`、`sections` 置为空；不会在 API 层重新聚合或排序。成功和错误响应均使用统一 `code/message/data/trace_id` 信封，并在 `X-Trace-ID` 返回同一追踪编号。
+
+### 0.5 Issue #40 验证命令
 
 ```powershell
 python -m pip install -r backend/requirements.txt
