@@ -13,8 +13,17 @@ const element = ref(null)
 let chart
 let observer
 let resizeFrame = 0
-const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
-const format = (value) => value == null ? '—' : typeof value === 'number' ? number.format(value) : value
+const percentSectionKeys = new Set(['fields'])
+const numberFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+const format = (value) => {
+  if (value == null) return '—'
+  if (typeof value !== 'number') return value
+  if (percentSectionKeys.has(props.section.key)) return `${numberFormat.format(value * 100)}%`
+  return numberFormat.format(value)
+}
+const compactFormat = (value) => typeof value === 'number'
+  ? (percentSectionKeys.has(props.section.key) ? `${numberFormat.format(value * 100)}%` : new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value))
+  : value
 const isChartType = (type) => chartTypes.has(type)
 const isListType = (type) => listTypes.has(type)
 
