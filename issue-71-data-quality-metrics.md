@@ -408,47 +408,65 @@ fixture 仅证明并行开发基线和固定口径可复现，不替代真实 CS
 
 ## 15. 第九步：真实 CSV 全量验收
 
-### 15.1 当前状态
+### 15.1 真实输入
 
-**BLOCKED：当前机器的项目目录及 `D:\projects_medical` 范围内均不存在冻结的真实 CSV。**
+真实 CSV 保存在 Git 仓库外；证据只记录文件名和冻结标识，不记录个人绝对路径。
 
-缺少的输入文件：
+| 项目 | 实际值 | 状态 |
+|---|---|---|
+| 文件名 | `Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv` | PASS |
+| 文件大小 | 832,373,138 bytes | PASS |
+| SHA-256 | `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` | PASS |
+| 记录数 | 2,101,588 | PASS |
 
-```text
-Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv
-```
+文件名、大小和 SHA-256 与 `docs/01-data-and-feasibility.md`、`evidence/39/README.md` 冻结的上游版本完全一致。
 
-冻结的上游标识仅用于确认应提供哪一份文件，不能代替重新运行：
+### 15.2 PySpark 全量执行
 
-| 项目 | 上游已记录值 |
-|---|---|
-| 文件大小 | 832,373,138 bytes |
-| SHA-256 | `185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219` |
-| 记录数 | 2,101,588 |
-| 年份范围 | 全部为 2021 |
-| 主诊断描述缺失 | 1,634 |
-| LOS `120 +` | 1,561 |
+- 输入：仓库外真实 CSV；
+- 输出：`.tmp/issue-71/real-snapshot.json`；
+- 模式：`--module all`；
+- 命令退出码：0；
+- 统一快照记录数：857；
+- `data_quality / summary` 键数量：1；
+- data_version：`sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219`；
+- generated_at：`2026-08-20T00:49:28.752790Z`；
+- data_version 不含 `fixture:` 前缀；
+- 工件未保存真实 CSV 的个人绝对路径。
 
-这些数值来自 `docs/01-data-and-feasibility.md`、`evidence/39/README.md` 等既有上游证据。既有 evidence 只保存旧任务 stdout，没有真实 CSV，也没有包含 #71 七项指标的当前完整快照，因此不能据此把第九步标为 PASS。
+Windows 本地 Spark 仍报告 `winutils.exe` 和退出时 PID 清理警告，但主命令退出码为 0，工件写入、公共结构校验和后续独立核对均成功。
 
-### 15.2 已完成的阻塞排查
+### 15.3 七项真实指标
 
-- 已递归检查当前仓库中的 CSV：只有 fixture 和 Python 依赖自带测试数据。
-- 已在 `D:\projects_medical` 下按冻结的精确文件名查找：未找到。
-- 已检查 `evidence/`：只有真实运行摘要、模块核对 stdout 和发布摘要，没有可供 #71 标准库重新计算的原始 CSV。
-- 未扫描整个磁盘或个人目录，避免越过任务范围和暴露个人文件。
+| 指标 | PySpark | 标准库 | 单位 | 状态 |
+|---|---:|---:|---|---|
+| `raw_rows` | 2,101,588 | 2,101,588 | 条 | PASS |
+| `valid_rows` | 2,101,588 | 2,101,588 | 条 | PASS |
+| `out_of_scope_rows` | 0 | 0 | 条 | PASS |
+| `money_parse_or_negative` | 0 | 0 | 条 | PASS |
+| `missing_los` | 0 | 0 | 条 | PASS |
+| `diagnosis_missing` | 1,634 | 1,634 | 条 | PASS |
+| `los_capped` | 1,561 | 1,561 | 条 | PASS |
 
-### 15.3 解除阻塞所需输入
+### 15.4 标准库独立核对
 
-将上述真实 CSV 放在 Git 仓库之外的本地路径，并把该路径仅作为命令行 `--input` 参数传入。不得把真实 CSV、个人绝对路径或敏感数据提交到 Git。
+使用 `verify_data_quality_snapshot.py` 独立扫描完整 CSV：
 
-取得输入后必须重新执行：
+- 退出码：0；
+- 总状态：PASS；
+- 七项 expected 与 actual 全部一致；
+- metric key 和单位：PASS；
+- input 文件名、SHA-256 和 raw_rows：PASS；
+- data_version：PASS；
+- generated_at 六位微秒 UTC 格式：PASS。
 
-1. 核对文件名、大小和 SHA-256；
-2. 使用当前 `run_full_analytics_pyspark.py` 生成 `.tmp/issue-71/real-snapshot.json`；
-3. 确认唯一 `data_quality / summary`、真实 `data_version` 和 PySpark `PASS`；
-4. 使用 `verify_data_quality_snapshot.py` 对七项指标做标准库独立核对；
-5. 确认核对器退出码为 0，且工件未保存个人绝对路径；
-6. 将实际七项指标和执行证据补充到本节，才能把状态改为 PASS。
+### 15.5 真实环境状态
 
-第九步状态：**BLOCKED（缺少冻结版本的真实 CSV）**。fixture 与历史 stdout 均不替代本步骤。
+| 名称 | 实际状态 | 说明 |
+|---|---|---|
+| HDFS | `CHECK_REQUIRED` | 尚无真实 HDFS 检查证据 |
+| Hive | `CHECK_REQUIRED` | 尚无真实 Hive 检查证据 |
+| MySQL | `NOT_PUBLISHED` | 尚未执行第十步事务发布 |
+| PySpark任务 | `PASS` | 真实全量运行和独立核对通过 |
+
+第九步状态：**PASS**。真实 CSV、真实全量 PySpark、七项独立核对、版本和路径泄漏检查均已完成；D-06 MySQL 与 D-07 下游交接仍未完成。
