@@ -1,0 +1,20 @@
+{
+  "source": "evidence/67/README.md and D:/HuaDi/.codex_tmp/issue67-artifacts/clean-real-payments.json",
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "generated_at": "2026-08-19T00:00:00.000000Z",
+  "raw_rows": 2101588,
+  "payment_key_count": 60,
+  "wildcard": {
+    "metrics": [
+      {"key": "record_count", "value": 2101588, "unit": "条"},
+      {"key": "avg_charges", "value": 73305.42, "unit": "美元"},
+      {"key": "median_charges", "value": 38416.97, "unit": "美元"}
+    ],
+    "section_keys": ["payment", "charges", "age", "diseases"],
+    "section_item_counts": {"payment": 9, "charges": 9, "age": 5, "diseases": 10},
+    "option_counts": {"payment_type": 9, "age_group": 5}
+  },
+  "mysql_payload_mismatch": 0,
+  "distinct_data_versions": 1,
+  "distinct_generated_at": 1
+}

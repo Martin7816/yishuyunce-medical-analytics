@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "module": "all",
+  "records": 12,
+  "raw_rows": 4,
+  "data_version": "dashboard_edge_sample_sha256_f579ecd89ffc88eff34754dad5132cbe41acd2e03a9c25fc71850c6421353ae8",
+  "generated_at": "2026-08-18T08:00:00.000000Z",
+  "dashboard_metric_keys": [
+    "record_count",
+    "facility_count",
+    "avg_los",
+    "avg_charges",
+    "avg_costs",
+    "emergency_rate",
+    "surgical_rate",
+    "severe_rate"
+  ],
+  "dashboard_section_counts": {
+    "age": 4,
+    "payment": 4,
+    "disease_top10": 3,
+    "hospital_top10": 3,
+    "severity": 3
+  }
+}

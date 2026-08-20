@@ -3,17 +3,30 @@
 from __future__ import annotations
 
 import logging
+import sys
 import uuid
+from pathlib import Path
 
 from flask import Flask, g, jsonify
 from werkzeug.exceptions import HTTPException
 
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from .config import Config
 from .errors import AppError
 from .repositories.disease_top10 import build_repository
+from .repositories.analytics_snapshot import build_analytics_repository
+from .routes.analytics import analytics_bp
 from .routes.diseases import diseases_bp
 from .routes.health import health_bp
+from .routes.intelligence import intelligence_bp
+from .services.ai_assistant import AIAssistantService, DeepSeekChatClient
 from .services.disease_top10 import DiseaseTop10Service
+from .services.analytics_snapshot import AnalyticsSnapshotService
+from .services.high_cost_model import HighCostModelService
 
 
 def _error_payload(error: AppError) -> dict:
@@ -28,7 +41,13 @@ def _error_payload(error: AppError) -> dict:
     return payload
 
 
-def create_app(config_override: dict | None = None, repository=None) -> Flask:
+def create_app(
+    config_override: dict | None = None,
+    repository=None,
+    analytics_repository=None,
+    high_cost_model_service=None,
+    ai_client=None,
+) -> Flask:
     """Create an application. Tests may inject a repository explicitly."""
 
     app = Flask(__name__)
@@ -36,13 +55,46 @@ def create_app(config_override: dict | None = None, repository=None) -> Flask:
     if config_override:
         app.config.update(config_override)
 
-    selected_repository = repository or build_repository(app.config)
+    selected_repository = (
+        repository if repository is not None else build_repository(app.config)
+    )
     app.extensions["disease_top10_service"] = DiseaseTop10Service(
         selected_repository
+    )
+    selected_analytics_repository = (
+        analytics_repository
+        if analytics_repository is not None
+        else build_analytics_repository(app.config)
+    )
+    app.extensions["analytics_snapshot_service"] = AnalyticsSnapshotService(
+        selected_analytics_repository
+    )
+    model_path = app.config.get("HIGH_COST_MODEL_PATH")
+    if not model_path and app.config.get("ANALYTICS_DATA_SOURCE") == "fixture":
+        model_path = app.config["APP_ROOT"] / "fixtures" / "high_cost_model.json"
+    app.extensions["high_cost_model_service"] = (
+        high_cost_model_service
+        if high_cost_model_service is not None
+        else HighCostModelService(model_path)
+    )
+    selected_ai_client = (
+        ai_client
+        if ai_client is not None
+        else DeepSeekChatClient(
+            app.config.get("DEEPSEEK_API_KEY"),
+            app.config["DEEPSEEK_BASE_URL"],
+            app.config["DEEPSEEK_MODEL"],
+            app.config["DEEPSEEK_TIMEOUT_SECONDS"],
+        )
+    )
+    app.extensions["ai_assistant_service"] = AIAssistantService(
+        app.extensions["analytics_snapshot_service"], selected_ai_client
     )
 
     app.register_blueprint(health_bp)
     app.register_blueprint(diseases_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(intelligence_bp)
 
     @app.before_request
     def assign_trace_id() -> None:
@@ -55,6 +107,14 @@ def create_app(config_override: dict | None = None, repository=None) -> Flask:
 
     @app.errorhandler(AppError)
     def handle_app_error(error: AppError):
+        cause = error.__cause__
+        if cause is not None:
+            app.logger.error(
+                "API error trace_id=%s code=%s",
+                g.trace_id,
+                error.code,
+                exc_info=(type(cause), cause, cause.__traceback__),
+            )
         return jsonify(_error_payload(error)), error.status_code
 
     @app.errorhandler(HTTPException)

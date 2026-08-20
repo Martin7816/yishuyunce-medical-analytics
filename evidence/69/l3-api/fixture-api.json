@@ -1,0 +1,41 @@
+{
+  "fixture_success": {
+    "request": "GET /api/v1/payments/overview",
+    "http_status": 200,
+    "code": "OK",
+    "trace_header_matches_trace_id": true,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "metric_keys": ["record_count", "avg_charges", "median_charges"],
+    "section_keys": ["payment", "charges", "age", "diseases"],
+    "option_counts": {"payment_type": 9, "age_group": 5},
+    "filters": {}
+  },
+  "fixture_filtered_empty": {
+    "request": "GET /api/v1/payments/overview?payment_type=Medicare",
+    "http_status": 200,
+    "code": "OK",
+    "trace_header_matches_trace_id": true,
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "metric_keys": [],
+    "section_keys": [],
+    "filters": {"payment_type": "Medicare"}
+  },
+  "invalid_query": {
+    "request": "GET /api/v1/payments/overview?sql=select",
+    "http_status": 400,
+    "code": "INVALID_QUERY_PARAMETER",
+    "trace_header_matches_trace_id": true
+  },
+  "request_body": {
+    "request": "GET /api/v1/payments/overview with JSON body",
+    "http_status": 400,
+    "code": "INVALID_REQUEST_FORMAT",
+    "trace_header_matches_trace_id": true
+  },
+  "method": {
+    "request": "POST /api/v1/payments/overview",
+    "http_status": 405,
+    "code": "METHOD_NOT_ALLOWED",
+    "trace_header_matches_trace_id": true
+  }
+}

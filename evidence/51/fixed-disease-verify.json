@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "module": "diseases",
+  "raw_rows": 4,
+  "scoped_rows": 3,
+  "diagnosis_count": 2,
+  "profile_count": 2,
+  "empty_profile_count": 0,
+  "index_top10": [
+    {"name": "ASTHMA", "value": 1},
+    {"name": "DIABETES", "value": 1}
+  ],
+  "sample_profile": {
+    "diagnosis_code": "END003",
+    "metrics": {
+      "record_count": 1,
+      "avg_los": 120.0,
+      "avg_charges": 0.0,
+      "avg_costs": 40.0,
+      "emergency_rate": 0.0,
+      "surgical_rate": 1.0,
+      "severe_rate": 1.0
+    },
+    "section_counts": {
+      "age": 1,
+      "gender": 1,
+      "severity": 1,
+      "mortality": 0,
+      "procedures": 0,
+      "hospitals": 1
+    }
+  },
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

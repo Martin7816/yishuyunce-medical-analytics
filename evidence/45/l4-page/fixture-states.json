@@ -1,0 +1,75 @@
+{
+  "issue": 45,
+  "captured_at_utc": "2026-08-18T12:44:21.1419412Z",
+  "scope": {
+    "browser": "Codex in-app browser",
+    "viewport": {
+      "width": 1280,
+      "clientWidth": 1265,
+      "scrollWidth": 1265
+    },
+    "mobile_adaptation": "out of scope per user instruction"
+  },
+  "states": [
+    {
+      "name": "loading",
+      "route": "/overview",
+      "source": "temporary delayed wrapper over the repository fixture service",
+      "observed": {
+        "state_panel": "loading",
+        "text": "正在加载分析快照",
+        "old_metric_cards": 0,
+        "console_errors": 0
+      },
+      "after_completion": {
+        "state_panel": "none",
+        "metric_cards": 8,
+        "data_version": "fixture:sparcs_full_analytics:v1"
+      }
+    },
+    {
+      "name": "success",
+      "route": "/overview",
+      "source": "backend/app/fixtures/analytics_snapshot_success.json",
+      "observed": {
+        "data_version": "fixture:sparcs_full_analytics:v1",
+        "metric_cards": 8,
+        "section_cards": 5,
+        "fixture_warning": "当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。",
+        "state_panel": "none",
+        "console_errors": 0
+      }
+    },
+    {
+      "name": "empty",
+      "route": "/overview",
+      "source": "temporary legal empty fixture response for UI acceptance",
+      "observed": {
+        "data_version": "fixture:sparcs_full_analytics_empty:v1",
+        "state_panel": "empty",
+        "text": "当前条件暂无数据",
+        "old_metric_cards": 0,
+        "console_errors": 0
+      }
+    },
+    {
+      "name": "error",
+      "route": "/overview",
+      "source": "temporary missing ANALYTICS_DATA_SOURCE configuration",
+      "observed": {
+        "state_panel": "error",
+        "code": "SERVER_MISCONFIGURED",
+        "message": "服务配置不完整，暂时无法提供数据。",
+        "retry_button": true,
+        "trace_id_visible": true,
+        "old_metric_cards": 0,
+        "console_errors": 0
+      },
+      "retry": {
+        "clicked": true,
+        "new_request_trace_id_observed": true,
+        "state_after_retry": "error"
+      }
+    }
+  ]
+}

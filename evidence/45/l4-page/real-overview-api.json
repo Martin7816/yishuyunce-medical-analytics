@@ -1,0 +1,32 @@
+{
+  "issue": 45,
+  "captured_at_utc": "2026-08-18T12:34:14.7997054Z",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:5000/api/v1/dashboard/overview",
+    "http_status": 200
+  },
+  "response": {
+    "code": "OK",
+    "trace_id": "4704ecad-38b6-4e25-b55f-1af2c830003b",
+    "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+    "generated_at": "2026-08-18T10:30:00Z",
+    "metrics": [
+      {"key": "record_count", "value": 2101588, "unit": "条"},
+      {"key": "facility_count", "value": 205, "unit": "家"},
+      {"key": "avg_los", "value": 5.74, "unit": "天"},
+      {"key": "avg_charges", "value": 73305.42, "unit": "美元"},
+      {"key": "avg_costs", "value": 21990.13, "unit": "美元"},
+      {"key": "emergency_rate", "value": 0.6263, "unit": "%"},
+      {"key": "surgical_rate", "value": 0.2348, "unit": "%"},
+      {"key": "severe_rate", "value": 0.3332, "unit": "%"}
+    ],
+    "sections": [
+      {"key": "age", "item_count": 5},
+      {"key": "payment", "item_count": 9},
+      {"key": "disease_top10", "item_count": 10},
+      {"key": "hospital_top10", "item_count": 10},
+      {"key": "severity", "item_count": 4}
+    ]
+  }
+}

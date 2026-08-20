@@ -5,11 +5,30 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from shared.analytics_snapshot_contract import validate_snapshot_document
+
 from ..errors import (
     DatabaseUnavailableError,
+    InvalidServiceResultError,
     ResultNotReadyError,
     ServerMisconfiguredError,
 )
+
+
+def _decode_mysql_payload(value):
+    """Decode the JSON column without treating a corrupt row as empty data."""
+
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise InvalidServiceResultError() from error
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise InvalidServiceResultError() from error
+    return value
 
 
 class FixtureAnalyticsSnapshotRepository:
@@ -20,8 +39,9 @@ class FixtureAnalyticsSnapshotRepository:
     def _load(self) -> dict:
         if self._document is None:
             try:
-                self._document = json.loads(self.fixture_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
+                document = json.loads(self.fixture_path.read_text(encoding="utf-8"))
+                self._document = validate_snapshot_document(document)
+            except (OSError, json.JSONDecodeError, ValueError) as error:
                 raise ServerMisconfiguredError() from error
         return self._document
 
@@ -57,14 +77,14 @@ LIMIT 1
             raise ServerMisconfiguredError()
         return {
             "host": self.config["MYSQL_HOST"],
-            "port": self.config["MYSQL_PORT"],
+            "port": self.config.get("MYSQL_PORT", 3306),
             "user": self.config["MYSQL_USER"],
             "password": self.config.get("MYSQL_PASSWORD", ""),
             "database": self.config["MYSQL_DATABASE"],
             "charset": "utf8mb4",
-            "connect_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
-            "read_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
-            "write_timeout": self.config["MYSQL_CONNECT_TIMEOUT"],
+            "connect_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
+            "read_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
+            "write_timeout": self.config.get("MYSQL_CONNECT_TIMEOUT", 3),
             "autocommit": True,
         }
 
@@ -90,16 +110,16 @@ LIMIT 1
             raise DatabaseUnavailableError() from error
         if not row:
             raise ResultNotReadyError()
-        payload = row["payload_json"]
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except json.JSONDecodeError as error:
-                raise ServerMisconfiguredError() from error
+        try:
+            payload = _decode_mysql_payload(row["payload_json"])
+            data_version = row["data_version"]
+            generated_at = row["generated_at"]
+        except (KeyError, TypeError) as error:
+            raise InvalidServiceResultError() from error
         return {
             "payload": payload,
-            "data_version": row["data_version"],
-            "generated_at": row["generated_at"],
+            "data_version": data_version,
+            "generated_at": generated_at,
         }
 
 

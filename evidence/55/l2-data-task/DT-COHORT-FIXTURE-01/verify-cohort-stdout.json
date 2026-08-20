@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "raw_rows": 4,
+  "scoped_rows": 3,
+  "cohort_key_count": 36,
+  "nonempty_combination_count": 20,
+  "empty_combination_count": 16,
+  "option_counts": {
+    "age_group": 3,
+    "gender": 2,
+    "admission_type": 2
+  },
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-19T00:00:00.000000Z"
+}

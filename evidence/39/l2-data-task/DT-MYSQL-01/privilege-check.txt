@@ -1,0 +1,7 @@
+TCP 192.168.219.128:3306: PASS
+CURRENT_USER(): issue31_publisher@192.168.219.1
+DATABASE(): medical_analytics
+analysis_snapshot_result DDL: completed by database administrator
+analysis_snapshot_result SELECT/INSERT/DELETE: PASS
+publish_analytics_snapshot_mysql.py --apply: PASS, rows=691
+Status: PASS
