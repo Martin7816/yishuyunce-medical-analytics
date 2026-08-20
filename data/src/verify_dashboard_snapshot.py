@@ -107,6 +107,12 @@ def summarize(rows: list[dict[str, str | None]]) -> dict[str, Any]:
     ]
     facility_ids = {text(row, "facility_id") for row in rows}
     facility_ids.discard("")
+    severity_valid_count = sum(
+        text(row, "severity") in {"Minor", "Moderate", "Major", "Extreme"}
+        for row in rows
+    )
+    emergency_valid_count = sum(bool(text(row, "emergency")) for row in rows)
+    surgical_valid_count = sum(bool(text(row, "medical_surgical")) for row in rows)
 
     metrics = {
         "record_count": denominator,
@@ -115,15 +121,16 @@ def summarize(rows: list[dict[str, str | None]]) -> dict[str, Any]:
         "avg_charges": average(charges),
         "avg_costs": average(costs),
         "emergency_rate": rate(
-            sum(text(row, "emergency") == "Y" for row in rows), denominator
+            sum(text(row, "emergency") == "Y" for row in rows),
+            emergency_valid_count,
         ),
         "surgical_rate": rate(
             sum("Surgical" in text(row, "medical_surgical") for row in rows),
-            denominator,
+            surgical_valid_count,
         ),
         "severe_rate": rate(
             sum(text(row, "severity") in {"Major", "Extreme"} for row in rows),
-            denominator,
+            severity_valid_count,
         ),
     }
     return {
@@ -152,8 +159,11 @@ def summarize_stream(reader: csv.DictReader) -> tuple[dict[str, Any], int, int]:
     costs_sum = Decimal("0")
     costs_count = 0
     emergency_yes = 0
+    emergency_valid_count = 0
     surgical_yes = 0
+    surgical_valid_count = 0
     severe_yes = 0
+    severity_valid_count = 0
 
     for row in reader:
         raw_rows += 1
@@ -183,8 +193,13 @@ def summarize_stream(reader: csv.DictReader) -> tuple[dict[str, Any], int, int]:
             costs_sum += Decimal(str(cost))
             costs_count += 1
         emergency_yes += text(row, "emergency") == "Y"
+        emergency_valid_count += bool(text(row, "emergency"))
         surgical_yes += "Surgical" in text(row, "medical_surgical")
+        surgical_valid_count += bool(text(row, "medical_surgical"))
         severe_yes += text(row, "severity") in {"Major", "Extreme"}
+        severity_valid_count += text(row, "severity") in {
+            "Minor", "Moderate", "Major", "Extreme"
+        }
 
     def average_total(total: Decimal | float, count: int) -> float:
         return round(float(total / count), 2) if count else 0.0
@@ -204,9 +219,9 @@ def summarize_stream(reader: csv.DictReader) -> tuple[dict[str, Any], int, int]:
             "avg_los": round(los_sum / los_count, 2) if los_count else 0.0,
             "avg_charges": average_total(charges_sum, charges_count),
             "avg_costs": average_total(costs_sum, costs_count),
-            "emergency_rate": rate(emergency_yes, in_scope_rows),
-            "surgical_rate": rate(surgical_yes, in_scope_rows),
-            "severe_rate": rate(severe_yes, in_scope_rows),
+            "emergency_rate": rate(emergency_yes, emergency_valid_count),
+            "surgical_rate": rate(surgical_yes, surgical_valid_count),
+            "severe_rate": rate(severe_yes, severity_valid_count),
         },
         "sections": {
             "age": ordered("age"),

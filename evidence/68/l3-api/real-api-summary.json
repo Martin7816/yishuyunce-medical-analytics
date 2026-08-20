@@ -1,0 +1,39 @@
+{
+  "issue": 68,
+  "branch": "backend/analytics-api",
+  "source": "ANALYTICS_DATA_SOURCE=mysql",
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "generated_at": "2026-08-19T00:00:00.000000Z",
+  "wildcard": {
+    "status": 200,
+    "code": "OK",
+    "trace_id_matches_header": true,
+    "record_count": 2101588,
+    "metric_keys": ["record_count", "avg_charges", "median_charges"],
+    "section_keys": ["payment", "charges", "age", "diseases"],
+    "option_counts": {"payment_type": 9, "age_group": 5}
+  },
+  "filtered_requests": {
+    "payment_type=Medicare": {"status": 200, "code": "OK", "record_count": 826250},
+    "age_group=70%20or%20Older": {"status": 200, "code": "OK", "record_count": 619644},
+    "payment_type=Medicare&age_group=70%20or%20Older": {"status": 200, "code": "OK", "record_count": 565451}
+  },
+  "invalid_requests": {
+    "unknown_query": {"status": 400, "code": "INVALID_QUERY_PARAMETER"},
+    "invalid_enum": {"status": 400, "code": "INVALID_QUERY_PARAMETER"},
+    "repeated_query": {"status": 400, "code": "INVALID_QUERY_PARAMETER"},
+    "get_body": {"status": 400, "code": "INVALID_REQUEST_FORMAT"},
+    "post": {"status": 405, "code": "METHOD_NOT_ALLOWED"}
+  },
+  "mysql_counts": {
+    "payment_rows": 60,
+    "distinct_data_versions": 1,
+    "distinct_generated_at": 1
+  },
+  "wildcard_mysql_comparison": {
+    "payload_match": true,
+    "data_version_match": true,
+    "generated_at_match": true,
+    "entity_key": "payment=*|age=*"
+  }
+}

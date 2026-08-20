@@ -75,6 +75,7 @@ def rate(numerator: int, denominator: int) -> float:
 def empty_aggregate() -> dict[str, Any]:
     return {
         "count": 0,
+        "severity_valid_count": 0,
         "high_risk_count": 0,
         "los_sum": Decimal("0"),
         "los_count": 0,
@@ -111,11 +112,15 @@ def summarize_stream(
         if los is None:
             continue
 
+        diagnosis = text(row, "diagnosis")
+        raw_diagnosis_code = text(row, "diagnosis_code")
         dimensions = {
-            field: text(row, field) or None for field in RISK_FIELDS
+            "age": text(row, "age") or None,
+            "diagnosis_code": (
+                raw_diagnosis_code if raw_diagnosis_code and diagnosis else None
+            ),
         }
         diagnosis_code = dimensions["diagnosis_code"]
-        diagnosis = text(row, "diagnosis")
         if diagnosis_code is not None:
             option_values["diagnosis_code"].add(diagnosis_code)
             if diagnosis:
@@ -135,11 +140,15 @@ def summarize_stream(
             else (None,)
         )
         high_risk = text(row, "severity") in {"Major", "Extreme"}
+        severity_valid = text(row, "severity") in {
+            "Minor", "Moderate", "Major", "Extreme"
+        }
         charges = nonnegative_decimal(text(row, "charges"))
         costs = nonnegative_decimal(text(row, "costs"))
         for key in product(age_values, diagnosis_values):
             aggregate = aggregates[key]
             aggregate["count"] += 1
+            aggregate["severity_valid_count"] += severity_valid
 
             severity = text(row, "severity")
             if severity:
@@ -210,7 +219,7 @@ def expected_payload(
     }
     payload: dict[str, Any] = {
         "title": "病情严重程度与风险分析",
-        "description": "群体统计，不构成诊断、治疗或因果判断。",
+        "description": "Major/Extreme比例以严重程度可判定记录为统计总体；群体统计不构成诊断、治疗或因果判断。",
         "metrics": [],
         "sections": [],
         "filters": filters,
@@ -218,12 +227,19 @@ def expected_payload(
     if key == (None, None):
         payload["options"] = options
 
-    denominator = aggregate["count"]
-    if denominator == 0:
+    record_count = aggregate["count"]
+    if record_count == 0:
         return payload
 
+    severity_denominator = aggregate["severity_valid_count"]
     high_risk_count = aggregate["high_risk_count"]
     payload["metrics"] = [
+        metric(
+            "severity_valid_count",
+            "可判定风险记录",
+            severity_denominator,
+            "条",
+        ),
         metric(
             "high_risk_count",
             "Major/Extreme记录数",
@@ -233,7 +249,7 @@ def expected_payload(
         metric(
             "high_risk_rate",
             "Major/Extreme比例",
-            rate(high_risk_count, denominator),
+            rate(high_risk_count, severity_denominator),
             "%",
         ),
     ]
@@ -363,6 +379,7 @@ def compare(
             name: len(values) for name, values in expected["options"].items()
         },
         "wildcard_record_count": wildcard["count"],
+        "wildcard_severity_valid_count": wildcard["severity_valid_count"],
         "wildcard_high_risk_count": wildcard["high_risk_count"],
         "data_version": snapshot["data_version"],
         "generated_at": snapshot["generated_at"],
