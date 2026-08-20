@@ -71,13 +71,16 @@ def test_risk_snapshot_exposes_frozen_metrics_and_sections():
         },
     ]
     assert [metric['key'] for metric in data['metrics']] == [
+        'severity_valid_count',
         'high_risk_count',
         'high_risk_rate',
         'avg_los',
         'avg_charges',
         'avg_costs',
     ]
-    assert 0 <= data['metrics'][1]['value'] <= 1
+    metrics = {metric['key']: metric['value'] for metric in data['metrics']}
+    assert metrics['severity_valid_count'] == 2099038
+    assert metrics['high_risk_rate'] == 0.3336
     assert [section['key'] for section in data['sections']] == [
         'severity',
         'mortality',
@@ -87,6 +90,39 @@ def test_risk_snapshot_exposes_frozen_metrics_and_sections():
     ]
     assert len(data['sections'][-1]['items']) == 10
     assert data['sections'][-1]['title'] == '高风险疾病 TOP10'
+
+
+def test_data_quality_exposes_business_field_denominator_evidence():
+    response = fixture_app().test_client().get('/api/v1/data-quality/summary')
+
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    metrics = {metric['key']: metric['value'] for metric in data['metrics']}
+    assert metrics['valid_rows'] == 2101588
+    assert metrics['severity_valid_rows'] == 2099038
+    assert metrics['severity_missing_rows'] == 2550
+    assert metrics['severity_valid_rows'] + metrics['severity_missing_rows'] == metrics['valid_rows']
+    audit = data['options']['audit']
+    assert audit['formula_version'] == 'analytics-denominator-v1'
+    assert audit['base_population']['count'] == metrics['valid_rows']
+    assert audit['base_population']['filters'] == {
+        'discharge_year': '2021',
+        'length_of_stay': 'parsed',
+    }
+    assert audit['fields']['severity']['applicable_count'] == metrics['valid_rows']
+    assert audit['fields']['severity']['valid_count'] == metrics['severity_valid_rows']
+    assert audit['fields']['severity']['missing_count'] == metrics['severity_missing_rows']
+    assert audit['ratios']['severe_rate']['numerator'] == 700276
+    assert audit['ratios']['severe_rate']['denominator'] == 2099038
+    assert audit['ratios']['emergency_rate']['denominator'] == 2101588
+    assert audit['ratios']['surgical_rate']['denominator'] == 2101588
+    assert 0 <= audit['ratios']['emergency_rate']['numerator'] <= 2101588
+    assert 0 <= audit['ratios']['surgical_rate']['numerator'] <= 2101588
+    sections = {section['key']: section['items'] for section in data['sections']}
+    assert {'field_validity', 'field_missing'} <= set(sections)
+    missing = {item['name']: item['value'] for item in sections['field_missing']}
+    assert missing['机构编号'] == 10642
+    assert missing['主要操作'] == 576021
 
 
 class RecordingRiskRepository:

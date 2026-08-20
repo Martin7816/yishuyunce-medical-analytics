@@ -95,8 +95,11 @@ def empty_profile() -> dict[str, Any]:
         "charges": [],
         "costs": [],
         "emergency_yes": 0,
+        "emergency_valid_count": 0,
         "surgical_yes": 0,
+        "surgical_valid_count": 0,
         "severe_yes": 0,
+        "severity_valid_count": 0,
         "age": Counter(),
         "gender": Counter(),
         "severity": Counter(),
@@ -131,9 +134,15 @@ def profile_metrics(profile: dict[str, Any]) -> dict[str, int | float]:
             if profile["costs"]
             else None
         ),
-        "emergency_rate": rate(profile["emergency_yes"], profile["count"]),
-        "surgical_rate": rate(profile["surgical_yes"], profile["count"]),
-        "severe_rate": rate(profile["severe_yes"], profile["count"]),
+        "emergency_rate": rate(
+            profile["emergency_yes"], profile["emergency_valid_count"]
+        ),
+        "surgical_rate": rate(
+            profile["surgical_yes"], profile["surgical_valid_count"]
+        ),
+        "severe_rate": rate(
+            profile["severe_yes"], profile["severity_valid_count"]
+        ),
     }
 
 
@@ -157,12 +166,10 @@ def summarize_stream(
 
         scoped_rows += 1
         diagnosis = text(row, "diagnosis")
-        if diagnosis:
-            diagnosis_counts[diagnosis] += 1
-
         diagnosis_code = text(row, "diagnosis_code")
-        if not diagnosis_code:
+        if not diagnosis_code or not diagnosis:
             continue
+        diagnosis_counts[diagnosis] += 1
         profile = profiles[diagnosis_code]
         profile["count"] += 1
         if diagnosis and (not profile["label"] or diagnosis < profile["label"]):
@@ -176,8 +183,14 @@ def summarize_stream(
         if costs is not None:
             profile["costs"].append(costs)
         profile["emergency_yes"] += text(row, "emergency") == "Y"
+        profile["emergency_valid_count"] += bool(text(row, "emergency"))
         profile["surgical_yes"] += "Surgical" in text(row, "medical_surgical")
-        profile["severe_yes"] += text(row, "severity") in {"Major", "Extreme"}
+        profile["surgical_valid_count"] += bool(text(row, "medical_surgical"))
+        severity = text(row, "severity")
+        profile["severe_yes"] += severity in {"Major", "Extreme"}
+        profile["severity_valid_count"] += severity in {
+            "Minor", "Moderate", "Major", "Extreme"
+        }
 
         for key, counter_name in (
             ("age", "age"),

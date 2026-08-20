@@ -83,8 +83,11 @@ def empty_aggregate() -> dict[str, Any]:
         "charges": [],
         "costs": [],
         "emergency_yes": 0,
+        "emergency_valid_count": 0,
         "surgical_yes": 0,
+        "surgical_valid_count": 0,
         "severe_yes": 0,
+        "severity_valid_count": 0,
         "diagnosis": Counter(),
         "severity": Counter(),
         "age": Counter(),
@@ -143,8 +146,14 @@ def summarize_stream(
                 aggregate["costs"].append(costs)
 
             aggregate["emergency_yes"] += text(row, "emergency") == "Y"
+            aggregate["emergency_valid_count"] += bool(text(row, "emergency"))
             aggregate["surgical_yes"] += "Surgical" in text(row, "medical_surgical")
-            aggregate["severe_yes"] += text(row, "severity") in {"Major", "Extreme"}
+            aggregate["surgical_valid_count"] += bool(text(row, "medical_surgical"))
+            severity = text(row, "severity")
+            aggregate["severe_yes"] += severity in {"Major", "Extreme"}
+            aggregate["severity_valid_count"] += severity in {
+                "Minor", "Moderate", "Major", "Extreme"
+            }
 
             for field in ("diagnosis", "severity", "age", "gender"):
                 value = text(row, field)
@@ -183,7 +192,7 @@ def expected_payload(
     }
     payload: dict[str, Any] = {
         "title": "住院记录群体分析",
-        "description": "有限白名单群体筛选；记录不按患者去重。",
+        "description": "有限白名单群体筛选；记录不按患者去重，重症率按严重程度可判定记录计算。",
         "metrics": [],
         "sections": [],
         "filters": filters,
@@ -215,9 +224,24 @@ def expected_payload(
             rounded(sum(aggregate["costs"]) / len(aggregate["costs"]) if aggregate["costs"] else None),
             "美元",
         ),
-        metric("emergency_rate", "急诊率", rate(aggregate["emergency_yes"], denominator), "%"),
-        metric("surgical_rate", "外科率", rate(aggregate["surgical_yes"], denominator), "%"),
-        metric("severe_rate", "重症率", rate(aggregate["severe_yes"], denominator), "%"),
+        metric(
+            "emergency_rate",
+            "急诊率",
+            rate(aggregate["emergency_yes"], aggregate["emergency_valid_count"]),
+            "%",
+        ),
+        metric(
+            "surgical_rate",
+            "外科率",
+            rate(aggregate["surgical_yes"], aggregate["surgical_valid_count"]),
+            "%",
+        ),
+        metric(
+            "severe_rate",
+            "重症率",
+            rate(aggregate["severe_yes"], aggregate["severity_valid_count"]),
+            "%",
+        ),
     ]
     payload["sections"] = [
         {
