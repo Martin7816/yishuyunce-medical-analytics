@@ -90,6 +90,10 @@ npm run dev
 
 任务读取一次 CSV，生成运营驾驶舱、医院、疾病、住院记录群体、费用成本、病情风险、支付方式和数据质量等模块记录。输出必须通过公共快照结构校验，并在同一文件中使用一致的 `data_version` 与 `generated_at`。
 
+比例口径按业务字段分别确定：页面记录数保留当前筛选后的基础记录总体；急诊率、外科率和 `Major/Extreme` 重症率分别使用对应字段的指标有效总体作分母，严重程度可判定值为 `Minor`、`Moderate`、`Major`、`Extreme`，未知值不作分子也不作非重症。驾驶舱、医院画像、疾病画像和住院记录群体通过严重程度分布对账；风险快照额外发布 `severity_valid_count`。完整字段有效数、适用数、缺失数和比例分子/分母集中在 `data_quality/summary.options.audit`，其公式版本为 `analytics-denominator-v1`；不在各业务页面重复展示质量告警。
+
+固定边界样例可使用 `verify_dashboard_snapshot.py`、`verify_hospital_snapshot.py`、`verify_disease_snapshot.py`、`verify_cohort_snapshot.py` 和 `verify_risk_snapshot.py` 独立核对分子、分母与分布。
+
 ### 3.3 训练高费用记录分类模型
 
 ```powershell

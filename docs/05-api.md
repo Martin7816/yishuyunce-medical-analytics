@@ -102,7 +102,7 @@ GET /api/v1/hospitals/1
 - `emergency_rate`
 - `severe_rate`
 
-比较响应在 `data.comparison` 中按请求顺序返回完整医院画像。医院编码始终按字符串处理。
+比较响应在 `data.comparison` 中按请求顺序返回完整医院画像。医院编码始终按字符串处理；医院画像的 `severe_rate` 以严重程度可判定记录为分母，`severity` 分区用于对账。
 
 ### 3.2 疾病
 
@@ -112,7 +112,7 @@ GET /api/v1/diseases/NVS005
 GET /api/v1/diseases/top10
 ```
 
-画像路径中的 `diagnosis_code` 必须来自 `/diseases` 的 `options.diagnoses`。疾病病例量表示有效住院出院记录数，不表示患者人数或患病率。
+画像路径中的 `diagnosis_code` 必须来自 `/diseases` 的 `options.diagnoses`。疾病病例量表示基础住院出院记录数，不表示患者人数或患病率；画像中的 `severe_rate` 只使用严重程度可判定记录作分母。
 
 ### 3.3 住院记录群体
 
@@ -120,7 +120,7 @@ GET /api/v1/diseases/top10
 GET /api/v1/cohorts/summary?age_group=50%20to%2069&gender=F&admission_type=Emergency
 ```
 
-三个参数都可省略，取值来自基础响应的 `options.age_group`、`options.gender` 与 `options.admission_type`。
+三个参数都可省略，取值来自基础响应的 `options.age_group`、`options.gender` 与 `options.admission_type`。记录数表示当前筛选的基础记录总体，`severe_rate` 只使用该总体中严重程度可判定记录作分母。
 
 ### 3.4 费用与成本
 
@@ -137,7 +137,7 @@ GET /api/v1/costs/overview?facility_id=1&severity=Major
 GET /api/v1/risks/overview?age_group=70%20or%20Older&diagnosis_code=BLD001
 ```
 
-参数可单独或组合使用。结果为群体统计，不构成个人诊断、治疗建议或因果判断。
+参数可单独或组合使用。指标按 `severity_valid_count`、`high_risk_count`、`high_risk_rate`、`avg_los`、`avg_charges`、`avg_costs` 发布，其中 `high_risk_rate` 以前者为分母。结果为群体统计，不构成个人诊断、治疗建议或因果判断。
 
 ### 3.6 支付方式
 
@@ -154,7 +154,7 @@ GET /api/v1/data-quality/summary
 GET /api/v1/data-quality/summary?data_version=<当前响应中的版本>
 ```
 
-`data_version` 只接受当前发布版本。
+`data_version` 只接受当前发布版本。该页面集中展示基础记录总体、严重程度有效/缺失数，以及当前业务使用字段的有效记录数和非零缺失数；`data.options.audit` 还提供适用数、有效数、缺失数、比例分子/分母、筛选条件和 `formula_version`，`data_version` 与 `generated_at` 继续使用既有响应元数据。其他业务页面只保留简要口径说明。
 
 ## 4. 高费用记录分类
 
