@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import MethodNotAllowed
 
-from ..errors import InvalidRequestError, ResultNotReadyError
+from ..errors import InvalidRequestError, InvalidServiceResultError, ResultNotReadyError
+from ..services.high_cost_model import FEATURES
 from .parameters import (
     query_value,
     reject_unknown_query_parameters,
@@ -348,6 +351,18 @@ def high_cost_metrics():
     # Model metadata lives under the snapshot's allowed `options` object;
     # expose the established response shape without widening payload_json.
     metadata = payload.get("options", {})
+    if (
+        not isinstance(metadata, dict)
+        or not isinstance(metadata.get("model_version"), str)
+        or not metadata["model_version"].strip()
+        or not isinstance(metadata.get("feature_names"), list)
+        or metadata["feature_names"] != list(FEATURES)
+        or not isinstance(metadata.get("threshold_amount"), (int, float))
+        or isinstance(metadata["threshold_amount"], bool)
+        or not math.isfinite(float(metadata["threshold_amount"]))
+        or metadata["threshold_amount"] < 0
+    ):
+        raise InvalidServiceResultError()
     result = dict(payload)
     for name in ("model_version", "threshold_amount", "feature_names"):
         if name in metadata:
