@@ -7,7 +7,7 @@
       "entity_key": "overview",
       "payload": {
         "title": "医疗运营驾驶舱",
-        "description": "从住院出院记录观察医疗机构、住院时长、费用与急诊结构。",
+        "description": "从基础住院出院记录观察医疗机构、住院时长、费用与急诊结构；重症率按严重程度可判定记录计算。",
         "metrics": [
           {"key": "record_count", "label": "住院出院记录", "value": 2101588, "unit": "条"},
           {"key": "facility_count", "label": "医疗机构", "value": 204, "unit": "家"},
@@ -16,14 +16,14 @@
           {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"},
           {"key": "emergency_rate", "label": "急诊记录比例", "value": 0.63, "unit": "%"},
           {"key": "surgical_rate", "label": "外科记录比例", "value": 0.22, "unit": "%"},
-          {"key": "severe_rate", "label": "重症记录比例", "value": 0.28, "unit": "%"}
+          {"key": "severe_rate", "label": "重症记录比例", "value": 0.3336, "unit": "%"}
         ],
         "sections": [
           {"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "0-17岁", "value": 301231}, {"name": "18-29岁", "value": 181248}, {"name": "30-49岁", "value": 426115}, {"name": "50-69岁", "value": 612884}, {"name": "70岁及以上", "value": 580110}]},
           {"key": "payment", "title": "主要支付方式", "type": "bar", "items": [{"name": "Medicare", "value": 806214}, {"name": "Medicaid", "value": 472831}, {"name": "Private Insurance", "value": 435190}, {"name": "Other", "value": 387353}]},
           {"key": "disease_top10", "title": "疾病病例量 TOP10", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}, {"name": "COVID-19", "value": 48621}, {"name": "HEART FAILURE", "value": 45204}]},
           {"key": "hospital_top10", "title": "医院病例量 TOP10", "type": "bar", "items": [{"name": "North Shore University Hospital", "value": 51512}, {"name": "NewYork-Presbyterian", "value": 49218}, {"name": "Montefiore Medical Center", "value": 47106}, {"name": "NYU Langone Hospitals", "value": 43812}, {"name": "Strong Memorial Hospital", "value": 40774}]},
-          {"key": "severity", "title": "病情严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}
+          {"key": "severity", "title": "病情严重程度", "type": "bar", "items": [{"name": "Moderate", "value": 760535}, {"name": "Minor", "value": 638227}, {"name": "Major", "value": 499474}, {"name": "Extreme", "value": 200802}]}
         ]
       }
     },
@@ -43,9 +43,9 @@
       "entity_key": "profile:1",
       "payload": {
         "title": "North Shore University Hospital",
-        "description": "医疗机构运营画像。",
+        "description": "医疗机构运营画像；重症率按严重程度可判定记录计算。",
         "metrics": [{"key": "case_count", "label": "病例量", "value": 51512, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.4, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 81242.3, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 24519.7, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.59, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.31, "unit": "%"}],
-        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 4210}, {"name": "SEPTICEMIA", "value": 2318}, {"name": "COVID-19", "value": 1996}, {"name": "HEART FAILURE", "value": 1832}, {"name": "OSTEOARTHRITIS", "value": 1618}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 37603}, {"name": "Surgical", "value": 13909}]}]
+        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 4210}, {"name": "SEPTICEMIA", "value": 2318}, {"name": "COVID-19", "value": 1996}, {"name": "HEART FAILURE", "value": 1832}, {"name": "OSTEOARTHRITIS", "value": 1618}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 37603}, {"name": "Surgical", "value": 13909}]}, {"key": "severity", "title": "病情严重程度", "type": "bar", "items": [{"name": "Minor", "value": 20000}, {"name": "Moderate", "value": 15542}, {"name": "Major", "value": 13000}, {"name": "Extreme", "value": 2970}]}]
       }
     },
     {
@@ -53,9 +53,9 @@
       "entity_key": "profile:2",
       "payload": {
         "title": "NewYork-Presbyterian",
-        "description": "医疗机构运营画像。",
+        "description": "医疗机构运营画像；重症率按严重程度可判定记录计算。",
         "metrics": [{"key": "case_count", "label": "病例量", "value": 49218, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 6.1, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 90281.6, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 27954.1, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.66, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.36, "unit": "%"}],
-        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 3891}, {"name": "SEPTICEMIA", "value": 2570}, {"name": "COVID-19", "value": 2114}, {"name": "HEART FAILURE", "value": 1972}, {"name": "RESPIRATORY FAILURE", "value": 1550}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 34880}, {"name": "Surgical", "value": 14338}]}]
+        "sections": [{"key": "diseases", "title": "主要疾病 TOP5", "type": "bar", "items": [{"name": "LIVEBORN", "value": 3891}, {"name": "SEPTICEMIA", "value": 2570}, {"name": "COVID-19", "value": 2114}, {"name": "HEART FAILURE", "value": 1972}, {"name": "RESPIRATORY FAILURE", "value": 1550}]}, {"key": "medical_surgical", "title": "内外科结构", "type": "bar", "items": [{"name": "Medical", "value": 34880}, {"name": "Surgical", "value": 14338}]}, {"key": "severity", "title": "病情严重程度", "type": "bar", "items": [{"name": "Minor", "value": 15000}, {"name": "Moderate", "value": 16500}, {"name": "Major", "value": 13000}, {"name": "Extreme", "value": 4718}]}]
       }
     },
     {
@@ -74,7 +74,7 @@
       "entity_key": "profile:NVS005",
       "payload": {
         "title": "HEART FAILURE",
-        "description": "该诊断类别的住院出院记录群体画像。",
+        "description": "该诊断类别的住院出院记录群体画像；重症率按严重程度可判定记录计算。",
         "metrics": [{"key": "record_count", "label": "住院出院记录", "value": 45204, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 7.2, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 78620.4, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 23911.8, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.82, "unit": "%"}, {"key": "surgical_rate", "label": "外科率", "value": 0.24, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.56, "unit": "%"}],
         "sections": [{"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "30-49岁", "value": 2310}, {"name": "50-69岁", "value": 15821}, {"name": "70岁及以上", "value": 27073}]}, {"key": "gender", "title": "性别结构", "type": "bar", "items": [{"name": "F", "value": 23100}, {"name": "M", "value": 21900}, {"name": "U", "value": 204}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 3980}, {"name": "Moderate", "value": 16132}, {"name": "Major", "value": 19442}, {"name": "Extreme", "value": 5650}]}, {"key": "mortality", "title": "死亡风险", "type": "bar", "items": [{"name": "Minor", "value": 24100}, {"name": "Moderate", "value": 13200}, {"name": "Major", "value": 6800}, {"name": "Extreme", "value": 1104}]}, {"key": "procedures", "title": "常见操作", "type": "bar", "items": [{"name": "CARDIAC CATHETERIZATION", "value": 4210}, {"name": "MECHANICAL VENTILATION", "value": 2318}, {"name": "ECHOCARDIOGRAM", "value": 1832}]}, {"key": "hospitals", "title": "主要收治医院", "type": "bar", "items": [{"name": "NewYork-Presbyterian", "value": 1972}, {"name": "North Shore University Hospital", "value": 1832}, {"name": "Montefiore Medical Center", "value": 1740}]}]
       }
@@ -84,7 +84,7 @@
       "entity_key": "profile:INF012",
       "payload": {
         "title": "CORONAVIRUS DISEASE 2019 (COVID-19)",
-        "description": "该诊断类别的住院出院记录群体画像。",
+        "description": "该诊断类别的住院出院记录群体画像；重症率按严重程度可判定记录计算。",
         "metrics": [{"key": "record_count", "label": "住院出院记录", "value": 48621, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 8.1, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 84218.9, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 25117.2, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.77, "unit": "%"}, {"key": "surgical_rate", "label": "外科率", "value": 0.19, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.51, "unit": "%"}],
         "sections": [{"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "18-29岁", "value": 2910}, {"name": "30-49岁", "value": 9620}, {"name": "50-69岁", "value": 19114}, {"name": "70岁及以上", "value": 16977}]}, {"key": "gender", "title": "性别结构", "type": "bar", "items": [{"name": "F", "value": 24402}, {"name": "M", "value": 23901}, {"name": "U", "value": 318}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 5650}, {"name": "Moderate", "value": 18111}, {"name": "Major", "value": 18730}, {"name": "Extreme", "value": 6130}]}, {"key": "mortality", "title": "死亡风险", "type": "bar", "items": [{"name": "Minor", "value": 26800}, {"name": "Moderate", "value": 13300}, {"name": "Major", "value": 7100}, {"name": "Extreme", "value": 1421}]}, {"key": "procedures", "title": "常见操作", "type": "bar", "items": [{"name": "CHEST RADIOGRAPHY", "value": 4120}, {"name": "MECHANICAL VENTILATION", "value": 3020}, {"name": "COMPUTED TOMOGRAPHY", "value": 2210}]}, {"key": "hospitals", "title": "主要收治医院", "type": "bar", "items": [{"name": "NewYork-Presbyterian", "value": 2114}, {"name": "North Shore University Hospital", "value": 1996}, {"name": "Montefiore Medical Center", "value": 1870}]}]
       }
@@ -94,11 +94,11 @@
       "entity_key": "age=*|gender=*|admission=*",
       "payload": {
         "title": "住院记录群体分析",
-        "description": "使用有限白名单条件观察住院出院记录群体，不代表唯一患者。",
+        "description": "有限白名单群体筛选；记录不按患者去重，重症率按严重程度可判定记录计算。",
         "options": {"age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"], "gender": ["F", "M", "U"], "admission_type": ["Emergency", "Elective", "Newborn", "Urgent", "Trauma", "Not Available"]},
         "filters": {},
-        "metrics": [{"key": "record_count", "label": "符合条件的记录", "value": 2101588, "unit": "条"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.63, "unit": "%"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"}],
-        "sections": [{"key": "diseases", "title": "主要疾病", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Minor", "value": 621944}, {"name": "Moderate", "value": 783120}, {"name": "Major", "value": 534501}, {"name": "Extreme", "value": 162023}]}, {"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "0-17岁", "value": 301231}, {"name": "18-29岁", "value": 181248}, {"name": "30-49岁", "value": 426115}, {"name": "50-69岁", "value": 612884}, {"name": "70岁及以上", "value": 580110}]}]
+        "metrics": [{"key": "record_count", "label": "住院出院记录", "value": 2101588, "unit": "条"}, {"key": "avg_los", "label": "平均住院时长", "value": 5.7, "unit": "天"}, {"key": "avg_charges", "label": "平均收费", "value": 73842.18, "unit": "美元"}, {"key": "avg_costs", "label": "平均成本", "value": 22314.76, "unit": "美元"}, {"key": "emergency_rate", "label": "急诊率", "value": 0.63, "unit": "%"}, {"key": "surgical_rate", "label": "外科率", "value": 0.22, "unit": "%"}, {"key": "severe_rate", "label": "重症率", "value": 0.3336, "unit": "%"}],
+        "sections": [{"key": "diseases", "title": "主要疾病", "type": "bar", "items": [{"name": "LIVEBORN", "value": 189442}, {"name": "SEPTICEMIA", "value": 56813}, {"name": "OSTEOARTHRITIS", "value": 52316}]}, {"key": "severity", "title": "严重程度", "type": "bar", "items": [{"name": "Moderate", "value": 760535}, {"name": "Minor", "value": 638227}, {"name": "Major", "value": 499474}, {"name": "Extreme", "value": 200802}]}, {"key": "age", "title": "年龄结构", "type": "bar", "items": [{"name": "0-17岁", "value": 301231}, {"name": "18-29岁", "value": 181248}, {"name": "30-49岁", "value": 426115}, {"name": "50-69岁", "value": 612884}, {"name": "70岁及以上", "value": 580110}]}, {"key": "gender", "title": "性别结构", "type": "bar", "items": [{"name": "F", "value": 1102600}, {"name": "M", "value": 998988}]}]
       }
     },
     {
@@ -118,10 +118,10 @@
       "entity_key": "age=*|diagnosis=*",
       "payload": {
         "title": "病情严重程度与风险分析",
-        "description": "群体统计，不构成诊断、治疗或因果判断。",
+        "description": "Major/Extreme比例以严重程度可判定记录为统计总体；群体统计不构成诊断、治疗或因果判断。",
         "options": {"age_group": ["0 to 17", "18 to 29", "30 to 49", "50 to 69", "70 or Older"], "diagnosis_code": [{"value": "NVS005", "label": "HEART FAILURE"}, {"value": "INF012", "label": "CORONAVIRUS DISEASE 2019 (COVID-19)"}]},
         "filters": {},
-        "metrics": [{"key": "high_risk_count", "label": "Major/Extreme记录数", "value": 700276, "unit": "条"}, {"key": "high_risk_rate", "label": "Major/Extreme比例", "value": 0.3332, "unit": "%"}, {"key": "avg_los", "label": "高风险平均住院时长", "value": 9.38, "unit": "天"}, {"key": "avg_charges", "label": "高风险平均收费", "value": 126978.77, "unit": "美元"}, {"key": "avg_costs", "label": "高风险平均成本", "value": 37965.4, "unit": "美元"}],
+        "metrics": [{"key": "severity_valid_count", "label": "可判定风险记录", "value": 2099038, "unit": "条"}, {"key": "high_risk_count", "label": "Major/Extreme记录数", "value": 700276, "unit": "条"}, {"key": "high_risk_rate", "label": "Major/Extreme比例", "value": 0.3336, "unit": "%"}, {"key": "avg_los", "label": "高风险平均住院时长", "value": 9.38, "unit": "天"}, {"key": "avg_charges", "label": "高风险平均收费", "value": 126978.77, "unit": "美元"}, {"key": "avg_costs", "label": "高风险平均成本", "value": 37965.4, "unit": "美元"}],
         "sections": [{"key": "severity", "title": "严重程度分布", "type": "bar", "items": [{"name": "Moderate", "value": 760535}, {"name": "Minor", "value": 638227}, {"name": "Major", "value": 499474}, {"name": "Extreme", "value": 200802}]}, {"key": "mortality", "title": "死亡风险分布", "type": "bar", "items": [{"name": "Minor", "value": 1068879}, {"name": "Moderate", "value": 437286}, {"name": "Major", "value": 394486}, {"name": "Extreme", "value": 198387}]}, {"key": "disposition", "title": "高风险记录离院去向", "type": "bar", "items": [{"name": "Home or Self Care", "value": 301799}, {"name": "Home w/ Home Health Services", "value": 145841}, {"name": "Skilled Nursing Home", "value": 107508}, {"name": "Expired", "value": 60176}]}, {"key": "age", "title": "高风险年龄结构", "type": "bar", "items": [{"name": "70 or Older", "value": 301824}, {"name": "50 to 69", "value": 236733}, {"name": "30 to 49", "value": 93479}, {"name": "0 to 17", "value": 38781}, {"name": "18 to 29", "value": 29459}]}, {"key": "diseases", "title": "高风险疾病 TOP10", "type": "bar", "items": [{"name": "SEPTICEMIA", "value": 108105}, {"name": "CORONAVIRUS DISEASE 2019 (COVID-19)", "value": 82510}, {"name": "HEART FAILURE", "value": 32834}, {"name": "LIVEBORN", "value": 17676}, {"name": "DIABETES MELLITUS WITH COMPLICATION", "value": 15637}, {"name": "PNEUMONIA (EXCEPT THAT CAUSED BY TUBERCULOSIS)", "value": 13476}, {"name": "ACUTE AND UNSPECIFIED RENAL FAILURE", "value": 12241}, {"name": "CHRONIC OBSTRUCTIVE PULMONARY DISEASE AND BRONCHIECTASIS", "value": 11549}, {"name": "CEREBRAL INFARCTION", "value": 11307}, {"name": "RESPIRATORY FAILURE; INSUFFICIENCY; ARREST", "value": 11241}]}]
       }
     },
@@ -142,9 +142,10 @@
       "entity_key": "summary",
       "payload": {
         "title": "数据质量与任务管理",
-        "description": "只读展示当前分析批次和存储检查，不在网页执行任务。",
-        "metrics": [{"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"}, {"key": "valid_diagnosis_rows", "label": "有效诊断记录", "value": 2099954, "unit": "条"}, {"key": "parse_errors", "label": "解析异常", "value": 0, "unit": "条"}, {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}],
-        "sections": [{"key": "storage", "title": "存储与服务检查", "type": "status", "items": [{"name": "HDFS", "value": "CHECK_REQUIRED"}, {"name": "Hive", "value": "CHECK_REQUIRED"}, {"name": "MySQL", "value": "CHECK_REQUIRED"}, {"name": "PySpark任务", "value": "FIXTURE_ONLY"}]}, {"key": "fields", "title": "关键字段完整性", "type": "bar", "items": [{"name": "诊断", "value": 0.9992}, {"name": "医院", "value": 0.995}, {"name": "费用", "value": 1.0}, {"name": "住院时长", "value": 1.0}]}]
+        "description": "集中展示业务统计字段的可用范围；业务页面只保留与指标相关的简要口径。",
+        "options": {"formula_version": "analytics-denominator-v1", "audit": {"formula_version": "analytics-denominator-v1", "base_population": {"count": 2101588, "filters": {"discharge_year": "2021", "length_of_stay": "parsed"}}, "fields": {"facility_id": {"label": "机构编号", "applicable_count": 2101588, "valid_count": 2090946, "missing_count": 10642}, "diagnosis": {"label": "主诊断", "applicable_count": 2101588, "valid_count": 2099954, "missing_count": 1634}, "severity": {"label": "病情严重程度", "applicable_count": 2101588, "valid_count": 2099038, "missing_count": 2550}, "mortality": {"label": "死亡风险", "applicable_count": 2101588, "valid_count": 2099038, "missing_count": 2550}, "procedure": {"label": "主要操作", "applicable_count": 2101588, "valid_count": 1525567, "missing_count": 576021}, "payment": {"label": "主支付方式", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "charges": {"label": "收费", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "costs": {"label": "成本", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "los": {"label": "住院时长", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "age": {"label": "年龄组", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "gender": {"label": "性别", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "admission": {"label": "入院方式", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "emergency": {"label": "急诊标志", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}, "medical_surgical": {"label": "内外科分类", "applicable_count": 2101588, "valid_count": 2101588, "missing_count": 0}}, "ratios": {"emergency_rate": {"numerator": 1324000, "denominator": 2101588, "formula": "count(emergency=Y) / valid(emergency)"}, "surgical_rate": {"numerator": 462349, "denominator": 2101588, "formula": "count(medical_surgical contains Surgical) / valid(medical_surgical)"}, "severe_rate": {"numerator": 700276, "denominator": 2099038, "formula": "count(severity in Major,Extreme) / valid(severity)"}}}},
+        "metrics": [{"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"}, {"key": "valid_rows", "label": "基础记录总体", "value": 2101588, "unit": "条"}, {"key": "severity_valid_rows", "label": "严重程度可判定记录", "value": 2099038, "unit": "条"}, {"key": "severity_missing_rows", "label": "严重程度缺失/不可判定", "value": 2550, "unit": "条"}, {"key": "out_of_scope_rows", "label": "范围外记录", "value": 0, "unit": "条"}, {"key": "money_parse_or_negative", "label": "费用解析/负值异常", "value": 0, "unit": "条"}, {"key": "missing_los", "label": "住院时长解析异常", "value": 0, "unit": "条"}, {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"}, {"key": "los_capped", "label": "住院时长120+截断", "value": 0, "unit": "条"}],
+        "sections": [{"key": "storage", "title": "存储与服务检查", "type": "status", "items": [{"name": "HDFS", "value": "CHECK_REQUIRED"}, {"name": "Hive", "value": "CHECK_REQUIRED"}, {"name": "MySQL", "value": "CHECK_REQUIRED"}, {"name": "PySpark任务", "value": "FIXTURE_ONLY"}]}, {"key": "field_validity", "title": "业务字段有效记录数", "type": "bar", "items": [{"name": "机构编号", "value": 2090946}, {"name": "主诊断", "value": 2099954}, {"name": "病情严重程度", "value": 2099038}, {"name": "死亡风险", "value": 2099038}, {"name": "主要操作", "value": 1525567}, {"name": "主支付方式", "value": 2101588}, {"name": "收费", "value": 2101588}, {"name": "成本", "value": 2101588}, {"name": "住院时长", "value": 2101588}, {"name": "年龄组", "value": 2101588}, {"name": "性别", "value": 2101588}, {"name": "入院方式", "value": 2101588}, {"name": "急诊标志", "value": 2101588}, {"name": "内外科分类", "value": 2101588}]}, {"key": "field_missing", "title": "存在缺失或不可判定的业务字段", "type": "bar", "items": [{"name": "机构编号", "value": 10642}, {"name": "主诊断", "value": 1634}, {"name": "病情严重程度", "value": 2550}, {"name": "死亡风险", "value": 2550}, {"name": "主要操作", "value": 576021}]}]
       }
     },
     {

@@ -68,13 +68,19 @@ def test_summary_uses_the_frozen_service_entity_and_preserves_order():
     assert data["generated_at"] == FIXTURE_GENERATED_AT
     assert [metric["key"] for metric in data["metrics"]] == [
         "raw_rows",
-        "valid_diagnosis_rows",
-        "parse_errors",
+        "valid_rows",
+        "severity_valid_rows",
+        "severity_missing_rows",
+        "out_of_scope_rows",
+        "money_parse_or_negative",
+        "missing_los",
         "diagnosis_missing",
+        "los_capped",
     ]
     assert [section["key"] for section in data["sections"]] == [
         "storage",
-        "fields",
+        "field_validity",
+        "field_missing",
     ]
     assert {
         item["name"]: item["value"]

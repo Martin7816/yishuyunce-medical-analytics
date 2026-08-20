@@ -35,7 +35,7 @@ python -m pytest -q backend/tests/test_data_quality_api.py
 
 ```text
 python -m pytest -q backend/tests data/tests
-118 passed, 6 skipped, 1 warning in 2.06s
+121 passed, 6 skipped, 1 warning in 1.34s
 ```
 
 唯一 warning 是测试缓存目录权限不足，不影响测试结果；没有把它伪装成业务失败。
@@ -54,6 +54,8 @@ python -m pytest -q backend/tests data/tests
 | payload section 类型损坏 | `500 / SERVICE_RESULT_INVALID` | 不把契约错误降级为空结果 |
 
 每次响应都带 `trace_id`，成功响应的 `X-Trace-ID` 与正文一致；错误响应的 `data` 为 `null`。
+
+`l3-api/fixture-response.json` 是代表性响应，audit 对象只保留摘要；自动化测试仍消费仓库中的完整 fixture。
 
 ## 真实 MySQL 边界
 
