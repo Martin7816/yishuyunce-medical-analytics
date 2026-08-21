@@ -596,3 +596,27 @@ def test_system_prompt_contains_all_tool_summaries():
     for tool_name, keyword in expected_tool_summaries.items():
         assert tool_name in system_prompt
         assert keyword in system_prompt.lower()
+
+class MixedVersionAnalytics:
+    def __init__(self):
+        repository = FixtureAnalyticsSnapshotRepository(FIXTURE_PATH)
+        self.delegate = AnalyticsSnapshotService(repository)
+
+    def get(self, module_key, entity_key):
+        result = self.delegate.get(module_key, entity_key)
+        if module_key == "costs":
+            result["data_version"] = "fixture:costs_snapshot:v2"
+        return result
+
+
+def test_multiple_source_versions_remain_visible():
+    service = AIAssistantService(MixedVersionAnalytics(), TwoToolCallsAIClient())
+
+    result = service.chat({"message": "结合整体运营和费用情况进行分析"})
+    source_versions = [source["data_version"] for source in result["sources"]]
+
+    assert source_versions == [
+        "fixture:sparcs_full_analytics:v1",
+        "fixture:costs_snapshot:v2",
+    ]
+    assert result["data_versions"] == sorted(source_versions)

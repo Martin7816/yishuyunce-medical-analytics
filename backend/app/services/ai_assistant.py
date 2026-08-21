@@ -6,7 +6,12 @@ import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from ..errors import InvalidRequestError, ServerMisconfiguredError, UpstreamServiceError
+from ..errors import (
+    AppError,
+    InvalidRequestError,
+    ServerMisconfiguredError,
+    UpstreamServiceError,
+)
 
 
 TOOL_TO_SNAPSHOT = {
@@ -19,6 +24,19 @@ TOOL_TO_SNAPSHOT = {
     "get_payment_overview": ("payments", "payment=*|age=*"),
     "get_model_metrics": ("high_cost_model", "metrics"),
 }
+
+CHART_TYPES = frozenset({"bar", "pie", "table", "status"})
+CHAT_RESULT_FIELDS = frozenset(
+    {
+        "answer",
+        "tool_trace",
+        "sources",
+        "data_versions",
+        "chart",
+        "report",
+        "boundary",
+    }
+)
 
 
 def tool_definitions() -> list[dict]:
@@ -57,8 +75,23 @@ class DeepSeekChatClient:
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 document = json.loads(response.read().decode("utf-8"))
-            return document["choices"][0]["message"]
-        except (HTTPError, URLError, TimeoutError, KeyError, json.JSONDecodeError) as error:
+            message = document["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise TypeError("upstream message must be an object")
+            return message
+        except (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            ConnectionError,
+            OSError,
+            UnicodeDecodeError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
             raise UpstreamServiceError() from error
 
 
@@ -67,9 +100,26 @@ class AIAssistantService:
         self.analytics = analytics_service
         self.client = client
 
+    def _complete(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        try:
+            response = self.client.complete(messages, tools)
+        except AppError:
+            raise
+        except Exception as error:
+            # A client implementation is an external boundary. Never let a
+            # provider-specific exception or its message reach the API.
+            raise UpstreamServiceError() from error
+        if not isinstance(response, dict):
+            raise UpstreamServiceError()
+        return response
+
     def _run_tool(self, name: str, arguments: str) -> dict:
+        if not isinstance(name, str):
+            raise UpstreamServiceError("The AI requested a non-whitelisted tool.")
         if name not in TOOL_TO_SNAPSHOT:
             raise UpstreamServiceError("The AI requested a non-whitelisted tool.")
+        if not isinstance(arguments, str):
+            raise UpstreamServiceError("The AI supplied unsupported tool arguments.")
         try:
             parsed = json.loads(arguments or "{}")
         except json.JSONDecodeError as error:
@@ -77,7 +127,65 @@ class AIAssistantService:
         if not isinstance(parsed, dict) or parsed:
             raise UpstreamServiceError("The AI supplied unsupported tool arguments.")
         module, entity = TOOL_TO_SNAPSHOT[name]
-        return self.analytics.get(module, entity)
+        try:
+            result = self.analytics.get(module, entity)
+        except AppError as error:
+            raise UpstreamServiceError() from error
+        except Exception as error:
+            raise UpstreamServiceError() from error
+        if not isinstance(result, dict):
+            raise UpstreamServiceError()
+        if not isinstance(result.get("title"), str):
+            raise UpstreamServiceError()
+        if not isinstance(result.get("metrics"), list):
+            raise UpstreamServiceError()
+        if not isinstance(result.get("data_version"), str) or not result["data_version"]:
+            raise UpstreamServiceError()
+        return result
+
+    @staticmethod
+    def _tool_calls(message: dict) -> list[dict]:
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list) or not calls:
+            raise UpstreamServiceError("The AI answer did not use a verified analytics tool.")
+        if len(calls) > 2:
+            raise UpstreamServiceError("The AI exceeded the two-tool-call limit.")
+        if any(not isinstance(call, dict) for call in calls):
+            raise UpstreamServiceError()
+        return calls
+
+    @staticmethod
+    def _source(name: str, result: dict) -> dict:
+        metrics = result["metrics"]
+        for metric in metrics:
+            if (
+                not isinstance(metric, dict)
+                or not isinstance(metric.get("label"), str)
+                or "value" not in metric
+            ):
+                raise UpstreamServiceError()
+        return {
+            "tool": name,
+            "title": result["title"],
+            "metrics": metrics,
+            "data_version": result["data_version"],
+        }
+
+    @staticmethod
+    def _chart(sources: list[dict]) -> dict | None:
+        if not sources or not sources[0]["metrics"]:
+            return None
+        chart_type = "bar"
+        if chart_type not in CHART_TYPES:
+            raise UpstreamServiceError()
+        return {
+            "type": chart_type,
+            "title": sources[0]["title"],
+            "items": [
+                {"name": item["label"], "value": item["value"]}
+                for item in sources[0]["metrics"][:8]
+            ],
+        }
 
     def chat(self, document: object) -> dict:
         if not isinstance(document, dict):
@@ -117,40 +225,36 @@ class AIAssistantService:
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": question.strip()}]
         tool_trace, sources, versions = [], [], set()
-        first = self.client.complete(messages, tool_definitions())
+        first = self._complete(messages, tool_definitions())
         messages.append(first)
-        calls = first.get("tool_calls") or []
-        if not calls:
-            raise UpstreamServiceError("The AI answer did not use a verified analytics tool.")
-        if len(calls) > 2:
-            raise UpstreamServiceError("The AI exceeded the two-tool-call limit.")
+        calls = self._tool_calls(first)
         for call in calls:
             function = call.get("function", {})
+            if not isinstance(function, dict):
+                raise UpstreamServiceError()
             name = function.get("name", "")
+            call_id = call.get("id")
+            if not isinstance(call_id, str) or not call_id:
+                raise UpstreamServiceError()
             result = self._run_tool(name, function.get("arguments", "{}"))
             versions.add(result["data_version"])
-            source = {
-                "tool": name,
-                "title": result.get("title"),
-                "metrics": result.get("metrics", []),
-                "data_version": result["data_version"],
-            }
+            source = self._source(name, result)
             sources.append(source)
             tool_trace.append({"tool": name, "status": "success", "data_version": result["data_version"]})
-            messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": json.dumps(source, ensure_ascii=False)})
-        final = self.client.complete(messages)
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": json.dumps(source, ensure_ascii=False)})
+        final = self._complete(messages)
         answer = final.get("content")
         if not isinstance(answer, str) or not answer.strip():
             raise UpstreamServiceError("The AI returned an empty answer.")
-        chart = None
-        if sources and sources[0]["metrics"]:
-            chart = {"type": "bar", "title": sources[0]["title"], "items": [{"name": item["label"], "value": item["value"]} for item in sources[0]["metrics"][:8]]}
-        return {
+        result = {
             "answer": answer.strip(),
             "tool_trace": tool_trace,
             "sources": sources,
             "data_versions": sorted(versions),
-            "chart": chart,
+            "chart": self._chart(sources),
             "report": {"title": "医数云策洞察简报", "printable": True},
             "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim.",
         }
+        if set(result) != CHAT_RESULT_FIELDS or not result["sources"] or not result["data_versions"]:
+            raise UpstreamServiceError()
+        return result
