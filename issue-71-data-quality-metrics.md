@@ -366,7 +366,7 @@ python data/src/verify_data_quality_snapshot.py \
 | D-04 | 快照键 | 唯一 `data_quality / summary`；input 文件名、SHA-256、raw_rows、fixture 版本和 generated_at 一致 | PASS |
 | D-05 | 排序单位 | 本模块无排行；七项指标单位均为 `条`，storage section 类型为 `status` | PASS |
 | D-06 | 事务发布 | 857 条真实快照事务发布；最终工件与 MySQL 逐项一致；重复发布和失败回滚通过 | PASS |
-| D-07 | 下游交接 | 等待向 #72、#73 发布字段、枚举、状态和 Mock 交接评论 | TODO |
+| D-07 | 下游交接 | #72、#73 已发布字段、枚举、状态和 Mock 交接评论 | PASS |
 
 ### 14.2 最终 fixture 工件
 
@@ -404,7 +404,7 @@ python data/src/verify_data_quality_snapshot.py \
 
 fixture 仅证明并行开发基线和固定口径可复现，不替代真实 CSV、HDFS/Hive/MySQL 或最终验收证据。
 
-第八步状态：**PASS**。D-06、D-07 尚未完成，#71 当前不能关闭。
+第八步状态：**PASS**。固定样例验收完成；D-06、D-07 的后续证据分别见第十步和第十一步。
 
 ## 15. 第九步：真实 CSV 全量验收
 
@@ -469,7 +469,7 @@ Windows 本地 Spark 仍报告 `winutils.exe` 和退出时 PID 清理警告，�
 | MySQL | `NOT_PUBLISHED` | 尚未执行第十步事务发布 |
 | PySpark任务 | `PASS` | 真实全量运行和独立核对通过 |
 
-第九步状态：**PASS**。真实 CSV、真实全量 PySpark、七项独立核对、版本和路径泄漏检查均已完成；MySQL 发布证据见第十步，D-07 下游交接仍未完成。
+第九步状态：**PASS**。真实 CSV、真实全量 PySpark、七项独立核对、版本和路径泄漏检查均已完成；MySQL 发布证据见第十步，下游交接证据见第十一步。
 
 ## 16. 第十步：MySQL 事务发布验收
 
@@ -553,7 +553,7 @@ generated_at_match=true
 
 测试结果：`8 passed`。受控故障测试避免在共享真实数据库中故意写入半批次；发布器生产代码对任何异常统一 rollback 后重新抛出。
 
-第十步状态：**PASS**。D-06 已完成；D-07 下游交接仍未完成。
+第十步状态：**PASS**。D-06 已完成；D-07 下游交接证据见第十一步。
 
 ## 17. 第十一步：下游交接包
 
@@ -581,6 +581,6 @@ generated_at_match=true
 
 ### 17.3 D-07 完成边界
 
-上述内容是可复制到 #72、#73 的冻结交接包。D-07 只有在两个 Issue 均留下交接评论或维护者在 #71/#70 给出等效确认后才能由 `HANDOFF_READY` 改为 `PASS`；本文不替代 GitHub 评论证据。
+上述冻结交接包已由 `wisxn` 分别发布到 #72 和 #73：#72 评论时间为 `2026-08-20T13:24:30Z`，#73 评论时间为 `2026-08-20T13:25:09Z`。两条评论均包含字段、枚举、真实批次、状态语义和 fixture/Mock 边界；#72、#73 当前均已关闭。
 
-第十一步状态：**HANDOFF_READY**。
+第十一步状态：**PASS**。D-07 已完成。#71 仍需等待共享分支合入 `main`，并由维护者在 #70 发布 #71 的独立 Resolution 后才能关闭。
