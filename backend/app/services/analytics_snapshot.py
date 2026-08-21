@@ -9,6 +9,7 @@ from shared.analytics_snapshot_contract import (
     normalize_utc_timestamp,
     validate_data_version,
     validate_payload,
+    validate_payload_metadata,
 )
 
 from ..errors import InvalidServiceResultError
@@ -27,6 +28,7 @@ class AnalyticsSnapshotService:
             record = self.repository.fetch(module_key, entity_key)
             payload = deepcopy(validate_payload(record["payload"]))
             version = validate_data_version(record["data_version"])
+            validate_payload_metadata(payload, version, record["generated_at"])
             result = dict(payload)
             result["data_version"] = version
             result["generated_at"] = _format_utc(record["generated_at"])

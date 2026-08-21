@@ -20,6 +20,7 @@ from shared.analytics_snapshot_contract import (  # noqa: E402
 
 
 TABLE = "analysis_snapshot_result"
+INSERT_BATCH_SIZE = 100
 
 
 def load_snapshot(path: Path) -> dict[str, Any]:
@@ -55,13 +56,15 @@ def publish(document: dict[str, Any]) -> None:
         connection.begin()
         with connection.cursor() as cursor:
             cursor.execute(f"DELETE FROM `{TABLE}`")
-            cursor.executemany(
-                f"INSERT INTO `{TABLE}` (`module_key`,`entity_key`,`payload_json`,`data_version`,`generated_at`) VALUES (%s,%s,%s,%s,%s)",
-                [
-                    (record["module_key"], record["entity_key"], json.dumps(record["payload"], ensure_ascii=False), document["data_version"], generated_at)
-                    for record in document["records"]
-                ],
-            )
+            rows = [
+                (record["module_key"], record["entity_key"], json.dumps(record["payload"], ensure_ascii=False), document["data_version"], generated_at)
+                for record in document["records"]
+            ]
+            for offset in range(0, len(rows), INSERT_BATCH_SIZE):
+                cursor.executemany(
+                    f"INSERT INTO `{TABLE}` (`module_key`,`entity_key`,`payload_json`,`data_version`,`generated_at`) VALUES (%s,%s,%s,%s,%s)",
+                    rows[offset : offset + INSERT_BATCH_SIZE],
+                )
             cursor.execute(
                 f"SELECT COUNT(*) AS n, COUNT(DISTINCT `data_version`) AS versions, "
                 f"COUNT(DISTINCT `generated_at`) AS timestamps FROM `{TABLE}`"

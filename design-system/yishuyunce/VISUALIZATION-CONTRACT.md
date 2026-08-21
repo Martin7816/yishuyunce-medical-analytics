@@ -1,6 +1,6 @@
-# 公共可视化语法与契约草案
+# 公共可视化语法与契约
 
-> 本文件是 #105 冻结的设计语义和 #106 的实现输入。当前仓库正式 snapshot validator 仍只接受 `bar`、`pie`、`table`、`status`；`grouped_bar`、`scatter`、`heatmap` 以及下文的 `visual` 元数据属于候选扩展，必须由 #106 统一更新快照校验、PySpark、API、fixture 和测试后才能使用。
+> #105 的设计语义已由 #106 落为正式快照契约。`bar`、`pie`、`table`、`status`、`grouped_bar`、`scatter`、`heatmap` 是唯一允许的 section 类型；关系图只接收本文件规定的白名单字段，不接收任意 ECharts option。
 
 ## 1. Common grammar
 
@@ -13,7 +13,8 @@
   "options": {},
   "filters": {},
   "metrics": [{"key": "record_count", "label": "住院出院记录", "value": 0, "unit": "条"}],
-  "sections": [{"key": "ranking", "title": "排行", "type": "bar", "items": []}]
+  "sections": [{"key": "ranking", "title": "排行", "type": "bar", "items": []}],
+  "insights": []
 }
 ```
 
@@ -28,9 +29,9 @@
 - 每张图必须有表格或文字替代；Tooltip 的信息也必须可以通过焦点、摘要或表格获取，不能依赖 hover；
 - 颜色只作辅助。图例、直接标签、形状、线型、纹理或文本必须承担同样的区分作用。
 
-## 2. Candidate section metadata for #106
+## 2. Frozen section metadata
 
-新类型需要一组受白名单校验的展示元数据。建议字段如下，字段名和允许值由 #106 最终写入 shared contract；#105 不直接改 validator：
+`grouped_bar`、`scatter`、`heatmap` 必须携带以下完整 `visual` 对象；`summary` 和 `insights` 都由服务端生成。版本和时间必须与快照外层的 `data_version`、`generated_at` 完全一致。
 
 ```json
 {
@@ -43,21 +44,36 @@
     "y_label": "平均收费（美元）",
     "unit": "美元",
     "legend": [{"key": "severity", "label": "严重程度", "style": "shape"}],
-    "tooltip_fields": ["group_label", "x", "y", "size", "unit"],
+    "tooltip_fields": ["name", "x", "y", "size", "group"],
     "summary": {
       "text": "由后端生成的确定性摘要",
       "source_metric_keys": ["avg_los", "avg_charges", "record_count"],
+      "source_section": "cost_los_relation",
+      "data_version": "<same snapshot version>",
+      "generated_at": "<same UTC timestamp>",
       "boundary": "当前筛选下的聚合记录",
       "related_not_causal": true
     },
-    "fallback": {"type": "table", "columns": ["group_label", "x", "y", "size", "unit"]},
+    "fallback": {"type": "table", "columns": ["name", "x", "y", "size", "group"]},
     "empty": {"title": "当前条件暂无关系数据", "text": "请清空或调整已发布筛选。"}
   },
-  "items": []
+  "items": [],
+  "insights": [{
+    "key": "cost_los_relation",
+    "title": "收费与住院时长关系摘要",
+    "summary": "由后端生成的确定性摘要",
+    "level": "info",
+    "source_section": "cost_los_relation",
+    "source_metric_keys": ["avg_los", "avg_charges", "record_count"],
+    "data_version": "<same snapshot version>",
+    "generated_at": "<same UTC timestamp>",
+    "boundary": "当前筛选下的聚合记录",
+    "related_not_causal": true
+  }]
 }
 ```
 
-`visual` 只允许上述产品字段和有限枚举，不接受完整 ECharts option、JavaScript、HTML、SQL、颜色字符串、任意 formatter 或表达式。`summary` 由服务端生成，前端只展示；`related_not_causal` 在两个变量的图中固定为 `true`，除非 #106 明确证明它不是关系分析。
+`visual` 只允许上述产品字段和有限枚举，不接受完整 ECharts option、JavaScript、HTML、SQL、颜色字符串、任意 formatter 或表达式。`related_not_causal` 在关系图和热力矩阵中固定为 `true`；前端只展示服务端摘要，不根据点位、颜色或排序推导洞察。
 
 ## 3. Type semantics
 
@@ -93,7 +109,7 @@
 
 状态值必须原样显示并配解释：`CHECK_REQUIRED` 表示尚未完成真实检查，`FIXTURE_ONLY` 表示仅有联调工件；页面不能把它们改成绿色 PASS。颜色之外使用状态文本、图标、边框和 `aria-live`。
 
-### 3.5 Candidate `grouped_bar`
+### 3.5 Frozen `grouped_bar`
 
 **业务语义**：比较 2–3 个同单位系列在有限类别中的大小。医院 A/B 对照、严重程度分组和支付方式收费对照可以使用；不同单位不能塞进同一坐标轴。
 
@@ -103,6 +119,7 @@
   "title": "两家医疗机构的病例量对照",
   "type": "grouped_bar",
   "visual": {
+    "question": "两家医疗机构的病例量如何对照？",
     "x_label": "医疗机构",
     "y_label": "病例量（条）",
     "unit": "条",
@@ -110,7 +127,10 @@
       {"key": "facility_a", "label": "医院 A", "style": "solid"},
       {"key": "facility_b", "label": "医院 B", "style": "pattern"}
     ],
-    "tooltip_fields": ["category", "series_label", "value", "unit"]
+    "tooltip_fields": ["category", "series_label", "value", "unit"],
+    "summary": {"text": "仅并列展示已发布病例量。", "source_metric_keys": ["case_count"], "source_section": "facility_metric_comparison", "data_version": "<same snapshot version>", "generated_at": "<same UTC timestamp>", "boundary": "已发布机构汇总", "related_not_causal": true},
+    "fallback": {"type": "table", "columns": ["category", "series_label", "value", "unit"]},
+    "empty": {"title": "暂无机构对照数据", "text": "请调整已发布机构筛选。"}
   },
   "items": [
     {"category": "病例量", "series": [
@@ -123,7 +143,7 @@
 
 系列必须共享单位、颜色族和排序；不能用多 Y 轴掩盖单位差异。移动端默认先显示表格，再显示可横向阅读的两系列 bar。
 
-### 3.6 Candidate `scatter`
+### 3.6 Frozen `scatter`
 
 **业务语义**：查看两个连续聚合指标的分布关系，不表示因果。点必须是后端按医院、疾病、严重程度或其他已冻结分组聚合的结果，不是单条住院出院记录。
 
@@ -133,22 +153,25 @@
   "title": "收费与住院时长的分组关系",
   "type": "scatter",
   "visual": {
+    "question": "固定住院时长分箱中，收费与成本如何呈现汇总关系？",
     "x_label": "平均住院时长（天）",
     "y_label": "平均收费（美元）",
     "unit": "美元",
     "legend": [{"key": "severity", "label": "严重程度", "style": "shape"}],
-    "tooltip_fields": ["group_label", "x", "y", "size", "unit"],
-    "summary": {"source_metric_keys": ["avg_los", "avg_charges", "record_count"], "related_not_causal": true}
+    "tooltip_fields": ["name", "x", "y", "cost", "size", "group", "high_cost_rate"],
+    "summary": {"text": "由后端生成的确定性摘要。", "source_metric_keys": ["avg_los", "avg_charges", "record_count"], "source_section": "cost_los_relation", "data_version": "<same snapshot version>", "generated_at": "<same UTC timestamp>", "boundary": "当前筛选下的聚合记录", "related_not_causal": true},
+    "fallback": {"type": "table", "columns": ["name", "x", "y", "cost", "size", "group", "high_cost_rate"]},
+    "empty": {"title": "当前条件暂无关系数据", "text": "请清空或调整已发布筛选。"}
   },
   "items": [
-    {"group_key": "Major", "group_label": "重症", "x": 0, "y": 0, "size": 0, "shape": "circle"}
+    {"name": "4-6天 · Major", "x": 5.0, "y": 85000, "size": 100, "group": "Major", "cost": 27000, "high_cost_rate": 0.43}
   ]
 }
 ```
 
 约束：服务端先聚合；默认不超过 500 个点，更多点必须分箱/采样并说明；点大小只能表示明确的病例量等第三变量；不画未经服务端返回的拟合线、因果箭头或预测区间。表格至少包含分组、x、y、点大小、单位和记录数/分母。
 
-### 3.7 Candidate `heatmap`
+### 3.7 Frozen `heatmap`
 
 **业务语义**：显示两个有限分类维度交叉后的强度或比例。风险页固定优先使用年龄组 × APR 严重程度，值可为病例量或后端定义的比例。
 
@@ -158,20 +181,31 @@
   "title": "年龄组与病情严重程度结构",
   "type": "heatmap",
   "visual": {
+    "question": "不同年龄组的病情严重程度结构如何分布？",
     "x_label": "年龄组",
     "y_label": "病情严重程度",
     "unit": "条",
     "legend": [{"key": "record_count", "label": "住院出院记录", "style": "numeric-gradient"}],
-    "tooltip_fields": ["x_label", "y_label", "value", "unit", "numerator", "denominator"],
-    "summary": {"source_metric_keys": ["record_count"], "boundary": "当前筛选群体"}
+    "tooltip_fields": ["x_label", "y_label", "value", "unit", "numerator", "denominator", "high_risk_rate"],
+    "summary": {"text": "由后端生成的确定性摘要。", "source_metric_keys": ["record_count", "high_risk_count", "high_risk_rate"], "source_section": "age_severity_matrix", "data_version": "<same snapshot version>", "generated_at": "<same UTC timestamp>", "boundary": "当前筛选群体", "related_not_causal": true},
+    "fallback": {"type": "table", "columns": ["x_label", "y_label", "value", "unit", "numerator", "denominator", "high_risk_rate"]},
+    "empty": {"title": "当前条件暂无矩阵数据", "text": "请清空或调整已发布筛选。"}
   },
   "items": [
-    {"x_label": "50 to 69", "y_label": "Major", "value": 0, "numerator": 0, "denominator": 0}
+    {"x_label": "50 to 69", "y_label": "Major", "value": 100, "unit": "条", "numerator": 43, "denominator": 100, "high_risk_rate": 0.43}
   ]
 }
 ```
 
 约束：必须有数值图例、格内数值/符号、键盘焦点和完整矩阵表；颜色不单独表达高低；分类维度通常不超过 10×10，过大时由服务端合并/分页。百分比值必须给分子、分母或来源 metric key，前端不自行决定分母。
+
+## 3.8 #106 implementation freeze
+
+- `hospitals/index.facility_relation`：按 `facility_id` 汇总有效 `los`、收费和成本记录；`x=avg_los`、`y=avg_charges`、`size=case_count`、`group=severe_rate`；按病例量降序、机构编号升序取前 50 点。
+- `hospitals` 的 `facility_metric_comparison`：默认比较已发布机构枚举前两项；带 `facility_a`、`facility_b`、`metric` 时由 API 仅组合已发布画像，`metric` 仍受既有白名单约束。
+- `costs/*` 的 `cost_los_relation`：固定分箱为 `0-1天`、`2-3天`、`4-6天`、`7-13天`、`14-29天`、`30-59天`、`60-119天`、`120天及以上`；每格按 `severity` 分组，空严重程度为 `未分类`；高费用率阈值为当前批次收费 P75。
+- `risks/*` 的 `age_severity_matrix`：年龄轴来自已发布年龄枚举，严重程度轴固定为 `Minor`、`Moderate`、`Major`、`Extreme`；缺失组合仍返回 `value=0`、`numerator=0`、`denominator=0`、`high_risk_rate=0`。
+- 每个关系 section 可附一个同 key 的 `insights[]` 项；洞察只能使用 `title`、`summary`、`level`、`source_section`、`source_metric_keys`、版本、时间和边界，且 `related_not_causal=true`。服务端生成，前端不得推断。
 
 ## 4. Tooltip, summary and empty behavior
 

@@ -47,12 +47,15 @@ HTTP 响应头 `X-Trace-ID` 与正文 `trace_id` 相同。分析接口的 `data`
   "filters": {},
   "metrics": [],
   "sections": [],
+  "insights": [],
   "data_version": "...",
   "generated_at": "..."
 }
 ```
 
-合法筛选没有记录时仍返回 `200`，保留标题、说明、筛选、版本和时间，`metrics` 与 `sections` 为空。
+合法筛选没有记录时仍返回 `200`，保留标题、说明、筛选、版本和时间，`metrics`、`sections` 与 `insights` 为空。
+
+关系 section 只允许 `grouped_bar`、`scatter`、`heatmap`。它们必须使用后端返回的有限 `visual` 元数据和 table fallback；浏览器不得读取原始 CSV、执行 SQL、按分箱重算或透传任意 ECharts option。`insights[]` 是服务端确定性摘要，必须指向当前 section，并带来源指标、版本、生成时间、统计边界和 `related_not_causal`。
 
 ### 2.2 错误
 
@@ -102,7 +105,7 @@ GET /api/v1/hospitals/1
 - `emergency_rate`
 - `severe_rate`
 
-比较响应在 `data.comparison` 中按请求顺序返回完整医院画像。医院编码始终按字符串处理；医院画像的 `severe_rate` 以严重程度可判定记录为分母，`severity` 分区用于对账。
+比较响应在 `data.comparison` 中按请求顺序返回完整医院画像，并在 `data.sections` 中返回同单位的 `facility_metric_comparison` grouped bar；未指定比较筛选时，医院索引仍提供 `facility_relation` scatter 和默认机构病例量对照。医院编码始终按字符串处理；医院画像的 `severe_rate` 以严重程度可判定记录为分母，`severity` 分区用于对账。
 
 ### 3.2 疾病
 
@@ -131,6 +134,8 @@ GET /api/v1/costs/overview?facility_id=1&severity=Major
 
 `diagnosis_code` 与 `facility_id` 不能同时出现。`severity` 允许 `Minor`、`Moderate`、`Major`、`Extreme`。
 
+响应中的 `cost_los_relation` 按固定住院时长分箱（`0-1天`、`2-3天`、`4-6天`、`7-13天`、`14-29天`、`30-59天`、`60-119天`、`120天及以上`）和严重程度生成聚合散点；缺失严重程度为 `未分类`，`high_cost_rate` 的阈值为当前批次收费 P75。前端不重算这些关系。
+
 ### 3.5 病情风险
 
 ```http
@@ -138,6 +143,8 @@ GET /api/v1/risks/overview?age_group=70%20or%20Older&diagnosis_code=BLD001
 ```
 
 参数可单独或组合使用。指标按 `severity_valid_count`、`high_risk_count`、`high_risk_rate`、`avg_los`、`avg_charges`、`avg_costs` 发布，其中 `high_risk_rate` 以前者为分母。结果为群体统计，不构成个人诊断、治疗建议或因果判断。
+
+`age_severity_matrix` 固定返回已发布年龄枚举×`Minor/Moderate/Major/Extreme` 的完整 heatmap；每格返回记录数、分子、分母和 `high_risk_rate`，合法空组合均返回 0，不由前端决定分母。
 
 ### 3.6 支付方式
 

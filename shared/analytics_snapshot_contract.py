@@ -14,11 +14,74 @@ from typing import Any
 
 
 PAYLOAD_KEYS = frozenset(
-    {"title", "description", "options", "filters", "metrics", "sections"}
+    {
+        "title",
+        "description",
+        "options",
+        "filters",
+        "metrics",
+        "sections",
+        "insights",
+    }
 )
 PAYLOAD_REQUIRED_KEYS = frozenset({"title", "description", "metrics", "sections"})
-SECTION_TYPES = frozenset({"bar", "pie", "table", "status"})
+SECTION_TYPES = frozenset(
+    {"bar", "pie", "table", "status", "grouped_bar", "scatter", "heatmap"}
+)
+COMPLEX_SECTION_TYPES = frozenset({"grouped_bar", "scatter", "heatmap"})
 DOCUMENT_KEYS = frozenset({"data_version", "generated_at", "records", "input"})
+
+VISUAL_KEYS = frozenset(
+    {
+        "question",
+        "x_label",
+        "y_label",
+        "unit",
+        "legend",
+        "tooltip_fields",
+        "summary",
+        "fallback",
+        "empty",
+    }
+)
+VISUAL_SUMMARY_KEYS = frozenset(
+    {
+        "text",
+        "source_metric_keys",
+        "source_section",
+        "data_version",
+        "generated_at",
+        "boundary",
+        "related_not_causal",
+    }
+)
+INSIGHT_KEYS = frozenset(
+    {
+        "key",
+        "title",
+        "summary",
+        "level",
+        "source_section",
+        "source_metric_keys",
+        "data_version",
+        "generated_at",
+        "boundary",
+        "related_not_causal",
+    }
+)
+VISUAL_UNITS = frozenset({"条", "天", "美元", "美元/天", "%"})
+LEGEND_STYLES = frozenset(
+    {"solid", "pattern", "shape", "numeric", "numeric-gradient"}
+)
+INSIGHT_LEVELS = frozenset({"info", "notice", "warning"})
+GROUPED_BAR_ITEM_KEYS = frozenset({"category", "series"})
+GROUPED_BAR_SERIES_KEYS = frozenset({"key", "label", "value"})
+SCATTER_ITEM_KEYS = frozenset(
+    {"name", "x", "y", "size", "group", "cost", "high_cost_rate"}
+)
+HEATMAP_ITEM_KEYS = frozenset(
+    {"x_label", "y_label", "value", "unit", "numerator", "denominator", "high_risk_rate"}
+)
 
 
 class SnapshotContractError(ValueError):
@@ -81,6 +144,35 @@ def _number(value: Any, field: str) -> None:
         _fail(f"{field} 不能是 NaN 或无穷大")
 
 
+def _nonnegative_number(value: Any, field: str) -> None:
+    _number(value, field)
+    if value < 0:
+        _fail(f"{field} 不能是负数")
+
+
+def _string_list(
+    value: Any,
+    field: str,
+    *,
+    allowed: set[str] | frozenset[str] | None = None,
+    min_length: int = 1,
+    max_length: int = 16,
+) -> list[str]:
+    if not isinstance(value, list) or not min_length <= len(value) <= max_length:
+        _fail(f"{field} 必须是 {min_length}—{max_length} 项字符串数组")
+    result: list[str] = []
+    for index, item in enumerate(value):
+        item_field = f"{field}[{index}]"
+        result.append(_string(item, item_field, max_length=128))
+    if len(set(result)) != len(result):
+        _fail(f"{field} 不能包含重复值")
+    if allowed is not None:
+        unknown = sorted(set(result) - set(allowed))
+        if unknown:
+            _fail(f"{field} 含有未冻结值: {', '.join(unknown)}")
+    return result
+
+
 def _object_keys(value: dict, allowed: set[str] | frozenset[str], field: str) -> None:
     unknown = sorted(set(value) - set(allowed))
     if unknown:
@@ -131,22 +223,228 @@ def _validate_metrics(metrics: Any) -> None:
         _number(metric.get("value"), f"{field}.value")
 
 
+def _validate_legend(value: Any, field: str) -> None:
+    if not isinstance(value, list) or not 1 <= len(value) <= 3:
+        _fail(f"{field} 必须是 1—3 项图例数组")
+    for index, item in enumerate(value):
+        item_field = f"{field}[{index}]"
+        if not isinstance(item, dict):
+            _fail(f"{item_field} 必须是对象")
+        _object_keys(item, {"key", "label", "style"}, item_field)
+        _string(item.get("key"), f"{item_field}.key", max_length=64)
+        _string(item.get("label"), f"{item_field}.label", max_length=128)
+        style = item.get("style")
+        if style not in LEGEND_STYLES:
+            _fail(f"{item_field}.style 不是冻结的图例样式")
+
+
+def _validate_visual_summary(summary: Any, section_key: str, field: str) -> None:
+    if not isinstance(summary, dict):
+        _fail(f"{field} 必须是对象")
+    _object_keys(summary, VISUAL_SUMMARY_KEYS, field)
+    _string(summary.get("text"), f"{field}.text", max_length=512)
+    _string_list(summary.get("source_metric_keys"), f"{field}.source_metric_keys")
+    if summary.get("source_section") != section_key:
+        _fail(f"{field}.source_section 必须指向当前 section")
+    validate_data_version(summary.get("data_version"))
+    normalize_utc_timestamp(summary.get("generated_at"))
+    _string(summary.get("boundary"), f"{field}.boundary", max_length=512)
+    if not isinstance(summary.get("related_not_causal"), bool):
+        _fail(f"{field}.related_not_causal 必须是布尔值")
+
+
+def _validate_fallback(value: Any, field: str) -> None:
+    if not isinstance(value, dict):
+        _fail(f"{field} 必须是对象")
+    _object_keys(value, {"type", "columns"}, field)
+    if value.get("type") != "table":
+        _fail(f"{field}.type 只能是 table")
+    _string_list(value.get("columns"), f"{field}.columns", max_length=12)
+
+
+def _validate_empty(value: Any, field: str) -> None:
+    if not isinstance(value, dict):
+        _fail(f"{field} 必须是对象")
+    _object_keys(value, {"title", "text"}, field)
+    _string(value.get("title"), f"{field}.title", max_length=128)
+    _string(value.get("text"), f"{field}.text", max_length=512)
+
+
+def _validate_visual(visual: Any, section_key: str, section_type: str) -> None:
+    if not isinstance(visual, dict):
+        _fail(f"sections.{section_key}.visual 必须是对象")
+    _object_keys(visual, VISUAL_KEYS, f"sections.{section_key}.visual")
+    field = f"sections.{section_key}.visual"
+    _string(visual.get("question"), f"{field}.question", max_length=256)
+    _string(visual.get("x_label"), f"{field}.x_label", max_length=128)
+    _string(visual.get("y_label"), f"{field}.y_label", max_length=128)
+    unit = visual.get("unit")
+    if unit not in VISUAL_UNITS:
+        _fail(f"{field}.unit 不是冻结的展示单位")
+    _validate_legend(visual.get("legend"), f"{field}.legend")
+    allowed_tooltips = {
+        "category",
+        "series_label",
+        "value",
+        "unit",
+        "name",
+        "x",
+        "y",
+        "size",
+        "group",
+        "cost",
+        "high_cost_rate",
+        "high_risk_rate",
+        "x_label",
+        "y_label",
+        "numerator",
+        "denominator",
+    }
+    _string_list(
+        visual.get("tooltip_fields"),
+        f"{field}.tooltip_fields",
+        allowed=allowed_tooltips,
+        max_length=12,
+    )
+    _validate_visual_summary(visual.get("summary"), section_key, f"{field}.summary")
+    _validate_fallback(visual.get("fallback"), f"{field}.fallback")
+    _validate_empty(visual.get("empty"), f"{field}.empty")
+
+
+def _validate_grouped_bar_items(items: list[Any], field: str) -> None:
+    if len(items) > 15:
+        _fail(f"{field} 最多允许 15 个类别")
+    for index, item in enumerate(items):
+        item_field = f"{field}[{index}]"
+        if not isinstance(item, dict):
+            _fail(f"{item_field} 必须是对象")
+        _object_keys(item, GROUPED_BAR_ITEM_KEYS, item_field)
+        _string(item.get("category"), f"{item_field}.category", max_length=128)
+        series = item.get("series")
+        if not isinstance(series, list) or not 1 <= len(series) <= 3:
+            _fail(f"{item_field}.series 必须是 1—3 项数组")
+        series_keys: set[str] = set()
+        for series_index, value in enumerate(series):
+            series_field = f"{item_field}.series[{series_index}]"
+            if not isinstance(value, dict):
+                _fail(f"{series_field} 必须是对象")
+            _object_keys(value, GROUPED_BAR_SERIES_KEYS, series_field)
+            key = _string(value.get("key"), f"{series_field}.key", max_length=64)
+            if key in series_keys:
+                _fail(f"{series_field}.key 不能重复")
+            series_keys.add(key)
+            _string(value.get("label"), f"{series_field}.label", max_length=128)
+            _nonnegative_number(value.get("value"), f"{series_field}.value")
+
+
+def _validate_scatter_items(items: list[Any], field: str) -> None:
+    if len(items) > 500:
+        _fail(f"{field} 最多允许 500 个点")
+    for index, item in enumerate(items):
+        item_field = f"{field}[{index}]"
+        if not isinstance(item, dict):
+            _fail(f"{item_field} 必须是对象")
+        _object_keys(item, SCATTER_ITEM_KEYS, item_field)
+        _string(item.get("name"), f"{item_field}.name", max_length=191)
+        for name in ("x", "y", "size"):
+            _nonnegative_number(item.get(name), f"{item_field}.{name}")
+        group = item.get("group")
+        if isinstance(group, str):
+            _string(group, f"{item_field}.group", max_length=128)
+        else:
+            _number(group, f"{item_field}.group")
+        if "cost" in item:
+            _nonnegative_number(item["cost"], f"{item_field}.cost")
+        if "high_cost_rate" in item:
+            _number(item["high_cost_rate"], f"{item_field}.high_cost_rate")
+            if not 0 <= item["high_cost_rate"] <= 1:
+                _fail(f"{item_field}.high_cost_rate 必须在 0 到 1 之间")
+
+
+def _validate_heatmap_items(items: list[Any], field: str) -> None:
+    if len(items) > 100:
+        _fail(f"{field} 最多允许 100 个格子")
+    for index, item in enumerate(items):
+        item_field = f"{field}[{index}]"
+        if not isinstance(item, dict):
+            _fail(f"{item_field} 必须是对象")
+        _object_keys(item, HEATMAP_ITEM_KEYS, item_field)
+        _string(item.get("x_label"), f"{item_field}.x_label", max_length=128)
+        _string(item.get("y_label"), f"{item_field}.y_label", max_length=128)
+        _nonnegative_number(item.get("value"), f"{item_field}.value")
+        if item.get("unit") not in VISUAL_UNITS:
+            _fail(f"{item_field}.unit 不是冻结的展示单位")
+        for name in ("numerator", "denominator"):
+            if name in item:
+                _nonnegative_number(item[name], f"{item_field}.{name}")
+        if "high_risk_rate" in item:
+            _number(item["high_risk_rate"], f"{item_field}.high_risk_rate")
+            if not 0 <= item["high_risk_rate"] <= 1:
+                _fail(f"{item_field}.high_risk_rate 必须在 0 到 1 之间")
+
+
+def _validate_insights(insights: Any, section_keys: set[str]) -> None:
+    if not isinstance(insights, list) or len(insights) > 8:
+        _fail("payload.insights 必须是最多 8 项数组")
+    seen: set[str] = set()
+    for index, insight in enumerate(insights):
+        field = f"insights[{index}]"
+        if not isinstance(insight, dict):
+            _fail(f"{field} 必须是对象")
+        _object_keys(insight, INSIGHT_KEYS, field)
+        key = _string(insight.get("key"), f"{field}.key", max_length=64)
+        if key in seen:
+            _fail(f"{field}.key 不能重复")
+        seen.add(key)
+        _string(insight.get("title"), f"{field}.title", max_length=128)
+        _string(insight.get("summary"), f"{field}.summary", max_length=512)
+        if insight.get("level") not in INSIGHT_LEVELS:
+            _fail(f"{field}.level 不是冻结的洞察级别")
+        source_section = _string(
+            insight.get("source_section"), f"{field}.source_section", max_length=64
+        )
+        if source_section not in section_keys:
+            _fail(f"{field}.source_section 必须指向当前 section")
+        _string_list(insight.get("source_metric_keys"), f"{field}.source_metric_keys")
+        validate_data_version(insight.get("data_version"))
+        normalize_utc_timestamp(insight.get("generated_at"))
+        _string(insight.get("boundary"), f"{field}.boundary", max_length=512)
+        if not isinstance(insight.get("related_not_causal"), bool):
+            _fail(f"{field}.related_not_causal 必须是布尔值")
+
+
 def _validate_sections(sections: Any) -> None:
     if not isinstance(sections, list):
         _fail("payload.sections 必须是数组")
+    section_keys: set[str] = set()
     for index, section in enumerate(sections):
         field = f"sections[{index}]"
         if not isinstance(section, dict):
             _fail(f"{field} 必须是对象")
-        _object_keys(section, {"key", "title", "type", "items"}, field)
-        _string(section.get("key"), f"{field}.key")
+        section_key = _string(section.get("key"), f"{field}.key")
+        if section_key in section_keys:
+            _fail(f"{field}.key 不能重复")
+        section_keys.add(section_key)
         _string(section.get("title"), f"{field}.title")
         section_type = section.get("type")
         if section_type not in SECTION_TYPES:
-            _fail(f"{field}.type 只能是 bar、pie、table 或 status")
+            _fail(f"{field}.type 只能是 bar、pie、table、status、grouped_bar、scatter 或 heatmap")
+        allowed_section_keys = {"key", "title", "type", "items"}
+        if section_type in COMPLEX_SECTION_TYPES:
+            allowed_section_keys.add("visual")
+        _object_keys(section, allowed_section_keys, field)
         items = section.get("items")
         if not isinstance(items, list):
             _fail(f"{field}.items 必须是数组")
+        if section_type in COMPLEX_SECTION_TYPES:
+            _validate_visual(section.get("visual"), section_key, section_type)
+            if section_type == "grouped_bar":
+                _validate_grouped_bar_items(items, f"{field}.items")
+            elif section_type == "scatter":
+                _validate_scatter_items(items, f"{field}.items")
+            else:
+                _validate_heatmap_items(items, f"{field}.items")
+            continue
         for item_index, item in enumerate(items):
             item_field = f"{field}.items[{item_index}]"
             if not isinstance(item, dict):
@@ -174,8 +472,31 @@ def validate_payload(payload: Any) -> dict:
         _validate_filters(payload["filters"])
     _validate_metrics(payload["metrics"])
     _validate_sections(payload["sections"])
+    if "insights" in payload:
+        section_keys = {section["key"] for section in payload["sections"]}
+        _validate_insights(payload["insights"], section_keys)
     _json_value(payload, "payload")
     return payload
+
+
+def validate_payload_metadata(payload: dict, data_version: Any, generated_at: Any) -> None:
+    """Ensure nested insight metadata cannot drift from the snapshot envelope."""
+
+    expected_version = validate_data_version(data_version)
+    expected_timestamp = normalize_utc_timestamp(generated_at)
+    for insight in payload.get("insights", []):
+        if insight["data_version"] != expected_version:
+            _fail("insight.data_version 必须与快照 data_version 一致")
+        if normalize_utc_timestamp(insight["generated_at"]) != expected_timestamp:
+            _fail("insight.generated_at 必须与快照 generated_at 一致")
+    for section in payload.get("sections", []):
+        if section["type"] not in COMPLEX_SECTION_TYPES:
+            continue
+        summary = section["visual"]["summary"]
+        if summary["data_version"] != expected_version:
+            _fail("visual.summary.data_version 必须与快照 data_version 一致")
+        if normalize_utc_timestamp(summary["generated_at"]) != expected_timestamp:
+            _fail("visual.summary.generated_at 必须与快照 generated_at 一致")
 
 
 def validate_snapshot_document(document: Any) -> dict:
@@ -203,7 +524,8 @@ def validate_snapshot_document(document: Any) -> dict:
         key = (module_key, entity_key)
         if key in seen:
             _fail(f"快照主键重复: {key}")
-        validate_payload(record.get("payload"))
+        payload = validate_payload(record.get("payload"))
+        validate_payload_metadata(payload, document["data_version"], document["generated_at"])
         seen.add(key)
 
     _json_value(document, "快照文档")

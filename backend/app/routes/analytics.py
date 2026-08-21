@@ -77,6 +77,8 @@ def _empty_result(base: dict, filters: dict[str, str]) -> dict:
     result["filters"] = dict(filters)
     result["metrics"] = []
     result["sections"] = []
+    if "insights" in result:
+        result["insights"] = []
     return result
 
 
@@ -112,6 +114,84 @@ def _validate_metric(value: str | None) -> None:
             "The metric value is not supported.",
             {"parameter": "metric"},
         )
+
+
+def _hospital_comparison_section(
+    profiles: list[dict], metric_key: str
+) -> tuple[dict, dict]:
+    """Compose a finite grouped bar from already-published profile metrics."""
+
+    metric_items = []
+    legend = []
+    for index, profile in enumerate(profiles):
+        item = next(
+            (value for value in profile.get("metrics", []) if value.get("key") == metric_key),
+            None,
+        )
+        if item is None:
+            raise InvalidServiceResultError()
+        series_key = f"facility_{index + 1}"
+        metric_items.append(
+            {
+                "key": series_key,
+                "label": profile["title"],
+                "value": item["value"],
+            }
+        )
+        legend.append({"key": series_key, "label": profile["title"], "style": "solid"})
+
+    version = profiles[0]["data_version"]
+    generated_at = profiles[0]["generated_at"]
+    label = next(
+        value["label"]
+        for value in profiles[0].get("metrics", [])
+        if value.get("key") == metric_key
+    )
+    unit = next(
+        value["unit"]
+        for value in profiles[0].get("metrics", [])
+        if value.get("key") == metric_key
+    )
+    section_key = "facility_metric_comparison"
+    summary = {
+        "text": f"选定医疗机构的{label}来自已发布画像，用于并列比较；不表达机构导致结果。",
+        "source_metric_keys": [metric_key],
+        "source_section": section_key,
+        "data_version": version,
+        "generated_at": generated_at,
+        "boundary": "选定医疗机构的已发布住院出院记录汇总",
+        "related_not_causal": True,
+    }
+    section = {
+        "key": section_key,
+        "title": f"选定医疗机构的{label}对照",
+        "type": "grouped_bar",
+        "visual": {
+            "question": f"选定医疗机构的{label}如何对照？",
+            "x_label": "医疗机构",
+            "y_label": f"{label}（{unit}）",
+            "unit": unit,
+            "legend": legend,
+            "tooltip_fields": ["category", "series_label", "value", "unit"],
+            "summary": summary,
+            "fallback": {"type": "table", "columns": ["category", "series_label", "value", "unit"]},
+            "empty": {"title": "暂无机构对照数据", "text": "请调整已发布的医疗机构筛选。"},
+        },
+        "items": [{"category": label, "series": metric_items}],
+    }
+    insight = {
+        "key": "facility_metric_comparison",
+        "title": f"{label}对照",
+        "summary": summary["text"],
+        "level": "info",
+        "source_section": section_key,
+        "source_metric_keys": [metric_key],
+        "data_version": version,
+        "generated_at": generated_at,
+        "boundary": summary["boundary"],
+        "related_not_causal": True,
+    }
+    return section, insight
 
 
 @analytics_bp.get("/api/v1/dashboard/overview")
@@ -169,6 +249,19 @@ def hospitals_index():
         # Comparison is response-only composition of complete snapshots;
         # metrics, ordering, units, and null semantics stay in the snapshots.
         result["comparison"] = profiles
+        comparison_section, comparison_insight = _hospital_comparison_section(
+            profiles, metric or "case_count"
+        )
+        result["sections"] = [
+            section
+            for section in result.get("sections", [])
+            if section.get("key") != "facility_metric_comparison"
+        ] + [comparison_section]
+        result["insights"] = [
+            insight
+            for insight in result.get("insights", [])
+            if insight.get("key") != "facility_metric_comparison"
+        ] + [comparison_insight]
     return _ok(result)
 
 
