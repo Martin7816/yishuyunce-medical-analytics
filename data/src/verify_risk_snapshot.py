@@ -36,6 +36,8 @@ FIELD = {
 RISK_FIELDS = ("age", "diagnosis_code")
 RISK_ENTITY_FIELDS = ("age", "diagnosis")
 OPTION_KEYS = {"age": "age_group", "diagnosis_code": "diagnosis_code"}
+SEVERITIES = ("Minor", "Moderate", "Major", "Extreme")
+HIGH_RISK = {"Major", "Extreme"}
 
 
 def text(row: dict[str, str | None], name: str) -> str:
@@ -97,6 +99,9 @@ def summarize_stream(
     aggregates: dict[tuple[str | None, str | None], dict[str, Any]] = defaultdict(
         empty_aggregate
     )
+    risk_matrix: dict[
+        tuple[str | None, str | None, str, str], dict[str, int]
+    ] = defaultdict(lambda: {"count": 0, "high": 0})
     option_values = {field: set() for field in RISK_FIELDS}
     diagnosis_labels: dict[str, str] = {}
     raw_rows = 0
@@ -139,10 +144,9 @@ def summarize_stream(
             if dimensions["diagnosis_code"]
             else (None,)
         )
-        high_risk = text(row, "severity") in {"Major", "Extreme"}
-        severity_valid = text(row, "severity") in {
-            "Minor", "Moderate", "Major", "Extreme"
-        }
+        severity = text(row, "severity")
+        high_risk = severity in HIGH_RISK
+        severity_valid = severity in SEVERITIES
         charges = nonnegative_decimal(text(row, "charges"))
         costs = nonnegative_decimal(text(row, "costs"))
         for key in product(age_values, diagnosis_values):
@@ -150,7 +154,11 @@ def summarize_stream(
             aggregate["count"] += 1
             aggregate["severity_valid_count"] += severity_valid
 
-            severity = text(row, "severity")
+            if dimensions["age"] and severity in SEVERITIES:
+                cell = risk_matrix[(key[0], key[1], dimensions["age"], severity)]
+                cell["count"] += 1
+                cell["high"] += high_risk
+
             if severity:
                 aggregate["severity"][severity] += 1
             mortality = text(row, "mortality")
@@ -193,7 +201,11 @@ def summarize_stream(
         key: aggregates.get(key, empty_aggregate())
         for key in product(age_values, diagnosis_values)
     }
-    return {"options": options, "aggregates": expected}, raw_rows, scoped_rows
+    return {
+        "options": options,
+        "aggregates": expected,
+        "risk_matrix": risk_matrix,
+    }, raw_rows, scoped_rows
 
 
 def metric(key: str, label: str, value: int | float, unit: str) -> dict[str, Any]:
@@ -207,10 +219,128 @@ def ordered(counter: Counter[str], limit: int | None = None) -> list[dict[str, A
     return [{"name": name, "value": count} for name, count in values]
 
 
+def matrix_section(
+    key: tuple[str | None, str | None],
+    options: dict[str, Any],
+    risk_matrix: dict[tuple[str | None, str | None, str, str], dict[str, int]],
+    data_version: str,
+    generated_at: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ages = [key[0]] if key[0] is not None else options["age_group"]
+    items = []
+    for age in ages:
+        for severity in SEVERITIES:
+            aggregate = risk_matrix.get(
+                (key[0], key[1], age, severity), {"count": 0, "high": 0}
+            )
+            count = aggregate["count"]
+            high_risk_count = aggregate["high"]
+            items.append(
+                {
+                    "x_label": age,
+                    "y_label": severity,
+                    "value": count,
+                    "unit": "条",
+                    "numerator": high_risk_count,
+                    "denominator": count,
+                    "high_risk_rate": rate(high_risk_count, count),
+                }
+            )
+
+    total = sum(item["value"] for item in items)
+    high_risk_total = sum(item["numerator"] for item in items)
+    boundary = (
+        "当前筛选下按年龄组×APR严重程度汇总的住院出院记录；"
+        "分母为格内严重程度可判定记录"
+    )
+    summary = (
+        f"矩阵返回 {len(items)} 个固定格，包含 {total} 条可判定严重程度记录，"
+        f"其中 Major/Extreme 记录 {high_risk_total} 条；相关不等于因果。"
+    )
+    section = {
+        "key": "age_severity_matrix",
+        "title": "年龄组与病情严重程度矩阵",
+        "type": "heatmap",
+        "visual": {
+            "question": "不同年龄组的病情严重程度结构如何分布？",
+            "x_label": "年龄组",
+            "y_label": "病情严重程度",
+            "unit": "条",
+            "legend": [
+                {
+                    "key": "record_count",
+                    "label": "住院出院记录",
+                    "style": "numeric-gradient",
+                }
+            ],
+            "tooltip_fields": [
+                "x_label",
+                "y_label",
+                "value",
+                "unit",
+                "numerator",
+                "denominator",
+                "high_risk_rate",
+            ],
+            "summary": {
+                "text": summary,
+                "source_metric_keys": [
+                    "record_count",
+                    "high_risk_count",
+                    "high_risk_rate",
+                ],
+                "source_section": "age_severity_matrix",
+                "data_version": data_version,
+                "generated_at": generated_at,
+                "boundary": boundary,
+                "related_not_causal": True,
+            },
+            "fallback": {
+                "type": "table",
+                "columns": [
+                    "x_label",
+                    "y_label",
+                    "value",
+                    "unit",
+                    "numerator",
+                    "denominator",
+                    "high_risk_rate",
+                ],
+            },
+            "empty": {
+                "title": "年龄组与病情严重程度矩阵暂无数据",
+                "text": "当前筛选下没有可判定年龄组和病情严重程度的住院出院记录。",
+            },
+        },
+        "items": items,
+    }
+    insight = {
+        "key": "age_severity_matrix",
+        "title": "年龄与严重程度摘要",
+        "summary": summary,
+        "level": "info",
+        "source_section": "age_severity_matrix",
+        "source_metric_keys": [
+            "record_count",
+            "high_risk_count",
+            "high_risk_rate",
+        ],
+        "data_version": data_version,
+        "generated_at": generated_at,
+        "boundary": boundary,
+        "related_not_causal": True,
+    }
+    return section, insight
+
+
 def expected_payload(
     key: tuple[str | None, str | None],
     aggregate: dict[str, Any],
     options: dict[str, Any],
+    data_version: str | None = None,
+    generated_at: str | None = None,
+    risk_matrix: dict[tuple[str | None, str | None, str, str], dict[str, int]]
+    | None = None,
 ) -> dict[str, Any]:
     filters = {
         OPTION_KEYS[field]: value
@@ -226,6 +356,8 @@ def expected_payload(
     }
     if key == (None, None):
         payload["options"] = options
+    if data_version is not None and generated_at is not None and risk_matrix is not None:
+        payload["insights"] = []
 
     record_count = aggregate["count"]
     if record_count == 0:
@@ -320,6 +452,12 @@ def expected_payload(
             "items": ordered(aggregate["diagnosis"], 10),
         },
     ]
+    if data_version is not None and generated_at is not None and risk_matrix is not None:
+        section, insight = matrix_section(
+            key, options, risk_matrix, data_version, generated_at
+        )
+        payload["sections"].append(section)
+        payload["insights"] = [insight]
     return payload
 
 
@@ -358,7 +496,14 @@ def compare(
 
     for key, aggregate in aggregate_map.items():
         actual = records[("risks", entity_key(key))].get("payload") or {}
-        wanted = expected_payload(key, aggregate, expected["options"])
+        wanted = expected_payload(
+            key,
+            aggregate,
+            expected["options"],
+            snapshot["data_version"],
+            snapshot["generated_at"],
+            expected["risk_matrix"],
+        )
         if actual != wanted:
             raise AssertionError(
                 f"risks {entity_key(key)} 与独立核对不一致: "
