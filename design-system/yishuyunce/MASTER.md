@@ -211,11 +211,11 @@
 
 ## 5. Downstream usage
 
-实现新页面前先读本文件，再读 `pages/<page>.md`（若存在）。#106 只将 `VISUALIZATION-CONTRACT.md` 中标为“候选扩展”的字段正式化；#107 使用 `WIREFRAMES.md` 的同一路由/同一 section 顺序实现大屏；#108 按 `evidence/105/README.md` 的矩阵复核视觉、键盘、窄屏和边界文案。
+实现新页面前先读本文件，再读 `pages/<page>.md`（若存在）。#106 已将 `VISUALIZATION-CONTRACT.md` 中的关系字段正式化；#107 使用 `WIREFRAMES.md` 的同一路由/同一 section 顺序实现大屏；#108 按对应 evidence 矩阵复核视觉、键盘、窄屏和边界文案。
 
 ## 6. Explicit non-goals
 
 - 不新增 UI 组件库、D3、Three.js、GSAP、第二套路由框架或第二套状态管理；
 - 不新增时间趋势、地图、网络图、3D、患者身份、个人诊疗或因果解释；
 - 不把老师样例项目、fixture 数值或设计示意值写成第 2 组已完成的真实结果；
-- 不在本 Issue 修改正式 snapshot validator、API 路由、MySQL 表、PySpark 任务或十页面实现代码。
+- #106 不实现十页面 renderer；正式 snapshot validator、API 路由和 PySpark 任务只按本契约提供关系数据，不新增自由查询、患者级接口或任意图表配置。

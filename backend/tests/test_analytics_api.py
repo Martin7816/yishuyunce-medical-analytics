@@ -87,9 +87,14 @@ def test_risk_snapshot_exposes_frozen_metrics_and_sections():
         'disposition',
         'age',
         'diseases',
+        'age_severity_matrix',
     ]
-    assert len(data['sections'][-1]['items']) == 10
-    assert data['sections'][-1]['title'] == '高风险疾病 TOP10'
+    assert len(data['sections'][4]['items']) == 10
+    assert data['sections'][4]['title'] == '高风险疾病 TOP10'
+    assert len(data['sections'][-1]['items']) == 20
+    assert data['sections'][-1]['type'] == 'heatmap'
+    assert data['insights'][0]['source_section'] == 'age_severity_matrix'
+    assert data['insights'][0]['data_version'] == data['data_version']
 
 
 def test_data_quality_exposes_business_field_denominator_evidence():
@@ -318,6 +323,13 @@ def test_hospital_comparison_is_server_composed():
         "emergency_rate",
         "severe_rate",
     ]
+    relation = next(
+        section for section in data["sections"]
+        if section["key"] == "facility_metric_comparison"
+    )
+    assert relation["type"] == "grouped_bar"
+    assert relation["items"][0]["series"][0]["value"] == 81242.3
+    assert data["insights"][-1]["source_section"] == "facility_metric_comparison"
 
 
 def test_hospital_filters_keep_service_order_and_payload_values():
@@ -712,7 +724,11 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
     assert [section["key"] for section in data["sections"]] == [
         "quantiles",
         "severity",
+        "cost_los_relation",
     ]
+    assert data["sections"][-1]["type"] == "scatter"
+    assert data["sections"][-1]["visual"]["summary"]["data_version"] == data["data_version"]
+    assert data["insights"][0]["source_section"] == "cost_los_relation"
     assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
 
 

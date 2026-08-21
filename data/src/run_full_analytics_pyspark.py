@@ -99,6 +99,23 @@ COST_MISSING = "__COST_MISSING__"
 COST_PERCENTILES = (("p25", 0.25), ("p50", 0.5), ("p75", 0.75), ("p90", 0.9))
 COST_COMPARISON_LIMIT = 10
 
+# These bins are part of the public relation contract.  The upper bound is
+# exclusive; ``120 +`` is normalized to 120 by ``clean_frame`` and therefore
+# belongs to the last bin.
+LOS_BINS = (
+    ("0-1天", 0, 2),
+    ("2-3天", 2, 4),
+    ("4-6天", 4, 7),
+    ("7-13天", 7, 14),
+    ("14-29天", 14, 30),
+    ("30-59天", 30, 60),
+    ("60-119天", 60, 120),
+    ("120天及以上", 120, None),
+)
+LOS_BIN_ORDER = {label: index for index, (label, _, _) in enumerate(LOS_BINS)}
+RELATION_GROUP_MISSING = "未分类"
+FACILITY_RELATION_LIMIT = 50
+
 
 def clean_frame(raw: DataFrame) -> DataFrame:
     """Select the frozen columns and apply the shared cleaning rules."""
@@ -372,6 +389,146 @@ def facility_ranking_rows(
     return output
 
 
+def facility_relation_section(
+    frame: DataFrame, data_version: str, generated_at: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Aggregate one bounded point per facility for the hospital relation view."""
+
+    relation_frame = frame.where(
+        (F.length(F.col("facility_id")) > 0)
+        & F.col("valid_money")
+        & (F.col("los") >= 0)
+    )
+    grouped = (
+        relation_frame.groupBy("facility_id")
+        .agg(
+            F.min(
+                F.when(F.length(F.col("facility")) > 0, F.col("facility"))
+            ).alias("facility"),
+            F.count("*").alias("case_count"),
+            F.avg("los").alias("avg_los"),
+            F.avg("charges").alias("avg_charges"),
+            F.sum(
+                F.when(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES), 1)
+                .otherwise(0)
+            ).alias("severe_count"),
+            F.sum(
+                F.when(F.col("severity").isin(*SEVERITY_VALUES), 1).otherwise(0)
+            ).alias("severity_valid_count"),
+        )
+        .orderBy(F.desc("case_count"), F.asc("facility_id"))
+        .limit(FACILITY_RELATION_LIMIT)
+    )
+    items: list[dict[str, Any]] = []
+    for row in grouped.collect():
+        facility_id = str(row["facility_id"])
+        items.append(
+            {
+                "name": str(row["facility"] or facility_id),
+                "x": _rounded(row["avg_los"]),
+                "y": _rounded(row["avg_charges"]),
+                "size": _rounded(row["case_count"], integer=True),
+                "group": _rate(row["severe_count"], row["severity_valid_count"]),
+            }
+        )
+    boundary = "2021范围内、住院时长和收费成本均有效的住院出院记录；每点按 facility_id 汇总"
+    summary = (
+        f"已返回 {len(items)} 个医疗机构汇总点；点大小为病例量，分组值为重症率。"
+        "汇总指标呈现关系，不表示机构导致住院时长或收费变化。"
+    )
+    relation = complex_section(
+        "facility_relation",
+        "医疗机构住院时长与收费关系",
+        "scatter",
+        items,
+        question="不同医疗机构的平均住院时长与平均收费如何呈现汇总关系？",
+        x_label="平均住院时长（天）",
+        y_label="平均收费（美元）",
+        unit="美元",
+        legend=[{"key": "group", "label": "重症率（0-1）", "style": "numeric"}],
+        tooltip_fields=["name", "x", "y", "size", "group"],
+        source_metric_keys=["case_count", "avg_los", "avg_charges", "severe_rate"],
+        summary_text=summary,
+        boundary=boundary,
+        data_version=data_version,
+        generated_at=generated_at,
+        fallback_columns=["name", "x", "y", "size", "group"],
+        empty_text="当前批次没有同时具备有效住院时长和收费的医疗机构汇总点。",
+    )
+    return relation, deterministic_insight(
+        "facility_relation",
+        "医疗机构关系摘要",
+        summary,
+        "facility_relation",
+        ["case_count", "avg_los", "avg_charges", "severe_rate"],
+        data_version,
+        generated_at,
+        boundary,
+    )
+
+
+def facility_grouped_bar_section(
+    facility_options: list[dict[str, str]],
+    facility_summaries: dict[str, list[dict[str, Any]]],
+    data_version: str,
+    generated_at: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Publish a default two-facility comparison without a new aggregation."""
+
+    selected = [
+        option for option in facility_options if option["value"] in facility_summaries
+    ][:2]
+    series = []
+    for index, option in enumerate(selected):
+        metric_value = next(
+            value
+            for value in facility_summaries[option["value"]]
+            if value["key"] == "case_count"
+        )
+        series.append(
+            {
+                "key": f"facility_{index + 1}",
+                "label": option["label"],
+                "value": metric_value["value"],
+            }
+        )
+    section_key = "facility_metric_comparison"
+    boundary = "默认选取已发布机构枚举中的前两家，数值来自机构汇总"
+    summary = "默认对照仅并列展示已发布病例量，不表示机构导致病例量差异。"
+    relation = complex_section(
+        section_key,
+        "医疗机构病例量对照",
+        "grouped_bar",
+        [{"category": "病例量", "series": series}] if series else [],
+        question="默认选取的医疗机构病例量如何对照？",
+        x_label="医疗机构",
+        y_label="病例量（条）",
+        unit="条",
+        legend=[
+            {"key": item["key"], "label": item["label"], "style": "solid"}
+            for item in series
+        ] or [{"key": "facility_1", "label": "医疗机构", "style": "solid"}],
+        tooltip_fields=["category", "series_label", "value", "unit"],
+        source_metric_keys=["case_count"],
+        summary_text=summary,
+        boundary=boundary,
+        data_version=data_version,
+        generated_at=generated_at,
+        fallback_columns=["category", "series_label", "value", "unit"],
+        empty_text="当前批次没有可用于机构病例量对照的已发布汇总。",
+    )
+    return relation, deterministic_insight(
+        section_key,
+        "医疗机构病例量摘要",
+        summary,
+        section_key,
+        ["case_count"],
+        data_version,
+        generated_at,
+        boundary,
+    )
+
+
 def metric(key: str, label: str, value: int | float, unit: str) -> dict[str, Any]:
     return {"key": key, "label": label, "value": value, "unit": unit}
 
@@ -383,6 +540,85 @@ def section(
     kind: str = "bar",
 ) -> dict[str, Any]:
     return {"key": key, "title": title, "type": kind, "items": items}
+
+
+def deterministic_insight(
+    key: str,
+    title: str,
+    summary: str,
+    source_section: str,
+    source_metric_keys: list[str],
+    data_version: str,
+    generated_at: str,
+    boundary: str,
+    *,
+    related_not_causal: bool = True,
+) -> dict[str, Any]:
+    """Build the frozen, server-owned insight shape."""
+
+    return {
+        "key": key,
+        "title": title,
+        "summary": summary,
+        "level": "info",
+        "source_section": source_section,
+        "source_metric_keys": source_metric_keys,
+        "data_version": data_version,
+        "generated_at": generated_at,
+        "boundary": boundary,
+        "related_not_causal": related_not_causal,
+    }
+
+
+def complex_section(
+    key: str,
+    title: str,
+    kind: str,
+    items: list[dict[str, Any]],
+    *,
+    question: str,
+    x_label: str,
+    y_label: str,
+    unit: str,
+    legend: list[dict[str, str]],
+    tooltip_fields: list[str],
+    source_metric_keys: list[str],
+    summary_text: str,
+    boundary: str,
+    data_version: str,
+    generated_at: str,
+    fallback_columns: list[str],
+    empty_text: str,
+    related_not_causal: bool = True,
+) -> dict[str, Any]:
+    """Create one of the three finite, non-executable chart sections."""
+
+    summary = {
+        "text": summary_text,
+        "source_metric_keys": source_metric_keys,
+        "source_section": key,
+        "data_version": data_version,
+        "generated_at": generated_at,
+        "boundary": boundary,
+        "related_not_causal": related_not_causal,
+    }
+    return {
+        "key": key,
+        "title": title,
+        "type": kind,
+        "visual": {
+            "question": question,
+            "x_label": x_label,
+            "y_label": y_label,
+            "unit": unit,
+            "legend": legend,
+            "tooltip_fields": tooltip_fields,
+            "summary": summary,
+            "fallback": {"type": "table", "columns": fallback_columns},
+            "empty": {"title": f"{title}暂无数据", "text": empty_text},
+        },
+        "items": items,
+    }
 
 
 def summary_metrics(
@@ -1001,6 +1237,114 @@ def _cost_summary_rows(frame: DataFrame) -> dict[tuple[Any, Any, Any], Any]:
     }
 
 
+def _los_bin_column() -> Any:
+    expression = F.lit(None).cast("string")
+    for label, lower, upper in reversed(LOS_BINS):
+        condition = F.col("los") >= F.lit(lower)
+        if upper is not None:
+            condition = condition & (F.col("los") < F.lit(upper))
+        expression = F.when(condition, F.lit(label)).otherwise(expression)
+    return expression
+
+
+def _cost_relation_rows(
+    frame: DataFrame,
+    diagnosis_values: list[str],
+    facility_values: list[str],
+    severity_values: list[str],
+    high_cost_threshold: float,
+) -> dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]]:
+    """Build all legal filter/binned relation points from the cached frame."""
+
+    decorated = frame.withColumn("_cost_los_bin", _los_bin_column())
+    for field in ("diagnosis_code", "facility_id"):
+        decorated = decorated.withColumn(
+            f"_cost_filter_{field}",
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(COST_MISSING)),
+        )
+    decorated = decorated.withColumn(
+        "_cost_filter_severity",
+        F.when(
+            F.col("severity").isNotNull() & (F.length(F.col("severity")) > 0),
+            F.col("severity"),
+        ).otherwise(F.lit(COST_MISSING)),
+    ).withColumn(
+        "_cost_group_severity",
+        F.when(
+            F.col("severity").isin(*SEVERITY_VALUES), F.col("severity")
+        ).otherwise(F.lit(RELATION_GROUP_MISSING)),
+    )
+    filter_fields = (
+        "_cost_filter_diagnosis_code",
+        "_cost_filter_facility_id",
+        "_cost_filter_severity",
+    )
+    aggregate = decorated.cube(
+        *filter_fields, "_cost_los_bin", "_cost_group_severity"
+    ).agg(
+        F.count("*").alias("record_count"),
+        F.avg("los").alias("avg_los"),
+        F.avg("charges").alias("avg_charges"),
+        F.avg("costs").alias("avg_costs"),
+        F.sum(
+            F.when(F.col("charges") >= F.lit(high_cost_threshold), 1).otherwise(0)
+        ).alias("high_cost_count"),
+    )
+    valid = aggregate.where(
+        F.col("_cost_los_bin").isNotNull()
+        & F.col("_cost_group_severity").isin(
+            *SEVERITY_VALUES, RELATION_GROUP_MISSING
+        )
+        & (
+            F.col("_cost_filter_diagnosis_code").isNull()
+            | F.col("_cost_filter_diagnosis_code").isin(diagnosis_values)
+        )
+        & (
+            F.col("_cost_filter_facility_id").isNull()
+            | F.col("_cost_filter_facility_id").isin(facility_values)
+        )
+        & (
+            F.col("_cost_filter_severity").isNull()
+            | F.col("_cost_filter_severity").isin(severity_values)
+        )
+    )
+    result: dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]] = {}
+    for row in valid.collect():
+        current = tuple(
+            None if row[field] is None else str(row[field]) for field in filter_fields
+        )
+        count = int(row["record_count"] or 0)
+        if count == 0:
+            continue
+        bin_label = str(row["_cost_los_bin"])
+        group = str(row["_cost_group_severity"])
+        result.setdefault(current, []).append(
+            {
+                "name": f"{bin_label} · {group}",
+                "x": _rounded(row["avg_los"]),
+                "y": _rounded(row["avg_charges"]),
+                "size": count,
+                "group": group,
+                "cost": _rounded(row["avg_costs"]),
+                "high_cost_rate": _rate(row["high_cost_count"], count),
+            }
+        )
+    for items in result.values():
+        items.sort(
+            key=lambda item: (
+                LOS_BIN_ORDER.get(item["name"].split(" · ", 1)[0], 999),
+                SEVERITY_VALUES.index(item["group"])
+                if item["group"] in SEVERITY_VALUES
+                else len(SEVERITY_VALUES),
+                item["group"],
+            )
+        )
+    return result
+
+
 def _cost_entity_key(
     diagnosis_code: str | None,
     facility_id: str | None,
@@ -1064,7 +1408,11 @@ def _cost_sections(
     diagnosis_options: list[dict[str, str]],
     facility_options: list[dict[str, str]],
     severity_options: list[str],
-) -> list[dict[str, Any]]:
+    relation_items: list[dict[str, Any]],
+    high_cost_threshold: float,
+    data_version: str,
+    generated_at: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     diagnosis_labels = {item["value"]: item["label"] for item in diagnosis_options}
     facility_labels = {item["value"]: item["label"] for item in facility_options}
     sections = [
@@ -1096,6 +1444,59 @@ def _cost_sections(
             "table",
         ),
     ]
+    relation_section_key = "cost_los_relation"
+    relation_boundary = (
+        "当前已发布筛选下、按固定住院时长分箱和严重程度汇总的有效收费成本记录；"
+        f"高费用率阈值为当前批次收费 P75（{high_cost_threshold:.2f} 美元）"
+    )
+    relation_summary = (
+        f"返回 {len(relation_items)} 个住院时长分箱×严重程度汇总点；"
+        "x 为平均住院时长，y 为平均收费，点大小为记录数，另列平均成本和高费用率。"
+        "相关不等于因果。"
+    )
+    sections.append(
+        complex_section(
+            relation_section_key,
+            "收费、成本与住院时长分组关系",
+            "scatter",
+            relation_items,
+            question="固定住院时长分箱中，收费、成本与高费用率如何呈现汇总关系？",
+            x_label="平均住院时长（天）",
+            y_label="平均收费（美元）",
+            unit="美元",
+            legend=[{"key": "group", "label": "严重程度", "style": "shape"}],
+            tooltip_fields=[
+                "name",
+                "x",
+                "y",
+                "cost",
+                "size",
+                "group",
+                "high_cost_rate",
+            ],
+            source_metric_keys=[
+                "record_count",
+                "avg_los",
+                "avg_charges",
+                "avg_costs",
+                "p75_charges",
+            ],
+            summary_text=relation_summary,
+            boundary=relation_boundary,
+            data_version=data_version,
+            generated_at=generated_at,
+            fallback_columns=[
+                "name",
+                "x",
+                "y",
+                "cost",
+                "size",
+                "group",
+                "high_cost_rate",
+            ],
+            empty_text="当前筛选下没有同时具备有效住院时长、收费和成本的分组点。",
+        )
+    )
     diagnosis, facility, _ = current
     if diagnosis is None:
         sections.extend(
@@ -1159,7 +1560,16 @@ def _cost_sections(
             ),
         ]
     )
-    return sections
+    return sections, deterministic_insight(
+        relation_section_key,
+        "收费与住院时长关系摘要",
+        relation_summary,
+        relation_section_key,
+        ["record_count", "avg_los", "avg_charges", "avg_costs", "p75_charges"],
+        data_version,
+        generated_at,
+        relation_boundary,
+    )
 
 
 def build_cost_records(
@@ -1167,12 +1577,25 @@ def build_cost_records(
     diagnosis_options: list[dict[str, str]],
     facility_options: list[dict[str, str]],
     severity_options: list[str],
+    data_version: str,
+    generated_at: str,
 ) -> list[dict[str, Any]]:
     """Build the wildcard and finite legal cost filter matrix."""
 
     summaries = _cost_summary_rows(cost_frame)
+    wildcard_summary = summaries.get((None, None, None))
+    high_cost_threshold = float(
+        wildcard_summary["p75_charges"] if wildcard_summary is not None else 0
+    )
     diagnosis_values = [item["value"] for item in diagnosis_options]
     facility_values = [item["value"] for item in facility_options]
+    relation_rows = _cost_relation_rows(
+        cost_frame,
+        diagnosis_values,
+        facility_values,
+        severity_options,
+        high_cost_threshold,
+    )
     keys: list[tuple[str | None, str | None, str | None]] = [
         (None, None, severity) for severity in [None, *severity_options]
     ]
@@ -1209,15 +1632,25 @@ def build_cost_records(
                 )
             )
             continue
+        sections, insight = _cost_sections(
+            summaries,
+            current,
+            row,
+            diagnosis_options,
+            facility_options,
+            severity_options,
+            relation_rows.get(current, []),
+            high_cost_threshold,
+            data_version,
+            generated_at,
+        )
         records.append(
             record(
                 "costs", _cost_entity_key(*current), common[0], common[1],
                 _cost_metrics_from_row(row),
-                _cost_sections(
-                    summaries, current, row, diagnosis_options,
-                    facility_options, severity_options
-                ),
+                sections,
                 options, filters,
+                insights=[insight],
             )
         )
     return records
@@ -1232,6 +1665,7 @@ def record(
     sections: list[dict[str, Any]] | None = None,
     options: dict[str, Any] | None = None,
     filters: dict[str, str] | None = None,
+    insights: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "title": title,
@@ -1243,6 +1677,8 @@ def record(
         payload["options"] = options
     if filters is not None:
         payload["filters"] = filters
+    if insights is not None:
+        payload["insights"] = insights
     return {"module_key": module, "entity_key": entity, "payload": payload}
 
 
@@ -1361,6 +1797,146 @@ def _risk_section_rows(
     return result
 
 
+def _risk_matrix_rows(
+    frame: DataFrame, options: dict[str, Any]
+) -> dict[tuple[str | None, str | None, str, str], Any]:
+    """Aggregate the complete age/severity matrix for every legal filter."""
+
+    decorated = _risk_dimension_frame(frame)
+    decorated = decorated.withColumn(
+        "_risk_matrix_age",
+        F.when(
+            F.col("age").isNotNull() & (F.length(F.col("age")) > 0),
+            F.col("age"),
+        ).otherwise(F.lit(RISK_MISSING)),
+    ).withColumn(
+        "_risk_matrix_severity",
+        F.when(F.col("severity").isin(*SEVERITY_VALUES), F.col("severity")).otherwise(
+            F.lit(RISK_MISSING)
+        ),
+    )
+    grouped = decorated.cube(
+        "_risk_age",
+        "_risk_diagnosis_code",
+        "_risk_matrix_age",
+        "_risk_matrix_severity",
+    ).agg(
+        F.count("*").alias("record_count"),
+        F.sum(
+            F.when(
+                F.col("_risk_matrix_severity").isin(*HIGH_RISK_SEVERITY_VALUES), 1
+            ).otherwise(0)
+        ).alias("high_risk_count"),
+        F.sum(
+            F.when(F.col("_risk_matrix_severity").isin(*SEVERITY_VALUES), 1).otherwise(0)
+        ).alias("severity_valid_count"),
+    )
+    valid = grouped.where(
+        F.col("_risk_matrix_age").isin(options["age_group"])
+        & F.col("_risk_matrix_severity").isin(*SEVERITY_VALUES)
+        & _risk_valid_rollup("_risk_age", options["age_group"])
+        & _risk_valid_rollup(
+            "_risk_diagnosis_code", options["diagnosis_code_values"]
+        )
+    )
+    result = {}
+    for row in valid.collect():
+        filter_age = None if row["_risk_age"] is None else str(row["_risk_age"])
+        filter_diagnosis = (
+            None
+            if row["_risk_diagnosis_code"] is None
+            else str(row["_risk_diagnosis_code"])
+        )
+        cell_age = str(row["_risk_matrix_age"])
+        severity = str(row["_risk_matrix_severity"])
+        result[(filter_age, filter_diagnosis, cell_age, severity)] = row
+    return result
+
+
+def _risk_matrix_section(
+    values: tuple[str | None, str | None],
+    options: dict[str, Any],
+    matrix_rows: dict[tuple[str | None, str | None, str, str], Any],
+    data_version: str,
+    generated_at: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    age_values = [values[0]] if values[0] is not None else options["age_group"]
+    items: list[dict[str, Any]] = []
+    for age in age_values:
+        for severity in SEVERITY_VALUES:
+            row = matrix_rows.get((values[0], values[1], age, severity))
+            count = int(row["record_count"] or 0) if row is not None else 0
+            high_risk_count = (
+                int(row["high_risk_count"] or 0) if row is not None else 0
+            )
+            denominator = (
+                int(row["severity_valid_count"] or 0) if row is not None else 0
+            )
+            items.append(
+                {
+                    "x_label": age,
+                    "y_label": severity,
+                    "value": count,
+                    "unit": "条",
+                    "numerator": high_risk_count,
+                    "denominator": denominator,
+                    "high_risk_rate": _rate(high_risk_count, denominator),
+                }
+            )
+    total = sum(item["value"] for item in items)
+    high_risk_total = sum(item["numerator"] for item in items)
+    boundary = "当前筛选下按年龄组×APR严重程度汇总的住院出院记录；分母为格内严重程度可判定记录"
+    summary = (
+        f"矩阵返回 {len(items)} 个固定格，包含 {total} 条可判定严重程度记录，"
+        f"其中 Major/Extreme 记录 {high_risk_total} 条；相关不等于因果。"
+    )
+    section = complex_section(
+        "age_severity_matrix",
+        "年龄组与病情严重程度矩阵",
+        "heatmap",
+        items,
+        question="不同年龄组的病情严重程度结构如何分布？",
+        x_label="年龄组",
+        y_label="病情严重程度",
+        unit="条",
+        legend=[{"key": "record_count", "label": "住院出院记录", "style": "numeric-gradient"}],
+        tooltip_fields=[
+            "x_label",
+            "y_label",
+            "value",
+            "unit",
+            "numerator",
+            "denominator",
+            "high_risk_rate",
+        ],
+        source_metric_keys=["record_count", "high_risk_count", "high_risk_rate"],
+        summary_text=summary,
+        boundary=boundary,
+        data_version=data_version,
+        generated_at=generated_at,
+        fallback_columns=[
+            "x_label",
+            "y_label",
+            "value",
+            "unit",
+            "numerator",
+            "denominator",
+            "high_risk_rate",
+        ],
+        empty_text="当前筛选下没有可判定年龄组和病情严重程度的住院出院记录。",
+    )
+    return section, deterministic_insight(
+        "age_severity_matrix",
+        "年龄与严重程度摘要",
+        summary,
+        "age_severity_matrix",
+        ["record_count", "high_risk_count", "high_risk_rate"],
+        data_version,
+        generated_at,
+        boundary,
+    )
+
+
 def _risk_metrics_from_row(row: Any) -> list[dict[str, Any]]:
     record_count = int(row["record_count"] or 0)
     if record_count == 0:
@@ -1426,6 +2002,9 @@ def _risk_record(
     summary_row: Any | None,
     section_values: dict[str, list[dict[str, Any]]],
     options: dict[str, Any],
+    matrix_rows: dict[tuple[str | None, str | None, str, str], Any],
+    data_version: str,
+    generated_at: str,
 ) -> dict[str, Any]:
     filters = {
         RISK_OPTION_KEYS[field]: value
@@ -1435,6 +2014,7 @@ def _risk_record(
     if summary_row is None:
         metrics: list[dict[str, Any]] = []
         sections: list[dict[str, Any]] = []
+        insights: list[dict[str, Any]] = []
     else:
         metrics = _risk_metrics_from_row(summary_row)
         sections = [
@@ -1444,6 +2024,11 @@ def _risk_record(
             section("age", "高风险年龄结构", section_values["age"]),
             section("diseases", "高风险疾病 TOP10", section_values["diseases"]),
         ]
+        matrix_section, matrix_insight = _risk_matrix_section(
+            values, options, matrix_rows, data_version, generated_at
+        )
+        sections.append(matrix_section)
+        insights = [matrix_insight]
     return record(
         "risks",
         _risk_entity_key(values),
@@ -1453,12 +2038,15 @@ def _risk_record(
         sections,
         options if values == (None, None) else None,
         filters,
+        insights=insights,
     )
 
 
 def build_risk_records(
     frame: DataFrame,
     options: dict[str, Any],
+    data_version: str,
+    generated_at: str,
 ) -> list[dict[str, Any]]:
     """Build the wildcard and complete risk filter snapshot matrix."""
 
@@ -1471,6 +2059,7 @@ def build_risk_records(
         "diagnosis_code_values": diagnosis_values,
     }
     summary_rows = _risk_summary_rows(frame, cube_options)
+    matrix_rows = _risk_matrix_rows(frame, cube_options)
     high_risk = frame.where(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES))
     section_rows = {
         "severity": _risk_section_rows(frame, "severity", cube_options, limit=None),
@@ -1499,6 +2088,9 @@ def build_risk_records(
                     for name, rows in section_rows.items()
                 },
                 options,
+                matrix_rows,
+                data_version,
+                generated_at,
             )
         )
     return records
@@ -2072,6 +2664,8 @@ def build_records(
     raw_count: int,
     execution_status: str = "PASS",
     mysql_status: str = "NOT_PUBLISHED",
+    data_version: str = "fixture:unversioned:v1",
+    generated_at: str = "1970-01-01T00:00:00.000000Z",
 ) -> list[dict[str, Any]]:
     """Build all modules with batched grouped actions over the cached frame."""
 
@@ -2135,6 +2729,12 @@ def build_records(
     facility_diseases = grouped_rows(scoped, "facility_id", "diagnosis", limit=5)
     facility_types = grouped_rows(scoped, "facility_id", "medical_surgical")
     facility_severities = grouped_rows(scoped, "facility_id", "severity")
+    facility_relation, facility_relation_insight = facility_relation_section(
+        scoped, data_version, generated_at
+    )
+    facility_comparison, facility_comparison_insight = facility_grouped_bar_section(
+        facility_options, facility_summaries, data_version, generated_at
+    )
     records.append(
         record(
             "hospitals",
@@ -2142,8 +2742,13 @@ def build_records(
             "医院运营分析",
             "医院排行与双院对比。",
             [metric("facility_count", "可分析医疗机构", facility_count, "家")],
-            [section("ranking", "医院病例量排行", facility_ranking_rows(scoped))],
+            [
+                section("ranking", "医院病例量排行", facility_ranking_rows(scoped)),
+                facility_relation,
+                facility_comparison,
+            ],
             {"facilities": facility_options},
+            insights=[facility_relation_insight, facility_comparison_insight],
         )
     )
     for option in facility_options:
@@ -2224,6 +2829,8 @@ def build_records(
             diagnosis_options,
             facility_options,
             option_values("severity"),
+            data_version,
+            generated_at,
         )
     )
 
@@ -2234,6 +2841,8 @@ def build_records(
                 "age_group": option_values("age"),
                 "diagnosis_code": diagnosis_options,
             },
+            data_version,
+            generated_at,
         )
     )
     records.extend(build_payment_records(scoped))
@@ -2279,6 +2888,8 @@ def build_document(
         if execution_status == "FIXTURE_ONLY"
         else mysql_status
     )
+    data_version = build_data_version(input_path, digest)
+    normalized_generated_at = normalize_utc_timestamp(generated_at)
     dashboard_frame = cleaned.where(
         F.coalesce(F.col("in_scope"), F.lit(False))
         & F.col("los").isNotNull()
@@ -2293,11 +2904,13 @@ def build_document(
             raw_count,
             execution_status,
             effective_mysql_status,
+            data_version,
+            normalized_generated_at,
         )
     )
     document = {
-        "data_version": build_data_version(input_path, digest),
-        "generated_at": normalize_utc_timestamp(generated_at),
+        "data_version": data_version,
+        "generated_at": normalized_generated_at,
         "input": {
             "file_name": input_path.name,
             "sha256": digest,

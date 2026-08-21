@@ -30,18 +30,21 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
       "type": "bar",
       "items": [{"name": "A", "value": 1}]
     }
-  ]
+  ],
+  "insights": []
 }
 ```
 
 约束如下：
 
-- 顶层只允许 `title`、`description`、`options`、`filters`、`metrics`、`sections`；
+- 顶层只允许 `title`、`description`、`options`、`filters`、`metrics`、`sections`、`insights`；
 - `title`、`description`、`metrics`、`sections` 必须存在；
 - `metrics[]` 只允许 `key`、`label`、`value`、`unit`，数值必须有限；
 - `%` 单位使用 0—1 的比例值，页面乘 100 展示；
-- `sections[]` 只允许 `key`、`title`、`type`、`items`；
-- `type` 只允许 `bar`、`pie`、`table`、`status`；
+- 普通 `sections[]` 只允许 `key`、`title`、`type`、`items`；`type` 只允许 `bar`、`pie`、`table`、`status`；
+- 关系 `sections[]` 只允许 `grouped_bar`、`scatter`、`heatmap`，并必须携带白名单 `visual`：问题、坐标轴、单位、图例、Tooltip 字段、服务端摘要、table fallback 和 empty state；不接受任意 ECharts option、JavaScript、HTML、SQL 或 formatter；
+- `grouped_bar` 每项是类别和 1—3 个同单位系列；`scatter` 每点是后端聚合的 `name/x/y/size/group`，费用关系可附 `cost/high_cost_rate`；`heatmap` 每格是 `x_label/y_label/value/unit`，比例需附分子、分母和正式比例字段；
+- `insights[]` 由服务端确定性生成，必须指向当前 section，并返回 `source_metric_keys`、`data_version`、`generated_at`、`boundary` 和 `related_not_causal`；嵌套版本与时间必须和快照外层一致；
 - `options` 保存筛选枚举或不可执行的模型元数据；
 - `filters` 回显已接受的白名单筛选；
 - 未知字段、未知图表类型、NaN 和无穷大均拒绝发布或读取。
@@ -94,7 +97,7 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 ### 5.1 医院
 
-医院以字符串 `facility_id` 聚合，医院名称只用于展示，避免同名机构合并。医院病例量指标键为 `case_count`。双院比较只组合完整医院画像，不改变指标顺序、单位或数值。医院画像的 `severe_rate` 以该机构严重程度可判定记录为分母，并发布 `severity` 分区作为可对账的业务结构。
+医院以字符串 `facility_id` 聚合，医院名称只用于展示，避免同名机构合并。医院病例量指标键为 `case_count`。`facility_relation` 使用 `avg_los`、`avg_charges`、`case_count` 和 `severe_rate` 生成最多 50 个后端散点；双院比较只组合完整医院画像，不改变指标顺序、单位或数值，并以 `facility_metric_comparison` 返回同单位 `grouped_bar`。医院画像的 `severe_rate` 以该机构严重程度可判定记录为分母，并发布 `severity` 分区作为可对账的业务结构。
 
 ### 5.2 疾病
 
@@ -106,11 +109,11 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 ### 5.4 费用与成本
 
-`diagnosis_code` 与 `facility_id` 互斥，`severity` 可以与其中一个组合。指标包含记录数、收费/成本均值与分位数、收费成本差和单日金额。单日金额只使用 `los > 0` 的记录。合法键包括未筛选、单疾病或单医院，并分别与严重程度组合；不生成疾病和医院同时指定的键。
+`diagnosis_code` 与 `facility_id` 互斥，`severity` 可以与其中一个组合。指标包含记录数、收费/成本均值与分位数、收费成本差和单日金额。`cost_los_relation` 固定使用八个住院时长分箱和 `severity` 分组，缺失严重程度为 `未分类`，并以当前批次收费 P75 计算 `high_cost_rate`。单日金额只使用 `los > 0` 的记录。合法键包括未筛选、单疾病或单医院，并分别与严重程度组合；不生成疾病和医院同时指定的键。
 
 ### 5.5 病情风险
 
-风险模块发布年龄、诊断及其组合。`severity_valid_count` 是当前筛选下严重程度可判定的记录数，`high_risk_count` 是其中 `Major`/`Extreme` 的记录数，`high_risk_rate` 以前者为分母并保持 0—1 比例。高风险平均住院时长、收费和成本只使用 `Major`/`Extreme` 记录中各自可用的非负字段。风险页展示群体结构，不构成个人诊断、治疗建议或因果判断。
+风险模块发布年龄、诊断及其组合。`severity_valid_count` 是当前筛选下严重程度可判定的记录数，`high_risk_count` 是其中 `Major`/`Extreme` 的记录数，`high_risk_rate` 以前者为分母并保持 0—1 比例。`age_severity_matrix` 固定返回年龄枚举×`Minor/Moderate/Major/Extreme` 的完整矩阵；合法空组合返回四个数值字段均为 0。高风险平均住院时长、收费和成本只使用 `Major`/`Extreme` 记录中各自可用的非负字段。风险页展示群体结构，不构成个人诊断、治疗建议或因果判断。
 
 ### 5.6 支付方式
 

@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "module": "relations",
+  "raw_rows": 4,
+  "scoped_rows": 3,
+  "facility_points": 1,
+  "cost_points": 2,
+  "risk_matrices": 8,
+  "data_version": "dashboard_edge_sample_sha256_fbdfedf9e512492daf9c536c406fdd50cf7f439f61b65f6b47fb0626e6ddb215",
+  "generated_at": "2026-08-20T00:00:00.000000Z"
+}
