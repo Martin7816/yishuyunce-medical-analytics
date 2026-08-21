@@ -90,6 +90,10 @@ npm run dev
 
 任务读取一次 CSV，生成运营驾驶舱、医院、疾病、住院记录群体、费用成本、病情风险、支付方式和数据质量等模块记录。输出必须通过公共快照结构校验，并在同一文件中使用一致的 `data_version` 与 `generated_at`。
 
+比例口径按业务字段分别确定：页面记录数保留当前筛选后的基础记录总体；急诊率、外科率和 `Major/Extreme` 重症率分别使用对应字段的指标有效总体作分母，严重程度可判定值为 `Minor`、`Moderate`、`Major`、`Extreme`，未知值不作分子也不作非重症。驾驶舱、医院画像、疾病画像和住院记录群体通过严重程度分布对账；风险快照额外发布 `severity_valid_count`。完整字段有效数、适用数、缺失数和比例分子/分母集中在 `data_quality/summary.options.audit`，其公式版本为 `analytics-denominator-v1`；不在各业务页面重复展示质量告警。
+
+固定边界样例可使用 `verify_dashboard_snapshot.py`、`verify_hospital_snapshot.py`、`verify_disease_snapshot.py`、`verify_cohort_snapshot.py` 和 `verify_risk_snapshot.py` 独立核对分子、分母与分布。
+
 ### 3.3 训练高费用记录分类模型
 
 ```powershell
@@ -97,10 +101,16 @@ npm run dev
   --input "<SPARCS CSV 路径>" `
   --artifact "<工件目录>\high-cost-model.json" `
   --metrics "<工件目录>\high-cost-metrics.json" `
-  --snapshot "<工件目录>\analytics-snapshot.json"
+  --snapshot "<工件目录>\analytics-snapshot.json" `
+  --repetitions 2 `
+  --reproducibility "<工件目录>\reproducibility.json"
 ```
 
-`--snapshot` 把模型指标写入待发布的同批分析快照。模型工件供预测接口读取，指标快照供模型页面展示。
+`--snapshot` 把模型指标写入待发布的同批分析快照；正式验收追加两次固定切分复现，比较阈值、规模、五项指标、混淆矩阵、类别结构和系数宽度。模型工件供预测接口读取，指标快照供模型页面展示。模型训练依赖以 `data/requirements.txt` 为准；脚本复用本任务的清洗口径，并将真实 SPARCS 的 `Hospital Service Area` 兼容映射为 `hospital_service_area`。
+
+### #75 高费用病例分类模型交接
+
+2026-08-20 使用同一真实 CSV 和 `data_version` 完成两次连续训练：训练集 1,681,301 条、测试集 420,287 条，训练集收费 P75 为 77,202.39 美元，模型版本为 `high_cost_lr_seed_20260818_185808e20900`。训练工件只暴露八个入院时类别特征，真实 `Hospital Service Area` 已映射到 `hospital_service_area`；两次训练的阈值、规模、Accuracy、Precision、Recall、F1、AUC、混淆矩阵、类别结构和系数宽度均通过复现检查。最终快照发布器 dry-run 为 7,198 条记录，模型与快照使用同一 `data_version`。详细摘要与命令见 [`evidence/75/README.md`](../evidence/75/README.md)。
 
 ### 3.4 准备 MySQL
 

@@ -1,0 +1,11 @@
+CCSR Diagnosis Description,CCSR Diagnosis Code,Discharge Year,Age Group,Gender,Type of Admission,Length of Stay,Total Charges,Total Costs,Emergency Department Indicator,Zip Code - 3 digits,Birth Weight
+ASTHMA,RSP009,2021,0 to 17,F,Emergency,2,100.00,20.00,Y,100,
+DIABETES,END003,2021,18 to 29,M,Elective,4,"1,000.00",200.00,N,101,
+ASTHMA,RSP009,2021,50 to 69,F,Emergency,120 +,300.00,80.00,Y,102,
+,RSP009,2021,30 to 49,M,Urgent,5,400.00,90.00,N,103,
+DIABETES,END003,2021,50 to 69,F,Emergency,6,abc,100.00,Y,104,
+ASTHMA,RSP009,2021,70 or Older,M,Elective,7,500.00,bad,N,105,
+DIABETES,END003,2021,30 to 49,F,Emergency,8,-1.00,110.00,Y,106,
+ASTHMA,RSP009,2021,18 to 29,M,Urgent,bad,600.00,120.00,N,107,
+,,2020,50 to 69,F,Emergency,bad,-9.00,bad,Y,108,
+" ASTHMA "," RSP009 "," 2021 "," 0 to 17 ",F," Emergency "," 10 "," 800.00 "," 140.00 ",Y,109,

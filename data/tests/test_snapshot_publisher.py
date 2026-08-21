@@ -38,7 +38,58 @@ def test_payload_type_is_frozen_to_renderer_whitelist(tmp_path):
     invalid = tmp_path / "invalid-section.json"
     invalid.write_text(json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="只能是 bar、pie、table 或 status"):
+    with pytest.raises(ValueError, match="只能是 bar、pie、table、status、grouped_bar、scatter 或 heatmap"):
+        load_snapshot(invalid)
+
+
+def test_relation_visual_rejects_arbitrary_renderer_options(tmp_path):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    hospital = next(
+        row for row in document["records"]
+        if row["module_key"] == "hospitals" and row["entity_key"] == "index"
+    )
+    relation = next(
+        section for section in hospital["payload"]["sections"]
+        if section["key"] == "facility_relation"
+    )
+    relation["visual"]["echarts_option"] = {"series": []}
+    invalid = tmp_path / "invalid-visual.json"
+    invalid.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="未冻结字段"):
+        load_snapshot(invalid)
+
+
+def test_relation_metadata_must_match_snapshot_envelope(tmp_path):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    risk = next(row for row in document["records"] if row["module_key"] == "risks")
+    matrix = next(
+        section for section in risk["payload"]["sections"]
+        if section["key"] == "age_severity_matrix"
+    )
+    matrix["visual"]["summary"]["data_version"] = "fixture:other:v1"
+    invalid = tmp_path / "invalid-relation-version.json"
+    invalid.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="必须与快照 data_version 一致"):
+        load_snapshot(invalid)
+
+
+def test_relation_numbers_reject_nan(tmp_path):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    costs = next(row for row in document["records"] if row["module_key"] == "costs")
+    relation = next(
+        section for section in costs["payload"]["sections"]
+        if section["key"] == "cost_los_relation"
+    )
+    relation["items"][0]["y"] = float("nan")
+    invalid = tmp_path / "invalid-relation-number.json"
+    invalid.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="NaN"):
         load_snapshot(invalid)
 
 
@@ -47,7 +98,7 @@ def test_payload_does_not_expose_model_metadata_as_new_top_level_fields():
     document = load_snapshot(path)
     model = next(row for row in document["records"] if row["module_key"] == "high_cost_model")
 
-    assert set(model["payload"]) <= {"title", "description", "options", "filters", "metrics", "sections"}
+    assert set(model["payload"]) <= {"title", "description", "options", "filters", "metrics", "sections", "insights"}
     assert model["payload"]["options"]["model_version"].startswith("fixture:")
 
 

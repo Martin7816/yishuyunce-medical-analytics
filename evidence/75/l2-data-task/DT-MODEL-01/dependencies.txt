@@ -1,0 +1,7 @@
+Python 3.11.4
+PySpark 3.4.0
+Java 1.8.0_202
+data/requirements.txt:
+  pyspark==3.4.0
+  PyMySQL==1.1.1
+  numpy==1.26.4

@@ -14,7 +14,7 @@ DATA_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = DATA_ROOT.parent
 sys.path.insert(0, str(DATA_ROOT / "src"))
 
-from verify_disease_snapshot import summarize_stream  # noqa: E402
+from verify_disease_snapshot import empty_profile, profile_metrics, summarize_stream  # noqa: E402
 
 
 EDGE_SAMPLE = DATA_ROOT / "fixtures" / "dashboard_edge_sample.csv"
@@ -56,6 +56,29 @@ def test_disease_independent_formula_on_edge_fixture():
     assert expected["profiles"]["END003"]["sections"]["hospitals"] == [
         {"name": "Hospital B", "value": 1}
     ]
+
+
+def test_disease_severe_rate_excludes_unknown_severity_from_denominator():
+    profile = empty_profile()
+    profile["count"] = 2
+    profile["severe_yes"] = 1
+    profile["severity_valid_count"] = 1
+
+    assert profile_metrics(profile)["severe_rate"] == 1.0
+
+
+def test_disease_rates_exclude_missing_indicator_fields_from_denominators():
+    profile = empty_profile()
+    profile["count"] = 3
+    profile["emergency_yes"] = 1
+    profile["emergency_valid_count"] = 1
+    profile["surgical_yes"] = 1
+    profile["surgical_valid_count"] = 2
+
+    metrics = profile_metrics(profile)
+
+    assert metrics["emergency_rate"] == 1.0
+    assert metrics["surgical_rate"] == 0.5
 
 
 def test_pyspark_disease_snapshot_matches_independent_verifier(tmp_path):

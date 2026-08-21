@@ -47,12 +47,15 @@ HTTP 响应头 `X-Trace-ID` 与正文 `trace_id` 相同。分析接口的 `data`
   "filters": {},
   "metrics": [],
   "sections": [],
+  "insights": [],
   "data_version": "...",
   "generated_at": "..."
 }
 ```
 
-合法筛选没有记录时仍返回 `200`，保留标题、说明、筛选、版本和时间，`metrics` 与 `sections` 为空。
+合法筛选没有记录时仍返回 `200`，保留标题、说明、筛选、版本和时间，`metrics`、`sections` 与 `insights` 为空。
+
+关系 section 只允许 `grouped_bar`、`scatter`、`heatmap`。它们必须使用后端返回的有限 `visual` 元数据和 table fallback；浏览器不得读取原始 CSV、执行 SQL、按分箱重算或透传任意 ECharts option。`insights[]` 是服务端确定性摘要，必须指向当前 section，并带来源指标、版本、生成时间、统计边界和 `related_not_causal`。
 
 ### 2.2 错误
 
@@ -102,7 +105,7 @@ GET /api/v1/hospitals/1
 - `emergency_rate`
 - `severe_rate`
 
-比较响应在 `data.comparison` 中按请求顺序返回完整医院画像。医院编码始终按字符串处理。
+比较响应在 `data.comparison` 中按请求顺序返回完整医院画像，并在 `data.sections` 中返回同单位的 `facility_metric_comparison` grouped bar；未指定比较筛选时，医院索引仍提供 `facility_relation` scatter 和默认机构病例量对照。医院编码始终按字符串处理；医院画像的 `severe_rate` 以严重程度可判定记录为分母，`severity` 分区用于对账。
 
 ### 3.2 疾病
 
@@ -112,7 +115,7 @@ GET /api/v1/diseases/NVS005
 GET /api/v1/diseases/top10
 ```
 
-画像路径中的 `diagnosis_code` 必须来自 `/diseases` 的 `options.diagnoses`。疾病病例量表示有效住院出院记录数，不表示患者人数或患病率。
+画像路径中的 `diagnosis_code` 必须来自 `/diseases` 的 `options.diagnoses`。疾病病例量表示基础住院出院记录数，不表示患者人数或患病率；画像中的 `severe_rate` 只使用严重程度可判定记录作分母。
 
 ### 3.3 住院记录群体
 
@@ -120,7 +123,7 @@ GET /api/v1/diseases/top10
 GET /api/v1/cohorts/summary?age_group=50%20to%2069&gender=F&admission_type=Emergency
 ```
 
-三个参数都可省略，取值来自基础响应的 `options.age_group`、`options.gender` 与 `options.admission_type`。
+三个参数都可省略，取值来自基础响应的 `options.age_group`、`options.gender` 与 `options.admission_type`。记录数表示当前筛选的基础记录总体，`severe_rate` 只使用该总体中严重程度可判定记录作分母。
 
 ### 3.4 费用与成本
 
@@ -131,13 +134,17 @@ GET /api/v1/costs/overview?facility_id=1&severity=Major
 
 `diagnosis_code` 与 `facility_id` 不能同时出现。`severity` 允许 `Minor`、`Moderate`、`Major`、`Extreme`。
 
+响应中的 `cost_los_relation` 按固定住院时长分箱（`0-1天`、`2-3天`、`4-6天`、`7-13天`、`14-29天`、`30-59天`、`60-119天`、`120天及以上`）和严重程度生成聚合散点；缺失严重程度为 `未分类`，`high_cost_rate` 的阈值为当前批次收费 P75。前端不重算这些关系。
+
 ### 3.5 病情风险
 
 ```http
 GET /api/v1/risks/overview?age_group=70%20or%20Older&diagnosis_code=BLD001
 ```
 
-参数可单独或组合使用。结果为群体统计，不构成个人诊断、治疗建议或因果判断。
+参数可单独或组合使用。指标按 `severity_valid_count`、`high_risk_count`、`high_risk_rate`、`avg_los`、`avg_charges`、`avg_costs` 发布，其中 `high_risk_rate` 以前者为分母。结果为群体统计，不构成个人诊断、治疗建议或因果判断。
+
+`age_severity_matrix` 固定返回已发布年龄枚举×`Minor/Moderate/Major/Extreme` 的完整 heatmap；每格返回记录数、分子、分母和 `high_risk_rate`，合法空组合均返回 0，不由前端决定分母。
 
 ### 3.6 支付方式
 
@@ -154,7 +161,15 @@ GET /api/v1/data-quality/summary
 GET /api/v1/data-quality/summary?data_version=<当前响应中的版本>
 ```
 
-`data_version` 只接受当前发布版本。
+`data_version` 只接受当前发布版本。该页面集中展示基础记录总体、严重程度有效/缺失数，以及当前业务使用字段的有效记录数和非零缺失数；`data.options.audit` 还提供适用数、有效数、缺失数、比例分子/分母、筛选条件和 `formula_version`，`data_version` 与 `generated_at` 继续使用既有响应元数据。其他业务页面只保留简要口径说明。
+
+#### Issue #72 后端交接
+
+路由只读取统一快照服务的 `data_quality/summary`（`module_key=data_quality`、`entity_key=summary`），不读取 CSV、HDFS 或 MySQL，不重新聚合、排序、截断或触发任务。fixture 和 MySQL 适配器都通过 `AnalyticsSnapshotService.get(module_key, entity_key)` 读取同一 interface。
+
+`data_version` 是唯一可选参数，只接受当前已发布版本；未知/重复参数、非法版本和 GET 请求体分别返回 `400 INVALID_QUERY_PARAMETER` 或 `400 INVALID_REQUEST_FORMAT`，`HEAD`、`OPTIONS`、`POST` 等返回 `405 METHOD_NOT_ALLOWED`。未发布快照和数据库故障分别返回 `503 RESULT_NOT_READY`、`503 DATABASE_UNAVAILABLE`；配置缺失和 payload 契约损坏分别返回 `500 SERVER_MISCONFIGURED`、`500 SERVICE_RESULT_INVALID`。所有响应使用统一 `code/message/data/trace_id` 信封，`X-Trace-ID` 与正文一致，错误 details 只包含安全字段名。
+
+合法空 payload 保留 `data_version`、`generated_at`，并返回空的 `metrics`、`sections`，不把未知版本伪装成空结果。专项测试和真实批次交接证据见 [`evidence/72`](../evidence/72/README.md)；fixture 版本只证明接口契约，真实 MySQL/API 证据沿用 [`evidence/39/l3-api/real-mysql-summary.txt`](../evidence/39/l3-api/real-mysql-summary.txt)。
 
 ## 4. 高费用记录分类
 
@@ -164,7 +179,7 @@ GET /api/v1/data-quality/summary?data_version=<当前响应中的版本>
 GET /api/v1/models/high-cost/metrics
 ```
 
-接口只读取已发布的 `high_cost_model/metrics` 快照，不在请求中重新训练或计算指标。成功响应的 `data` 包含模型版本、收费阈值、八个特征名、训练/测试规模、Accuracy、Precision、Recall、F1、AUC、混淆矩阵、`data_version` 和 `generated_at`。`model_version`、`threshold_amount`、`feature_names` 从快照的 `options` 中以只读方式展开。
+响应包含模型版本、阈值、特征名、评估指标、混淆矩阵、数据版本和统计边界。
 
 ### 4.2 预测
 
@@ -185,15 +200,11 @@ curl.exe -X POST http://127.0.0.1:5000/api/v1/models/high-cost/predict `
 - `admission_type`
 - `emergency_indicator`
 
-请求必须是只包含上述八个字段的 JSON 对象；字段值必须是非空字符串，并按已发布工件的类别映射处理。工件提供 `OTHER` 桶时，未见过的类别归入 `OTHER`；没有 `OTHER` 桶的非法类别返回 `400 INVALID_REQUEST_FIELD`。
-
-收费、成本、住院时长、出院去向、手术、目标标签和其他出院后字段会触发 `400 LEAKAGE_FIELD_FORBIDDEN`；普通未知字段返回 `400 INVALID_REQUEST_FIELD`。非 JSON 或非对象请求返回 `400 INVALID_REQUEST_FORMAT`。模型路径未发布返回 `503 RESULT_NOT_READY`，工件损坏、字段缺失或数值无效返回 `500 SERVER_MISCONFIGURED`。
-
-服务首次成功预测时读取 `HIGH_COST_MODEL_PATH` 指向的 JSON 工件并缓存。工件必须提供 `intercept`、八个特征的 `feature_weights`、`model_version` 和 `data_version`；预测使用截距与类别权重计算 sigmoid，并返回 `prediction`、`probability`、`classification_threshold`、`threshold_amount`、归一化后的 `features`、版本信息、`fixture_only` 和运营分析边界。`fixture_only=true` 或 `fixture:` 版本只表示联调工件，不代表真实模型效果。
-
-分类结果用于运营分析，不构成医疗判断。
+收费、成本、住院时长、出院去向和出院后字段会触发 `LEAKAGE_FIELD_FORBIDDEN`。分类结果用于运营分析，不构成医疗判断。
 
 ## 5. AI 问答
+
+### 5.1 请求
 
 ```powershell
 curl.exe -X POST http://127.0.0.1:5000/api/v1/ai/chat `
@@ -201,16 +212,65 @@ curl.exe -X POST http://127.0.0.1:5000/api/v1/ai/chat `
   -d '{"message":"请概括当前运营情况，并说明引用的数据版本。"}'
 ```
 
-请求体只允许非空 `message`。成功结果包含：
+请求体必须是 JSON 对象且只能包含 `message`。服务端会先 trim，再要求 `message` 为 1—1000 个字符；非 JSON、JSON 非对象、缺少字段、额外字段、空白消息和超长消息分别返回 400。接口只接受 POST，GET、HEAD、OPTIONS 等方法返回 405。
 
-- `answer`：回答正文；
-- `tool_trace`：工具名、执行状态和数据版本；
-- `sources`：回答引用的汇总指标；
-- `data_versions`：涉及的数据版本；
-- `boundary`：统计与医疗安全边界；
-- `chart`：可选的预定义图表数据。
+### 5.2 成功响应
 
-AI 最多调用两次白名单工具，不执行自由 SQL，不读取原始住院明细，不保存多轮历史。缺少密钥、超时或上游失败时返回错误。
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "answer": "当前运营指标已汇总。",
+    "tool_trace": [
+      {
+        "tool": "get_dashboard_overview",
+        "status": "success",
+        "data_version": "fixture:sparcs_full_analytics:v1"
+      }
+    ],
+    "sources": [
+      {
+        "tool": "get_dashboard_overview",
+        "title": "运营驾驶舱",
+        "metrics": [
+          {"key": "record_count", "label": "住院出院记录", "value": 100, "unit": "条"}
+        ],
+        "data_version": "fixture:sparcs_full_analytics:v1"
+      }
+    ],
+    "data_versions": ["fixture:sparcs_full_analytics:v1"],
+    "chart": {
+      "type": "bar",
+      "title": "运营驾驶舱",
+      "items": [{"name": "住院出院记录", "value": 100}]
+    },
+    "report": {"title": "医数云策洞察简报", "printable": true},
+    "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim."
+  },
+  "trace_id": "4f0d0000-0000-4000-8000-000000000000"
+}
+```
+
+`data` 必须包含 `answer`、`tool_trace`、`sources`、`data_versions`、`chart`、`report` 和 `boundary`。`sources[]` 只输出 `tool`、`title`、`metrics`、`data_version`；成功至少有一个 source 和一个 data version。`chart.type` 只允许公共契约中的 `bar`、`pie`、`table`、`status`，图表项只能从来源指标生成。
+
+单次问题第一轮最多调用两个固定白名单工具，工具参数必须为 `{}`；不执行自由 SQL、不读取住院明细、不保存多轮历史。多个 source 的版本不一致时，服务端保留每个 source 的 `data_version`，并在 `data_versions` 中列出全部版本，不合并或伪装成单一版本，交由验收阻断。
+
+### 5.3 错误与安全边界
+
+| 场景 | HTTP | code |
+|---|---:|---|
+| 非 JSON 或 JSON 非对象 | 400 | `INVALID_REQUEST_FORMAT` |
+| 缺少/额外字段、空消息、消息超过 1000 字符 | 400 | `INVALID_REQUEST_FIELD` |
+| 非 POST 方法 | 405 | `METHOD_NOT_ALLOWED` |
+| `DEEPSEEK_API_KEY` 缺失 | 500 | `SERVER_MISCONFIGURED` |
+| DeepSeek 超时、HTTP/断网、坏响应、空回答或白名单工具失败 | 503 | `UPSTREAM_SERVICE_ERROR` |
+
+每个成功或错误响应都带 `trace_id`，并通过 `X-Trace-ID` 响应头返回同一值。错误响应的 `data` 为 `null`，不返回 API Key、Authorization、用户 prompt、SQL、堆栈、数据库地址、口令或住院明细；真实链路证据只记录脱敏状态码、耗时和工具名。
+
+### 5.4 #81 前端交接
+
+前端按统一信封读取 `data.answer`、`data.tool_trace`、`data.sources`、`data.data_versions`、`data.chart`、`data.report` 和 `data.boundary`；错误页按 HTTP 状态和 `code` 处理 `INVALID_REQUEST_FORMAT`、`INVALID_REQUEST_FIELD`、`METHOD_NOT_ALLOWED`、`SERVER_MISCONFIGURED` 与 `UPSTREAM_SERVICE_ERROR`，并展示 `trace_id` 和重试入口。前端不得渲染未经过白名单校验的图表配置，也不得把错误详情或 Key 写入页面日志。
 
 ## 6. 数据源配置
 

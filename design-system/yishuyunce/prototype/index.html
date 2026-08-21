@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="医数云策 Issue 105 静态 fixture 设计原型" />
+    <title>医数云策 · Issue 105 设计原型</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#prototype-main">跳到原型内容</a>
+    <div class="prototype-shell">
+      <aside class="prototype-sidebar" aria-label="原型页面导航">
+        <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">医</span><span><strong>医数云策</strong><small>设计原型 · #105</small></span></div>
+        <nav>
+          <a class="active" href="#overview">运营驾驶舱</a>
+          <a href="#hospitals">医院关系</a>
+          <a href="#costs">费用关系</a>
+          <a href="#risks">风险热力</a>
+        </nav>
+        <p class="sidebar-note">静态 fixture，不代表真实数据结论。正式页面继续复用现有十路由。</p>
+      </aside>
+
+      <main id="prototype-main" class="prototype-main">
+        <header class="prototype-topbar">
+          <div>
+            <p class="eyebrow">YISHUYUNCE / DESIGN SYSTEM</p>
+            <h1>医数云策前端设计系统与重点场景</h1>
+          </div>
+          <div class="topbar-meta"><span class="fixture-pill">fixture:design-prototype</span><span>标准 / 大屏</span></div>
+        </header>
+
+        <p class="boundary-notice"><strong>原型边界：</strong>示意图只展示组件层级、单位位置、状态和响应式策略；数字、关系、颜色强度和摘要均不可解释为真实数据。</p>
+
+        <section id="overview" class="artboard stage-board" aria-labelledby="overview-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">01 / OVERVIEW · STAGE</p><h2 id="overview-title">运营驾驶舱</h2><p>住院出院记录群体统计 · 不按患者去重</p></div>
+            <span class="mode-pill">同一 /overview 的大屏密度</span>
+          </div>
+          <div class="metric-grid">
+            <article class="metric-card"><span>病例量</span><strong>—</strong><small>条</small></article>
+            <article class="metric-card"><span>医疗机构</span><strong>—</strong><small>家</small></article>
+            <article class="metric-card"><span>平均住院时长</span><strong>—</strong><small>天</small></article>
+            <article class="metric-card"><span>平均收费</span><strong>—</strong><small>美元</small></article>
+          </div>
+          <div class="chart-grid two-up">
+            <article class="chart-card">
+              <div class="chart-heading"><div><h3>年龄结构</h3><span>病例量 · 条</span></div><span class="legend-dot blue">示意</span></div>
+              <div class="bar-list" aria-label="年龄结构示意图">
+                <div><span>0–17</span><i style="--bar: 36%"></i><b>—</b></div><div><span>18–29</span><i style="--bar: 24%"></i><b>—</b></div><div><span>30–49</span><i style="--bar: 52%"></i><b>—</b></div><div><span>50–69</span><i style="--bar: 78%"></i><b>—</b></div><div><span>70+</span><i style="--bar: 68%"></i><b>—</b></div>
+              </div>
+            </article>
+            <article class="chart-card">
+              <div class="chart-heading"><div><h3>支付方式</h3><span>病例量 · 条</span></div><span class="legend-dot amber">示意</span></div>
+              <div class="bar-list compact" aria-label="支付方式示意图">
+                <div><span>Medicare</span><i class="amber-fill" style="--bar: 86%"></i><b>—</b></div><div><span>Medicaid</span><i class="amber-fill" style="--bar: 62%"></i><b>—</b></div><div><span>Private</span><i class="amber-fill" style="--bar: 44%"></i><b>—</b></div><div><span>Other</span><i class="amber-fill" style="--bar: 28%"></i><b>—</b></div>
+              </div>
+            </article>
+          </div>
+          <div class="chart-grid two-up">
+            <article class="chart-card compact-card"><div class="chart-heading"><div><h3>医院病例量 TOP10</h3><span>横向排行 · 条</span></div><span class="text-link">进入医院分析 →</span></div><div class="placeholder-bars"><i style="--bar: 90%"></i><i style="--bar: 78%"></i><i style="--bar: 65%"></i><i style="--bar: 49%"></i></div></article>
+            <article class="chart-card compact-card"><div class="chart-heading"><div><h3>病情严重程度</h3><span>群体结构 · 条</span></div><span class="legend-dot blue">示意</span></div><div class="severity-row"><span>Minor</span><span>Moderate</span><span>Major</span><span>Extreme</span></div><div class="segmented-bar"><i></i><i></i><i></i><i></i></div></article>
+          </div>
+          <div class="bottom-grid"><article class="status-card"><h3>批次状态</h3><p><span class="status-mark info">i</span> CHECK_REQUIRED · 仅展示状态文字</p><small>数据版本：fixture:design-prototype</small></article><article class="insight-card"><h3>确定性摘要</h3><p>后端摘要将在正式实现中携带来源 section、版本和统计边界。</p><small>相关不等于因果 · 当前为静态示意</small></article></div>
+        </section>
+
+        <section id="hospitals" class="artboard" aria-labelledby="hospitals-title">
+          <div class="section-heading"><div><p class="eyebrow">02 / HOSPITALS · RELATION</p><h2 id="hospitals-title">医院关系</h2><p>以 facility_id 聚合，医院名称只用于展示</p></div><span class="fixture-pill">facility_relation · contract</span></div>
+          <div class="filter-row"><span>医院 A</span><span>选择已发布机构</span><span>医院 B</span><span>选择已发布机构</span><span>比较指标</span><span>病例量</span><b>应用</b></div>
+          <div class="metric-grid two-metric"><article class="metric-card"><span>医院 A · 病例量</span><strong>—</strong><small>条</small></article><article class="metric-card"><span>医院 B · 病例量</span><strong>—</strong><small>条</small></article></div>
+          <div class="relation-grid"><article class="chart-card"><div class="chart-heading"><div><h3>医院运营关系</h3><span>x 平均住院时长（天） · y 平均收费（美元）</span></div><span class="legend-dot blue">聚合点</span></div><div class="scatter-plot" role="img" aria-label="医院运营关系散点图的静态示意，正式页面需提供表格替代"><span class="axis-x">平均住院时长（天） →</span><span class="axis-y">平均收费（美元）</span><i class="point p1"></i><i class="point p2"></i><i class="point p3"></i><i class="point p4"></i><i class="point p5"></i></div><p class="chart-summary">点代表机构聚合结果，大小可表达病例量；点数不足时改用表格，不解释因果。</p></article><article class="chart-card"><div class="chart-heading"><div><h3>选中指标对照</h3><span>grouped_bar · 同一单位</span></div><span class="legend-dot amber">医院 A / B</span></div><div class="compare-bars"><div><span>医院 A</span><i style="--bar: 72%"></i><b>—</b></div><div><span>医院 B</span><i class="amber-fill" style="--bar: 56%"></i><b>—</b></div></div><table class="mini-table"><caption>可访问事实视图（示意）</caption><thead><tr><th>机构</th><th>指标</th><th>单位</th></tr></thead><tbody><tr><td>A</td><td>—</td><td>条</td></tr><tr><td>B</td><td>—</td><td>条</td></tr></tbody></table></article></div>
+        </section>
+
+        <section id="costs" class="artboard" aria-labelledby="costs-title">
+          <div class="section-heading"><div><p class="eyebrow">03 / COSTS · RELATION</p><h2 id="costs-title">费用关系</h2><p>收费是账面收费，成本是估算成本；二者不互称</p></div><span class="fixture-pill">cost_los_relation · contract</span></div>
+          <div class="filter-row"><span>疾病或医院（二选一）</span><span>未选择</span><span>严重程度</span><span>全部</span><b>应用</b><b class="clear">清空</b></div>
+          <div class="metric-grid four-metric"><article class="metric-card"><span>有效费用记录</span><strong>—</strong><small>条</small></article><article class="metric-card"><span>收费中位数</span><strong>—</strong><small>美元</small></article><article class="metric-card"><span>收费 P90</span><strong>—</strong><small>美元</small></article><article class="metric-card"><span>平均成本</span><strong>—</strong><small>美元</small></article></div>
+          <div class="relation-grid"><article class="chart-card"><div class="chart-heading"><div><h3>收费 × 住院时长</h3><span>聚合分组 · 相关不等于因果</span></div><span class="legend-dot blue">点大小 = 记录数</span></div><div class="scatter-plot cost-scatter" role="img" aria-label="收费与住院时长关系散点图的静态示意"><span class="axis-x">平均住院时长（天） →</span><span class="axis-y">平均收费（美元）</span><i class="point p1"></i><i class="point p2"></i><i class="point p3"></i><i class="point p4"></i></div><p class="chart-summary">点来自服务端固定分组；无足够有效点时展示摘要和明细表。</p></article><article class="chart-card"><div class="chart-heading"><div><h3>收费分位数</h3><span>美元</span></div><span class="legend-dot amber">P25–P90</span></div><div class="quantile-bars"><div><span>P25</span><i style="--bar: 28%"></i></div><div><span>P50</span><i style="--bar: 45%"></i></div><div><span>P75</span><i style="--bar: 68%"></i></div><div><span>P90</span><i class="amber-fill" style="--bar: 88%"></i></div></div><table class="mini-table"><caption>点位明细表（示意）</caption><thead><tr><th>分组</th><th>时长</th><th>收费</th></tr></thead><tbody><tr><td>—</td><td>— 天</td><td>— 美元</td></tr><tr><td>—</td><td>— 天</td><td>— 美元</td></tr></tbody></table></article></div>
+        </section>
+
+        <section id="risks" class="artboard" aria-labelledby="risks-title">
+          <div class="section-heading"><div><p class="eyebrow">04 / RISKS · HEATMAP</p><h2 id="risks-title">风险热力</h2><p>群体统计，不构成个人诊断、治疗建议或因果判断</p></div><span class="fixture-pill">age_severity_matrix · contract</span></div>
+          <div class="filter-row"><span>年龄组</span><span>全部</span><span>疾病</span><span>全部</span><b>应用</b><b class="clear">清空</b></div>
+          <div class="metric-grid four-metric"><article class="metric-card"><span>高风险记录数</span><strong>—</strong><small>条</small></article><article class="metric-card"><span>高风险比例</span><strong>—</strong><small>%</small></article><article class="metric-card"><span>平均住院时长</span><strong>—</strong><small>天</small></article><article class="metric-card"><span>平均收费</span><strong>—</strong><small>美元</small></article></div>
+          <div class="relation-grid"><article class="chart-card"><div class="chart-heading"><div><h3>年龄组 × 病情严重程度</h3><span>默认值：病例量 · 条</span></div><span class="legend-dot blue">数值图例</span></div><div class="heatmap" role="img" aria-label="年龄组和病情严重程度热力矩阵的静态示意"><div class="heat-label"></div><div class="heat-label">Minor</div><div class="heat-label">Moderate</div><div class="heat-label">Major</div><div class="heat-label">Extreme</div><div class="heat-label row-label">0–17</div><i></i><i></i><i></i><i></i><div class="heat-label row-label">18–29</div><i></i><i></i><i></i><i></i><div class="heat-label row-label">30–49</div><i></i><i></i><i></i><i></i><div class="heat-label row-label">50–69</div><i></i><i></i><i></i><i></i><div class="heat-label row-label">70+</div><i></i><i></i><i></i><i></i></div><div class="heat-legend"><span>低</span><i></i><i></i><i></i><i></i><span>高（示意）</span></div></article><article class="chart-card"><div class="chart-heading"><div><h3>矩阵事实视图</h3><span>分子 / 分母 / 单位</span></div><span class="legend-dot amber">键盘可读</span></div><table class="mini-table matrix-table"><caption>年龄 × 严重程度（示意）</caption><thead><tr><th>年龄</th><th>严重程度</th><th>值</th><th>单位</th></tr></thead><tbody><tr><td>50–69</td><td>Major</td><td>—</td><td>条</td></tr><tr><td>70+</td><td>Extreme</td><td>—</td><td>条</td></tr></tbody></table><p class="chart-summary">如果改为比例，正式 API 必须提供当前筛选分子和分母。</p></article></div>
+        </section>
+
+        <footer class="prototype-footer">静态原型版本：#105 · 所有数字与关系为示意 · 正式实现遵循 `design-system/yishuyunce/MASTER.md` 和 `VISUALIZATION-CONTRACT.md`。</footer>
+      </main>
+    </div>
+  </body>
+</html>

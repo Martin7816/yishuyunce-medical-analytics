@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.exceptions import MethodNotAllowed
@@ -28,6 +29,18 @@ HOSPITAL_METRIC_KEYS = frozenset(
         "severe_rate",
     }
 )
+COST_FILTER_PARAMETERS = frozenset({"diagnosis_code", "facility_id", "severity"})
+COST_ENTITY_DIMENSIONS = (
+    ("diagnosis_code", "diagnosis"),
+    ("facility_id", "facility"),
+    ("severity", "severity"),
+)
+RISK_FILTER_PARAMETERS = frozenset({"age_group", "diagnosis_code"})
+RISK_BASE_ENTITY = "age=*|diagnosis=*"
+RISK_ENTITY_DIMENSIONS = (
+    ("age_group", "age"),
+    ("diagnosis_code", "diagnosis"),
+)
 
 
 def _ok(data: dict):
@@ -49,7 +62,7 @@ def enforce_read_only_request() -> None:
         )
 
 
-def _reject_unknown(allowed: set[str]) -> None:
+def _reject_unknown(allowed: Iterable[str]) -> None:
     reject_unknown_query_parameters(allowed)
 
 
@@ -64,6 +77,8 @@ def _empty_result(base: dict, filters: dict[str, str]) -> dict:
     result["filters"] = dict(filters)
     result["metrics"] = []
     result["sections"] = []
+    if "insights" in result:
+        result["insights"] = []
     return result
 
 
@@ -99,6 +114,84 @@ def _validate_metric(value: str | None) -> None:
             "The metric value is not supported.",
             {"parameter": "metric"},
         )
+
+
+def _hospital_comparison_section(
+    profiles: list[dict], metric_key: str
+) -> tuple[dict, dict]:
+    """Compose a finite grouped bar from already-published profile metrics."""
+
+    metric_items = []
+    legend = []
+    for index, profile in enumerate(profiles):
+        item = next(
+            (value for value in profile.get("metrics", []) if value.get("key") == metric_key),
+            None,
+        )
+        if item is None:
+            raise InvalidServiceResultError()
+        series_key = f"facility_{index + 1}"
+        metric_items.append(
+            {
+                "key": series_key,
+                "label": profile["title"],
+                "value": item["value"],
+            }
+        )
+        legend.append({"key": series_key, "label": profile["title"], "style": "solid"})
+
+    version = profiles[0]["data_version"]
+    generated_at = profiles[0]["generated_at"]
+    label = next(
+        value["label"]
+        for value in profiles[0].get("metrics", [])
+        if value.get("key") == metric_key
+    )
+    unit = next(
+        value["unit"]
+        for value in profiles[0].get("metrics", [])
+        if value.get("key") == metric_key
+    )
+    section_key = "facility_metric_comparison"
+    summary = {
+        "text": f"选定医疗机构的{label}来自已发布画像，用于并列比较；不表达机构导致结果。",
+        "source_metric_keys": [metric_key],
+        "source_section": section_key,
+        "data_version": version,
+        "generated_at": generated_at,
+        "boundary": "选定医疗机构的已发布住院出院记录汇总",
+        "related_not_causal": True,
+    }
+    section = {
+        "key": section_key,
+        "title": f"选定医疗机构的{label}对照",
+        "type": "grouped_bar",
+        "visual": {
+            "question": f"选定医疗机构的{label}如何对照？",
+            "x_label": "医疗机构",
+            "y_label": f"{label}（{unit}）",
+            "unit": unit,
+            "legend": legend,
+            "tooltip_fields": ["category", "series_label", "value", "unit"],
+            "summary": summary,
+            "fallback": {"type": "table", "columns": ["category", "series_label", "value", "unit"]},
+            "empty": {"title": "暂无机构对照数据", "text": "请调整已发布的医疗机构筛选。"},
+        },
+        "items": [{"category": label, "series": metric_items}],
+    }
+    insight = {
+        "key": "facility_metric_comparison",
+        "title": f"{label}对照",
+        "summary": summary["text"],
+        "level": "info",
+        "source_section": section_key,
+        "source_metric_keys": [metric_key],
+        "data_version": version,
+        "generated_at": generated_at,
+        "boundary": summary["boundary"],
+        "related_not_causal": True,
+    }
+    return section, insight
 
 
 @analytics_bp.get("/api/v1/dashboard/overview")
@@ -156,6 +249,19 @@ def hospitals_index():
         # Comparison is response-only composition of complete snapshots;
         # metrics, ordering, units, and null semantics stay in the snapshots.
         result["comparison"] = profiles
+        comparison_section, comparison_insight = _hospital_comparison_section(
+            profiles, metric or "case_count"
+        )
+        result["sections"] = [
+            section
+            for section in result.get("sections", [])
+            if section.get("key") != "facility_metric_comparison"
+        ] + [comparison_section]
+        result["insights"] = [
+            insight
+            for insight in result.get("insights", [])
+            if insight.get("key") != "facility_metric_comparison"
+        ] + [comparison_insight]
     return _ok(result)
 
 
@@ -201,10 +307,16 @@ def disease_profile(diagnosis_code: str):
     )
 
 
-def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
+def _filtered_snapshot(
+    module: str,
+    base_entity: str,
+    dimensions: tuple[tuple[str, str, str], ...],
+):
+    # Each dimension maps a query parameter and published option to a frozen
+    # entity-key segment. The tuple order is server-owned.
     base = _get(module, base_entity)
-    values = {parameter: query_value(parameter) for parameter in options}
-    for parameter, option_name in options.items():
+    values = {parameter: query_value(parameter) for parameter, _, _ in dimensions}
+    for parameter, option_name, _ in dimensions:
         _validate_option(parameter, values[parameter], base, option_name=option_name)
     selected = {
         parameter: value
@@ -213,35 +325,33 @@ def _filtered_snapshot(module: str, base_entity: str, options: dict[str, str]):
     }
     if not selected:
         return base
-    parts = []
-    for parameter in options:
-        value = selected.get(parameter, "*")
-        parts.append(f"{parameter.replace('_group', '').replace('_type', '')}={value}")
-    entity = "|".join(parts)
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, _, entity_name in dimensions
+    )
     return _get_or_empty(module, entity, base, selected)
 
 
 @analytics_bp.get("/api/v1/cohorts/summary")
 def cohort_summary():
-    allowed = {"age_group", "gender", "admission_type"}
-    _reject_unknown(allowed)
+    dimensions = (
+        ("age_group", "age_group", "age"),
+        ("gender", "gender", "gender"),
+        ("admission_type", "admission_type", "admission"),
+    )
+    _reject_unknown({parameter for parameter, _, _ in dimensions})
     return _ok(
         _filtered_snapshot(
             "cohorts",
             "age=*|gender=*|admission=*",
-            {
-                "age_group": "age_group",
-                "gender": "gender",
-                "admission_type": "admission_type",
-            },
+            dimensions,
         )
     )
 
 
 @analytics_bp.get("/api/v1/costs/overview")
 def cost_overview():
-    allowed = {"diagnosis_code", "facility_id", "severity"}
-    _reject_unknown(allowed)
+    _reject_unknown(COST_FILTER_PARAMETERS)
     diagnosis_code = query_value("diagnosis_code")
     facility_id = query_value("facility_id")
     severity = query_value("severity")
@@ -249,6 +359,7 @@ def cost_overview():
         raise InvalidRequestError(
             "INVALID_QUERY_PARAMETER",
             "diagnosis_code and facility_id are mutually exclusive.",
+            {"parameters": ["diagnosis_code", "facility_id"]},
         )
     # Full whitelists are published by the disease and hospital modules.
     if diagnosis_code is not None:
@@ -268,28 +379,25 @@ def cost_overview():
     base = _get("costs", "diagnosis=*|facility=*|severity=*")
     _validate_option("severity", severity, base)
     selected = {
-        name: value
-        for name, value in (
-            ("diagnosis_code", diagnosis_code),
-            ("facility_id", facility_id),
-            ("severity", severity),
+        parameter: value
+        for parameter, value in (
+            (parameter, query_value(parameter))
+            for parameter, _ in COST_ENTITY_DIMENSIONS
         )
         if value is not None
     }
     if not selected:
         return _ok(base)
-    entity = "diagnosis={}|facility={}|severity={}".format(
-        selected.get("diagnosis_code", "*"),
-        selected.get("facility_id", "*"),
-        selected.get("severity", "*"),
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, entity_name in COST_ENTITY_DIMENSIONS
     )
     return _ok(_get_or_empty("costs", entity, base, selected))
 
 
 @analytics_bp.get("/api/v1/risks/overview")
 def risk_overview():
-    allowed = {"age_group", "diagnosis_code"}
-    _reject_unknown(allowed)
+    _reject_unknown(RISK_FILTER_PARAMETERS)
     age_group = query_value("age_group")
     diagnosis_code = query_value("diagnosis_code")
     if diagnosis_code is not None:
@@ -299,7 +407,7 @@ def risk_overview():
             _get("diseases", "index"),
             option_name="diagnoses",
         )
-    base = _get("risks", "age=*|diagnosis=*")
+    base = _get("risks", RISK_BASE_ENTITY)
     _validate_option("age_group", age_group, base)
     selected = {
         name: value
@@ -311,21 +419,25 @@ def risk_overview():
     }
     if not selected:
         return _ok(base)
-    entity = "age={}|diagnosis={}".format(
-        selected.get("age_group", "*"), selected.get("diagnosis_code", "*")
+    entity = "|".join(
+        f"{entity_name}={selected.get(parameter, '*')}"
+        for parameter, entity_name in RISK_ENTITY_DIMENSIONS
     )
     return _ok(_get_or_empty("risks", entity, base, selected))
 
 
 @analytics_bp.get("/api/v1/payments/overview")
 def payment_overview():
-    allowed = {"payment_type", "age_group"}
-    _reject_unknown(allowed)
+    dimensions = (
+        ("payment_type", "payment_type", "payment"),
+        ("age_group", "age_group", "age"),
+    )
+    _reject_unknown({parameter for parameter, _, _ in dimensions})
     return _ok(
         _filtered_snapshot(
             "payments",
             "payment=*|age=*",
-            {"payment_type": "payment_type", "age_group": "age_group"},
+            dimensions,
         )
     )
 
