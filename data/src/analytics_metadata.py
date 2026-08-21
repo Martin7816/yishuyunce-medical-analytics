@@ -25,9 +25,13 @@ def build_data_version(csv_path: Path, digest: str) -> str:
     """Build a stable version without exposing a local absolute path."""
 
     if csv_path.name == KNOWN_SOURCE_NAME:
-        return f"sparcs_2021_20231012_sha256_{digest}"
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", csv_path.stem).strip("._-")
-    return f"{safe_name or 'sparcs_input'}_sha256_{digest}"
+        version = f"sparcs_2021_20231012_sha256_{digest}"
+    else:
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", csv_path.stem).strip("._-")
+        version = f"{safe_name or 'sparcs_input'}_sha256_{digest}"
+    if any(part.lower() == "fixtures" for part in csv_path.parts):
+        return f"fixture:{version}"
+    return version
 
 
 def normalize_generated_at(value: str | None) -> str:
