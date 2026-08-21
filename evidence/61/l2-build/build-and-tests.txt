@@ -1,0 +1,16 @@
+cd frontend
+npm.cmd run build
+PASS — Vite 8.2.1，621 modules transformed；构建完成。现有 ECharts chunk 超过 500 kB 的提示仅为 bundle warning，不影响构建退出码。
+
+python -m pytest backend/tests data/tests -q
+PASS — 后端与数据测试通过（费用页面联调使用的 API/快照测试包含在现有测试集）。
+
+git diff --check
+PASS
+
+浏览器验收：
+- fixture wildcard success：6 metrics、2 sections、fixture warning；
+- fixture 合法空筛选：保留标题/筛选/版本，0 charts；
+- 后端停止：`HTTP_ERROR` 错误态和“重新加载”按钮出现；
+- real wildcard success：14 metrics、9 sections、0 console error；
+- 1280/390 CSS 视口正文均无横向溢出。

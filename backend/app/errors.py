@@ -31,6 +31,10 @@ class ResultNotReadyError(AppError):
             f"The {resource} has not been published yet.",
         )
 
+class UpstreamServiceError(AppError):
+    def __init__(self, message: str = "The AI service is temporarily unavailable."):
+        super().__init__(503, "UPSTREAM_SERVICE_ERROR", message)
+
 
 class UpstreamServiceError(AppError):
     def __init__(self, message: str = "The AI service is temporarily unavailable."):

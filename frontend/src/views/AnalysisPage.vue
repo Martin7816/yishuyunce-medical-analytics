@@ -21,6 +21,7 @@ let suppressFilterWatch = false
 const remoteOptionsCache = new Map()
 
 const hasActiveFilter = computed(() => Object.values(filters).some(value => value !== '' && value != null))
+const displayedDataVersion = computed(() => data.value?.filters?.data_version || data.value?.data_version || '')
 
 function normalizeOptions(values = []) {
   return values
@@ -46,7 +47,9 @@ function clearActiveRequest() {
 function setLocalOptions(payload) {
   for (const filter of props.config.filters || []) {
     let values = filter.values
-    if (filter.valuesFrom === 'data_version' && payload?.data_version) values = [payload.data_version]
+    if (filter.valuesFrom === 'data_version' && (payload?.data_version || payload?.filters?.data_version)) {
+      values = [payload.filters?.data_version || payload.data_version]
+    }
     if (!filter.remote && !values) values = payload?.options?.[filter.option]
     if (values) optionSets[filter.key] = normalizeOptions(values)
   }
@@ -150,6 +153,12 @@ function updateFilter(key, value) {
   scheduleLoad()
 }
 
+function isFilterDisabled(filter) {
+  const mutuallyExclusive = props.config.mutuallyExclusive || []
+  if (!mutuallyExclusive.includes(filter.key)) return false
+  return mutuallyExclusive.some(key => key !== filter.key && filters[key])
+}
+
 function clearFilters() {
   for (const filter of props.config.filters || []) filters[filter.key] = ''
   scheduleLoad()
@@ -188,9 +197,10 @@ onBeforeUnmount(() => {
         <h1>{{ data?.title || config.title || '医数云策分析模块' }}</h1>
         <p>{{ data?.description || '正在读取统一分析快照。' }}</p>
       </div>
-      <span v-if="data?.data_version" class="version-pill" :title="data.data_version">批次 {{ data.data_version }}</span>
+      <span v-if="displayedDataVersion" class="version-pill" :title="displayedDataVersion">批次 {{ displayedDataVersion }}</span>
     </header>
 
+    <p v-if="config.boundaryNotice" class="warning-note medical-boundary-note" role="note">{{ config.boundaryNotice }}</p>
     <section v-if="config.filters?.length" class="filter-bar" aria-label="分析筛选">
       <label v-for="filter in config.filters" :key="filter.key" :for="`filter-${filter.key}`">
         {{ filter.label }}
@@ -198,16 +208,17 @@ onBeforeUnmount(() => {
           :id="`filter-${filter.key}`"
           :value="filters[filter.key] || ''"
           :aria-label="filter.label"
+          :disabled="isFilterDisabled(filter)"
           @change="updateFilter(filter.key, $event.target.value)"
         >
           <option value="">{{ filter.includeAll === false ? (filter.placeholder || '请选择') : '全部' }}</option>
           <option v-for="item in optionSets[filter.key]" :key="item.value" :value="item.value">{{ item.label }}</option>
         </select>
       </label>
-      <button v-if="hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
+      <button v-if="config.alwaysShowClear || hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
     </section>
     <p v-if="validationMessage" class="filter-notice" role="alert">{{ validationMessage }}</p>
-    <p v-if="data?.data_version?.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
+    <p v-if="displayedDataVersion.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，只用于并行开发与四态验收，不代表真实全量分析结论。</p>
 
     <PageState v-if="state !== 'success' && !validationMessage" :state="state" :error="error" @retry="load" />
     <template v-else-if="state === 'success'">
@@ -236,16 +247,31 @@ onBeforeUnmount(() => {
         </section>
       </template>
       <template v-else>
-        <section class="metric-grid"><MetricCard v-for="item in data.metrics" :key="item.key" :metric="item" /></section>
-        <section class="section-grid">
-          <article v-for="section in data.sections" :key="section.key" class="content-card">
+        <section class="metric-grid">
+          <MetricCard
+            v-for="item in data.metrics"
+            :key="item.key"
+            :metric="item"
+            :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key))"
+          />
+        </section>
+        <section
+          class="section-grid"
+          :class="{
+            'cohort-section-grid': config.layout === 'cohort',
+            'risk-section-grid': config.layout === 'risk',
+            'payment-section-grid': config.layout === 'payments',
+            'quality-section-grid': config.layout === 'quality',
+          }"
+        >
+          <article v-for="section in data.sections" :key="section.key" class="content-card" :class="{ 'section-card-disposition': section.key === 'disposition', 'quality-section-card': config.layout === 'quality' }">
             <h2>{{ section.title }}</h2>
             <AnalyticsChart v-if="section.items?.length" :section="section" />
             <p v-else class="section-empty">当前条件没有可展示的条目。</p>
           </article>
         </section>
       </template>
-      <footer class="data-footer"><span>数据版本：{{ data.data_version }}</span><span>生成时间：{{ data.generated_at }}</span><span>记录统计不等同于患者人数</span></footer>
+      <footer class="data-footer"><span>数据版本：{{ displayedDataVersion }}</span><span>生成时间：{{ data.generated_at }}</span><span>记录统计不等同于患者人数</span></footer>
     </template>
   </div>
 </template>

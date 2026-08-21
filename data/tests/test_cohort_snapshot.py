@@ -39,6 +39,7 @@ def test_independent_cohort_formulas_include_empty_combinations():
     assert aggregates[("50 to 69", "M", "Emergency")]["count"] == 1
     assert aggregates[("18 to 29", "F", "Emergency")]["count"] == 0
     assert aggregates[(None, None, None)]["emergency_yes"] == 1
+    assert aggregates[(None, None, None)]["severity_valid_count"] == 2
     assert aggregates[(None, None, None)]["los"] == [2, 120, 4]
 
 

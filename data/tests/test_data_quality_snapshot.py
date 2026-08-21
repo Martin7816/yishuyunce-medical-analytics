@@ -100,19 +100,15 @@ def test_data_quality_snapshot_has_one_summary_record(data_quality_document):
 
 
 def test_data_quality_metrics_match_frozen_fixture(data_quality_document):
-    actual = {
-        key: item["value"]
-        for key, item in quality_metrics(data_quality_document).items()
-    }
+    metrics = quality_metrics(data_quality_document)
+    actual = {key: metrics[key]["value"] for key in EXPECTED_METRICS}
 
     assert actual == EXPECTED_METRICS
 
 
 def test_data_quality_metrics_use_record_units(data_quality_document):
-    actual = {
-        key: item["unit"]
-        for key, item in quality_metrics(data_quality_document).items()
-    }
+    metrics = quality_metrics(data_quality_document)
+    actual = {key: metrics[key]["unit"] for key in EXPECTED_METRICS}
 
     assert actual == {key: "条" for key in EXPECTED_METRICS}
 

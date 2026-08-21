@@ -43,7 +43,7 @@ def test_hospital_independent_formula_on_edge_fixture():
         "avg_costs": 60.0,
         "emergency_rate": 0.5,
         "surgical_rate": 0.0,
-        "severe_rate": 0.5,
+        "severe_rate": 1.0,
     }
     assert expected["profiles"]["F002"]["metrics"] == {
         "case_count": 1,
@@ -54,6 +54,9 @@ def test_hospital_independent_formula_on_edge_fixture():
         "surgical_rate": 1.0,
         "severe_rate": 1.0,
     }
+    assert expected["profiles"]["F001"]["severity"] == [
+        {"name": "Major", "value": 1}
+    ]
 
 
 def test_pyspark_hospital_snapshot_matches_independent_verifier(tmp_path):

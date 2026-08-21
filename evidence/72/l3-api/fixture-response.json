@@ -1,0 +1,77 @@
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "title": "数据质量与任务管理",
+    "description": "集中展示业务统计字段的可用范围；业务页面只保留与指标相关的简要口径。",
+    "options": {
+      "formula_version": "analytics-denominator-v1",
+      "audit": {
+        "base_population": {
+          "count": 2101588,
+          "filters": {"discharge_year": "2021", "length_of_stay": "parsed"}
+        }
+      }
+    },
+    "metrics": [
+      {"key": "raw_rows", "label": "原始记录", "value": 2101588, "unit": "条"},
+      {"key": "valid_rows", "label": "基础记录总体", "value": 2101588, "unit": "条"},
+      {"key": "severity_valid_rows", "label": "严重程度可判定记录", "value": 2099038, "unit": "条"},
+      {"key": "severity_missing_rows", "label": "严重程度缺失/不可判定", "value": 2550, "unit": "条"},
+      {"key": "out_of_scope_rows", "label": "范围外记录", "value": 0, "unit": "条"},
+      {"key": "money_parse_or_negative", "label": "费用解析/负值异常", "value": 0, "unit": "条"},
+      {"key": "missing_los", "label": "住院时长解析异常", "value": 0, "unit": "条"},
+      {"key": "diagnosis_missing", "label": "诊断缺失", "value": 1634, "unit": "条"},
+      {"key": "los_capped", "label": "住院时长120+截断", "value": 0, "unit": "条"}
+    ],
+    "sections": [
+      {
+        "key": "storage",
+        "title": "存储与服务检查",
+        "type": "status",
+        "items": [
+          {"name": "HDFS", "value": "CHECK_REQUIRED"},
+          {"name": "Hive", "value": "CHECK_REQUIRED"},
+          {"name": "MySQL", "value": "CHECK_REQUIRED"},
+          {"name": "PySpark任务", "value": "FIXTURE_ONLY"}
+        ]
+      },
+      {
+        "key": "field_validity",
+        "title": "业务字段有效记录数",
+        "type": "bar",
+        "items": [
+          {"name": "机构编号", "value": 2090946},
+          {"name": "主诊断", "value": 2099954},
+          {"name": "病情严重程度", "value": 2099038},
+          {"name": "死亡风险", "value": 2099038},
+          {"name": "主要操作", "value": 1525567},
+          {"name": "主支付方式", "value": 2101588},
+          {"name": "收费", "value": 2101588},
+          {"name": "成本", "value": 2101588},
+          {"name": "住院时长", "value": 2101588},
+          {"name": "年龄组", "value": 2101588},
+          {"name": "性别", "value": 2101588},
+          {"name": "入院方式", "value": 2101588},
+          {"name": "急诊标志", "value": 2101588},
+          {"name": "内外科分类", "value": 2101588}
+        ]
+      },
+      {
+        "key": "field_missing",
+        "title": "存在缺失或不可判定的业务字段",
+        "type": "bar",
+        "items": [
+          {"name": "机构编号", "value": 10642},
+          {"name": "主诊断", "value": 1634},
+          {"name": "病情严重程度", "value": 2550},
+          {"name": "死亡风险", "value": 2550},
+          {"name": "主要操作", "value": 576021}
+        ]
+      }
+    ],
+    "data_version": "fixture:sparcs_full_analytics:v1",
+    "generated_at": "2026-08-18T08:00:00.000000Z"
+  },
+  "trace_id": "<runtime-uuid>"
+}

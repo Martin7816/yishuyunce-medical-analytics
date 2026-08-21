@@ -168,7 +168,11 @@ def verify(input_path: Path, snapshot_path: Path) -> dict[str, Any]:
         for key in METRIC_KEYS
     ]
     checks = [
-        check("metric_keys", sorted(METRIC_KEYS), sorted(actual_metrics)),
+        check(
+            "required_metric_keys",
+            [],
+            sorted(set(METRIC_KEYS) - set(actual_metrics)),
+        ),
         check(
             "metric_units",
             {key: "条" for key in METRIC_KEYS},

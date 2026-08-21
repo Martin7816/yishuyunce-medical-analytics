@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-08-19T13:53:00+08:00",
+  "source": "configured MySQL through Flask",
+  "requests": [
+    {
+      "request": "GET /api/v1/risks/overview",
+      "http_status": 200,
+      "code": "OK",
+      "trace_id_matches_header": true,
+      "trace_id": "6f04d95f-c241-49f3-a48d-93f4b19608ae",
+      "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+      "generated_at": "2026-08-19T00:00:00Z",
+      "filters": {},
+      "option_counts": { "age_group": 5, "diagnosis_code": 477 },
+      "metrics": [
+        { "key": "high_risk_count", "value": 700276, "unit": "条" },
+        { "key": "high_risk_rate", "value": 0.3332, "unit": "%" },
+        { "key": "avg_los", "value": 9.38, "unit": "天" },
+        { "key": "avg_charges", "value": 126978.77, "unit": "美元" },
+        { "key": "avg_costs", "value": 37965.4, "unit": "美元" }
+      ],
+      "sections": ["severity", "mortality", "disposition", "age", "diseases"]
+    },
+    {
+      "request": "GET /api/v1/risks/overview?age_group=70%20or%20Older&diagnosis_code=INF002",
+      "http_status": 200,
+      "code": "OK",
+      "trace_id_matches_header": true,
+      "trace_id": "bd3d6c5f-d647-4201-88de-4b36a656ae6f",
+      "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+      "generated_at": "2026-08-19T00:00:00Z",
+      "filters": { "age_group": "70 or Older", "diagnosis_code": "INF002" },
+      "metrics": [
+        { "key": "high_risk_count", "value": 55467, "unit": "条" },
+        { "key": "high_risk_rate", "value": 0.8396, "unit": "%" },
+        { "key": "avg_los", "value": 10.54, "unit": "天" },
+        { "key": "avg_charges", "value": 129219.23, "unit": "美元" },
+        { "key": "avg_costs", "value": 37334.73, "unit": "美元" }
+      ],
+      "sections": ["severity", "mortality", "disposition", "age", "diseases"]
+    }
+  ]
+}

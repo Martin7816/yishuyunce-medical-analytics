@@ -13,7 +13,17 @@ const element = ref(null)
 let chart
 let observer
 let resizeFrame = 0
-const format = (value) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value
+const percentSectionKeys = new Set(['fields'])
+const numberFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+const format = (value) => {
+  if (value == null) return '—'
+  if (typeof value !== 'number') return value
+  if (percentSectionKeys.has(props.section.key)) return `${numberFormat.format(value * 100)}%`
+  return numberFormat.format(value)
+}
+const compactFormat = (value) => typeof value === 'number'
+  ? (percentSectionKeys.has(props.section.key) ? `${numberFormat.format(value * 100)}%` : new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(value))
+  : value
 const isChartType = (type) => chartTypes.has(type)
 const isListType = (type) => listTypes.has(type)
 
@@ -34,12 +44,20 @@ function scheduleResize() {
 function option() {
   const items = props.section.items || []
   if (!isChartType(props.section.type)) return null
-  if (props.section.type === 'pie') return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', radius: ['42%', '70%'], data: items }] }
+  if (props.section.type === 'pie') return { tooltip: { trigger: 'item', valueFormatter: format }, legend: { bottom: 0 }, series: [{ type: 'pie', radius: ['42%', '70%'], data: items }] }
   return {
     animationDuration: 350, grid: { left: 18, right: 34, top: 14, bottom: 22, containLabel: true },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: format },
-    xAxis: { type: 'value', splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
-    yAxis: { type: 'category', inverse: true, data: items.map(item => item.name), axisLabel: { width: 135, overflow: 'truncate' } },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const point = Array.isArray(params) ? params[0] : params
+        if (!point) return ''
+        return `${point.name}<br/>${format(point.value)}`
+      },
+    },
+    xAxis: { type: 'value', axisLabel: { formatter: format }, splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
+    yAxis: { type: 'category', inverse: true, data: items.map(item => item.name), axisLabel: { width: 150, overflow: 'truncate' } },
     series: [{ type: 'bar', data: items.map(item => item.value), barMaxWidth: 20, itemStyle: { color: '#297b7f', borderRadius: [0, 5, 5, 0] } }],
   }
 }
@@ -56,7 +74,7 @@ onBeforeUnmount(() => { observer?.disconnect(); cancelScheduledResize(); chart?.
 </script>
 <template>
   <div v-if="isListType(section.type)" class="status-grid">
-    <div v-for="item in section.items" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>
+    <div v-for="item in section.items" :key="item.name"><span>{{ item.name }}</span><strong>{{ format(item.value) }}</strong></div>
   </div>
   <div v-else-if="isChartType(section.type)" ref="element" class="chart-canvas" role="img" :aria-label="section.title"></div>
   <div v-else class="state-panel"><span class="state-symbol">!</span><h2>暂不支持该图表类型</h2><p>已忽略未在页面契约中登记的 section。</p></div>

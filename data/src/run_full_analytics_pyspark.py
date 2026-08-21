@@ -62,6 +62,10 @@ FIELDS = {
 
 FIELD_ALIASES = {"facility_id": ("Permanent Facility Id", "Facility ID")}
 
+SEVERITY_VALUES = ("Minor", "Moderate", "Major", "Extreme")
+HIGH_RISK_SEVERITY_VALUES = ("Major", "Extreme")
+ANALYTICS_FORMULA_VERSION = "analytics-denominator-v1"
+
 COHORT_MISSING = "__COHORT_MISSING__"
 COHORT_FIELDS = ("age", "gender", "admission")
 COHORT_OPTION_KEYS = {
@@ -239,11 +243,30 @@ def _summary_aggregation_expressions() -> list[Any]:
             "emergency_yes"
         ),
         F.sum(
+            F.when(
+                F.col("emergency").isNotNull()
+                & (F.length(F.col("emergency")) > 0),
+                1,
+            ).otherwise(0)
+        ).alias("emergency_valid_count"),
+        F.sum(
             F.when(F.col("medical_surgical").contains("Surgical"), 1).otherwise(0)
         ).alias("surgical_yes"),
-        F.sum(F.when(F.col("severity").isin("Major", "Extreme"), 1).otherwise(0)).alias(
-            "severe_yes"
-        ),
+        F.sum(
+            F.when(
+                F.col("medical_surgical").isNotNull()
+                & (F.length(F.col("medical_surgical")) > 0),
+                1,
+            ).otherwise(0)
+        ).alias("surgical_valid_count"),
+        F.sum(
+            F.when(
+                F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES), 1
+            ).otherwise(0)
+        ).alias("severe_yes"),
+        F.sum(
+            F.when(F.col("severity").isin(*SEVERITY_VALUES), 1).otherwise(0)
+        ).alias("severity_valid_count"),
     ]
 
 
@@ -259,14 +282,30 @@ def _summary_metrics_from_row(
     count_label: str = "住院出院记录",
 ) -> list[dict[str, Any]]:
     denominator = row["record_count"]
+    severity_denominator = row["severity_valid_count"]
     return [
         metric(count_key, count_label, _rounded(denominator, integer=True), "条"),
         metric("avg_los", "平均住院时长", _rounded(row["avg_los"]), "天"),
         metric("avg_charges", "平均收费", _rounded(row["avg_charges"]), "美元"),
         metric("avg_costs", "平均成本", _rounded(row["avg_costs"]), "美元"),
-        metric("emergency_rate", "急诊率", _rate(row["emergency_yes"], denominator), "%"),
-        metric("surgical_rate", "外科率", _rate(row["surgical_yes"], denominator), "%"),
-        metric("severe_rate", "重症率", _rate(row["severe_yes"], denominator), "%"),
+        metric(
+            "emergency_rate",
+            "急诊率",
+            _rate(row["emergency_yes"], row["emergency_valid_count"]),
+            "%",
+        ),
+        metric(
+            "surgical_rate",
+            "外科率",
+            _rate(row["surgical_yes"], row["surgical_valid_count"]),
+            "%",
+        ),
+        metric(
+            "severe_rate",
+            "重症率",
+            _rate(row["severe_yes"], severity_denominator),
+            "%",
+        ),
     ]
 
 
@@ -352,6 +391,7 @@ def summary_metrics(
     aggregate = frame.agg(*_summary_aggregation_expressions()).first()
 
     denominator = aggregate["record_count"]
+    severity_denominator = aggregate["severity_valid_count"]
     return [
         metric(
             count_key,
@@ -375,22 +415,127 @@ def summary_metrics(
         metric(
             "emergency_rate",
             "急诊率",
-            _rate(aggregate["emergency_yes"], denominator),
+            _rate(
+                aggregate["emergency_yes"],
+                aggregate["emergency_valid_count"],
+            ),
             "%",
         ),
         metric(
             "surgical_rate",
             "外科率",
-            _rate(aggregate["surgical_yes"], denominator),
+            _rate(
+                aggregate["surgical_yes"],
+                aggregate["surgical_valid_count"],
+            ),
             "%",
         ),
         metric(
             "severe_rate",
             "重症率",
-            _rate(aggregate["severe_yes"], denominator),
+            _rate(aggregate["severe_yes"], severity_denominator),
             "%",
         ),
     ]
+
+
+def business_field_profile(frame: DataFrame) -> dict[str, Any]:
+    """Return auditable field-valid counts for fields used by product pages."""
+
+    def nonempty(name: str) -> Any:
+        return F.col(name).isNotNull() & (F.length(F.col(name)) > 0)
+
+    definitions = [
+        ("facility_id", "机构编号", nonempty("facility_id")),
+        (
+            "diagnosis",
+            "主诊断",
+            nonempty("diagnosis_code") & nonempty("diagnosis"),
+        ),
+        ("severity", "病情严重程度", F.col("severity").isin(*SEVERITY_VALUES)),
+        ("mortality", "死亡风险", F.col("mortality").isin(*SEVERITY_VALUES)),
+        ("procedure", "主要操作", nonempty("procedure")),
+        ("payment", "主支付方式", nonempty("payment")),
+        ("charges", "收费", F.col("charges").isNotNull() & (F.col("charges") >= 0)),
+        ("costs", "成本", F.col("costs").isNotNull() & (F.col("costs") >= 0)),
+        ("los", "住院时长", F.col("los").isNotNull() & (F.col("los") >= 0)),
+        ("age", "年龄组", nonempty("age")),
+        ("gender", "性别", nonempty("gender")),
+        ("admission", "入院方式", nonempty("admission")),
+        ("emergency", "急诊标志", nonempty("emergency")),
+        ("medical_surgical", "内外科分类", nonempty("medical_surgical")),
+    ]
+    aggregate = frame.agg(
+        F.count("*").alias("base_record_count"),
+        *[
+            F.sum(F.when(condition, 1).otherwise(0)).alias(key)
+            for key, _, condition in definitions
+        ],
+        F.sum(F.when(F.col("emergency") == "Y", 1).otherwise(0)).alias(
+            "emergency_yes"
+        ),
+        F.sum(
+            F.when(F.col("medical_surgical").contains("Surgical"), 1).otherwise(0)
+        ).alias("surgical_yes"),
+        F.sum(
+            F.when(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES), 1).otherwise(0)
+        ).alias("severe_yes"),
+    ).first()
+    base_count = int(aggregate["base_record_count"] or 0)
+    counts = {key: int(aggregate[key] or 0) for key, _, _ in definitions}
+    valid_items = [
+        {"name": label, "value": counts[key]}
+        for key, label, _ in definitions
+    ]
+    missing_items = [
+        {"name": label, "value": base_count - counts[key]}
+        for key, label, _ in definitions
+        if base_count - counts[key] > 0
+    ]
+    field_audit = {
+        key: {
+            "label": label,
+            "applicable_count": base_count,
+            "valid_count": counts[key],
+            "missing_count": base_count - counts[key],
+        }
+        for key, label, _ in definitions
+    }
+    ratio_audit = {
+        "emergency_rate": {
+            "numerator": int(aggregate["emergency_yes"] or 0),
+            "denominator": counts["emergency"],
+            "formula": "count(emergency=Y) / valid(emergency)",
+        },
+        "surgical_rate": {
+            "numerator": int(aggregate["surgical_yes"] or 0),
+            "denominator": counts["medical_surgical"],
+            "formula": "count(medical_surgical contains Surgical) / valid(medical_surgical)",
+        },
+        "severe_rate": {
+            "numerator": int(aggregate["severe_yes"] or 0),
+            "denominator": counts["severity"],
+            "formula": "count(severity in Major,Extreme) / valid(severity)",
+        },
+    }
+    return {
+        "base_count": base_count,
+        "counts": counts,
+        "valid_items": valid_items,
+        "missing_items": missing_items,
+        "audit": {
+            "formula_version": ANALYTICS_FORMULA_VERSION,
+            "base_population": {
+                "count": base_count,
+                "filters": {
+                    "discharge_year": "2021",
+                    "length_of_stay": "parsed",
+                },
+            },
+            "fields": field_audit,
+            "ratios": ratio_audit,
+        },
+    }
 
 
 def _cohort_dimension_frame(frame: DataFrame) -> DataFrame:
@@ -544,7 +689,7 @@ def _cohort_record(
         "cohorts",
         _cohort_entity_key(values),
         "住院记录群体分析",
-        "有限白名单群体筛选；记录不按患者去重。",
+        "有限白名单群体筛选；记录不按患者去重，重症率按严重程度可判定记录计算。",
         metrics,
         sections,
         options if values == (None, None, None) else None,
@@ -1125,9 +1270,12 @@ def _risk_tuple_from_row(row: Any) -> tuple[str | None, str | None]:
 
 
 def _risk_summary_aggregation_expressions() -> list[Any]:
-    high_risk = F.col("severity").isin("Major", "Extreme")
+    high_risk = F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES)
     return [
         F.count("*").alias("record_count"),
+        F.sum(
+            F.when(F.col("severity").isin(*SEVERITY_VALUES), 1).otherwise(0)
+        ).alias("severity_valid_count"),
         F.sum(F.when(high_risk, 1).otherwise(0)).alias("high_risk_count"),
         F.avg(
             F.when(high_risk & (F.col("los") >= 0), F.col("los"))
@@ -1209,12 +1357,19 @@ def _risk_section_rows(
 
 
 def _risk_metrics_from_row(row: Any) -> list[dict[str, Any]]:
-    denominator = int(row["record_count"] or 0)
-    if denominator == 0:
+    record_count = int(row["record_count"] or 0)
+    if record_count == 0:
         return []
 
+    severity_denominator = int(row["severity_valid_count"] or 0)
     high_risk_count = int(row["high_risk_count"] or 0)
     metrics = [
+        metric(
+            "severity_valid_count",
+            "可判定风险记录",
+            severity_denominator,
+            "条",
+        ),
         metric(
             "high_risk_count",
             "Major/Extreme记录数",
@@ -1224,7 +1379,7 @@ def _risk_metrics_from_row(row: Any) -> list[dict[str, Any]]:
         metric(
             "high_risk_rate",
             "Major/Extreme比例",
-            _rate(high_risk_count, denominator),
+            _rate(high_risk_count, severity_denominator),
             "%",
         ),
     ]
@@ -1288,7 +1443,7 @@ def _risk_record(
         "risks",
         _risk_entity_key(values),
         "病情严重程度与风险分析",
-        "群体统计，不构成诊断、治疗或因果判断。",
+        "Major/Extreme比例以严重程度可判定记录为统计总体；群体统计不构成诊断、治疗或因果判断。",
         metrics,
         sections,
         options if values == (None, None) else None,
@@ -1311,7 +1466,7 @@ def build_risk_records(
         "diagnosis_code_values": diagnosis_values,
     }
     summary_rows = _risk_summary_rows(frame, cube_options)
-    high_risk = frame.where(F.col("severity").isin("Major", "Extreme"))
+    high_risk = frame.where(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES))
     section_rows = {
         "severity": _risk_section_rows(frame, "severity", cube_options, limit=None),
         "mortality": _risk_section_rows(frame, "mortality", cube_options, limit=None),
@@ -1365,14 +1520,34 @@ def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
             "emergency_yes"
         ),
         F.sum(
+            F.when(
+                F.col("emergency").isNotNull()
+                & (F.length(F.col("emergency")) > 0),
+                1,
+            ).otherwise(0)
+        ).alias("emergency_valid_count"),
+        F.sum(
             F.when(F.col("medical_surgical").contains("Surgical"), 1).otherwise(0)
         ).alias("surgical_yes"),
         F.sum(
-            F.when(F.col("severity").isin("Major", "Extreme"), 1).otherwise(0)
+            F.when(
+                F.col("medical_surgical").isNotNull()
+                & (F.length(F.col("medical_surgical")) > 0),
+                1,
+            ).otherwise(0)
+        ).alias("surgical_valid_count"),
+        F.sum(
+            F.when(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES), 1).otherwise(0)
         ).alias("severe_yes"),
+        F.sum(
+            F.when(F.col("severity").isin(*SEVERITY_VALUES), 1).otherwise(0)
+        ).alias("severity_valid_count"),
     )
     aggregate = dashboard_aggregate.first()
     denominator = aggregate["record_count"]
+    emergency_denominator = aggregate["emergency_valid_count"]
+    surgical_denominator = aggregate["surgical_valid_count"]
+    severity_denominator = aggregate["severity_valid_count"]
 
     metrics = [
         metric(
@@ -1403,19 +1578,19 @@ def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
         metric(
             "emergency_rate",
             "急诊率",
-            _rate(aggregate["emergency_yes"], denominator),
+            _rate(aggregate["emergency_yes"], emergency_denominator),
             "%",
         ),
         metric(
             "surgical_rate",
             "外科率",
-            _rate(aggregate["surgical_yes"], denominator),
+            _rate(aggregate["surgical_yes"], surgical_denominator),
             "%",
         ),
         metric(
             "severe_rate",
             "重症率",
-            _rate(aggregate["severe_yes"], denominator),
+            _rate(aggregate["severe_yes"], severity_denominator),
             "%",
         ),
     ]
@@ -1438,7 +1613,7 @@ def build_dashboard_record(frame: DataFrame) -> dict[str, Any]:
         "dashboard",
         "overview",
         "医疗运营驾驶舱",
-        "从住院出院记录观察医疗机构、住院时长、费用与急诊结构。",
+        "从基础住院出院记录观察医疗机构、住院时长、费用与急诊结构；重症率按严重程度可判定记录计算。",
         metrics,
         sections,
     )
@@ -1477,6 +1652,7 @@ def build_data_quality_record(
         F.sum(F.when(los_capped, 1).otherwise(0)).alias("los_capped"),
     )
     quality = quality_summary_frame.collect()[0]
+    field_profile = business_field_profile(frame.where(valid_record))
     return record(
         "data_quality",
         "summary",
@@ -1486,8 +1662,21 @@ def build_data_quality_record(
             metric("raw_rows", "原始记录", raw_count, "条"),
             metric(
                 "valid_rows",
-                "纳入分析记录",
+                "基础记录总体",
                 _rounded(quality["valid_rows"], integer=True),
+                "条",
+            ),
+            metric(
+                "severity_valid_rows",
+                "严重程度可判定记录",
+                field_profile["counts"]["severity"],
+                "条",
+            ),
+            metric(
+                "severity_missing_rows",
+                "严重程度缺失/不可判定",
+                field_profile["base_count"]
+                - field_profile["counts"]["severity"],
                 "条",
             ),
             metric(
@@ -1524,7 +1713,7 @@ def build_data_quality_record(
         [
             section(
                 "storage",
-                "存储与任务状态",
+                "存储与服务检查",
                 [
                     {"name": "HDFS", "value": "CHECK_REQUIRED"},
                     {"name": "Hive", "value": "CHECK_REQUIRED"},
@@ -1532,8 +1721,22 @@ def build_data_quality_record(
                     {"name": "PySpark任务", "value": execution_status},
                 ],
                 "status",
-            )
+            ),
+            section(
+                "field_validity",
+                "业务字段有效记录数",
+                field_profile["valid_items"],
+            ),
+            section(
+                "field_missing",
+                "存在缺失或不可判定的业务字段",
+                field_profile["missing_items"],
+            ),
         ],
+        {
+            "formula_version": field_profile["audit"]["formula_version"],
+            "audit": field_profile["audit"],
+        },
     )
 
 
@@ -1582,7 +1785,7 @@ def _legacy_build_records(
                 "hospitals",
                 f"profile:{option['value']}",
                 option["label"],
-                "医疗机构运营画像。",
+                "医疗机构运营画像；重症率按严重程度可判定记录计算。",
                 summary_metrics(
                     subset,
                     count_key="case_count",
@@ -1598,6 +1801,11 @@ def _legacy_build_records(
                         "medical_surgical",
                         "内外科结构",
                         rows(subset, "medical_surgical"),
+                    ),
+                    section(
+                        "severity",
+                        "病情严重程度",
+                        rows(subset, "severity", limit=None),
                     ),
                 ],
             )
@@ -1630,7 +1838,7 @@ def _legacy_build_records(
                 "diseases",
                 f"profile:{option['value']}",
                 option["label"],
-                "该诊断类别的住院出院记录群体画像。",
+                "该诊断类别的住院出院记录群体画像；重症率按严重程度可判定记录计算。",
                 summary_metrics(subset),
                 [
                     section("age", "年龄结构", rows(subset, "age")),
@@ -1662,7 +1870,7 @@ def _legacy_build_records(
             "cohorts",
             "age=*|gender=*|admission=*",
             "住院记录群体分析",
-            "有限白名单群体筛选；记录不按患者去重。",
+            "有限白名单群体筛选；记录不按患者去重，重症率按严重程度可判定记录计算。",
             common,
             [
                 section("diseases", "主要疾病", rows(valid, "diagnosis")),
@@ -1754,7 +1962,7 @@ def _legacy_build_records(
         )
     )
 
-    high_risk = valid.where(F.col("severity").isin("Major", "Extreme"))
+    high_risk = valid.where(F.col("severity").isin(*HIGH_RISK_SEVERITY_VALUES))
     records.append(
         record(
             "risks",
@@ -1867,9 +2075,14 @@ def build_records(
         & F.col("los").isNotNull()
     )
     cost_frame = scoped.where(F.col("valid_money"))
+    valid_diagnosis = scoped.where(
+        (F.length(F.col("diagnosis_code")) > 0)
+        & (F.length(F.col("diagnosis")) > 0)
+    )
     overall = {
-        name: rows(scoped, name, limit=None)
-        for name in ("age", "diagnosis", "severity")
+        "age": rows(scoped, "age", limit=None),
+        "severity": rows(scoped, "severity", limit=None),
+        "diagnosis": rows(valid_diagnosis, "diagnosis", limit=None),
     }
 
     def option_values(name: str) -> list[str]:
@@ -1916,6 +2129,7 @@ def build_records(
     )
     facility_diseases = grouped_rows(scoped, "facility_id", "diagnosis", limit=5)
     facility_types = grouped_rows(scoped, "facility_id", "medical_surgical")
+    facility_severities = grouped_rows(scoped, "facility_id", "severity")
     records.append(
         record(
             "hospitals",
@@ -1934,17 +2148,18 @@ def build_records(
                 "hospitals",
                 f"profile:{facility_id}",
                 option["label"],
-                "医疗机构运营画像。",
+                "医疗机构运营画像；重症率按严重程度可判定记录计算。",
                 facility_summaries.get(facility_id, []),
                 [
                     section("diseases", "主要疾病 TOP5", facility_diseases.get(facility_id, [])),
                     section("medical_surgical", "内外科结构", facility_types.get(facility_id, [])),
+                    section("severity", "病情严重程度", facility_severities.get(facility_id, [])),
                 ],
             )
         )
 
     diagnosis_options_frame = (
-        scoped.where(F.length(F.col("diagnosis_code")) > 0)
+        valid_diagnosis
         .groupBy("diagnosis_code")
         .agg(
             F.min(
@@ -1958,13 +2173,13 @@ def build_records(
         {"value": row.diagnosis_code, "label": row.diagnosis or row.diagnosis_code}
         for row in diagnosis_options_frame.orderBy("diagnosis_code").collect()
     ]
-    diagnosis_summaries = grouped_summary_metrics(scoped, "diagnosis_code")
-    diagnosis_ages = grouped_rows(scoped, "diagnosis_code", "age")
-    diagnosis_genders = grouped_rows(scoped, "diagnosis_code", "gender")
-    diagnosis_severities = grouped_rows(scoped, "diagnosis_code", "severity")
-    diagnosis_mortality = grouped_rows(scoped, "diagnosis_code", "mortality")
-    diagnosis_procedures = grouped_rows(scoped, "diagnosis_code", "procedure", limit=5)
-    diagnosis_facilities = grouped_rows(scoped, "diagnosis_code", "facility", limit=5)
+    diagnosis_summaries = grouped_summary_metrics(valid_diagnosis, "diagnosis_code")
+    diagnosis_ages = grouped_rows(valid_diagnosis, "diagnosis_code", "age")
+    diagnosis_genders = grouped_rows(valid_diagnosis, "diagnosis_code", "gender")
+    diagnosis_severities = grouped_rows(valid_diagnosis, "diagnosis_code", "severity")
+    diagnosis_mortality = grouped_rows(valid_diagnosis, "diagnosis_code", "mortality")
+    diagnosis_procedures = grouped_rows(valid_diagnosis, "diagnosis_code", "procedure", limit=5)
+    diagnosis_facilities = grouped_rows(valid_diagnosis, "diagnosis_code", "facility", limit=5)
     records.append(
         record(
             "diseases",
@@ -1983,7 +2198,7 @@ def build_records(
                 "diseases",
                 f"profile:{diagnosis_code}",
                 option["label"],
-                "该诊断类别的住院出院记录群体画像。",
+                "该诊断类别的住院出院记录群体画像；重症率按严重程度可判定记录计算。",
                 diagnosis_summaries[diagnosis_code],
                 [
                     section("age", "年龄结构", diagnosis_ages.get(diagnosis_code, [])),

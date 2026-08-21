@@ -584,3 +584,19 @@ generated_at_match=true
 上述冻结交接包已由 `wisxn` 分别发布到 #72 和 #73：#72 评论时间为 `2026-08-20T13:24:30Z`，#73 评论时间为 `2026-08-20T13:25:09Z`。两条评论均包含字段、枚举、真实批次、状态语义和 fixture/Mock 边界；#72、#73 当前均已关闭。
 
 第十一步状态：**PASS**。D-07 已完成。#71 仍需等待共享分支合入 `main`，并由维护者在 #70 发布 #71 的独立 Resolution 后才能关闭。
+
+## 18. 合入 main 前的契约同步
+
+2026-08-21 将最新 `origin/main` 合入共享分支时，`data/src/run_full_analytics_pyspark.py` 与 #102 已合入的业务字段分母审计发生内容冲突。最终保留 #71 的七项必需指标、真实 MySQL 状态参数和独立标准库核对，同时接纳公共契约新增的 `severity_valid_rows`、`severity_missing_rows`、`field_validity`、`field_missing` 和 `options.audit`。#71 核对器继续逐项验证七项冻结质量指标，并允许公共契约以后增加不重名的新指标。
+
+同步后验证：
+
+```text
+python -m pytest data/tests/test_data_quality_snapshot.py -q
+9 passed in 17.64s
+
+python -m pytest data/tests/test_data_quality_snapshot.py data/tests/test_snapshot_publisher.py data/tests/test_hospital_snapshot.py data/tests/test_disease_snapshot.py data/tests/test_cohort_snapshot.py data/tests/test_risk_snapshot.py -q
+27 passed in 83.98s
+```
+
+后端测试在当前 `.venv` 与 `.venv-1` 中均因未安装 Flask 而无法启动；本次同步未修改 `main` 已有后端实现。最终状态：**READY_TO_MERGE**。

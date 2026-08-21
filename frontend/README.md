@@ -1,56 +1,81 @@
 # 医数云策前端
 
-前端是终局产品的十路由壳：八个分析页共用 `AnalysisPage`，模型和 AI 保留各自的必要交互。页面只请求 Flask 的统一 API，不在浏览器连接数据库、聚合、排序或执行后端返回的 ECharts/HTML/JavaScript。
+前端为住院运营分析提供十个页面入口。八个分析页复用 `AnalysisPage`、`MetricCard`、`AnalyticsChart` 和 `PageState`；高费用记录分类与 AI 问答保留各自需要的表单和结果区。
 
-## 路由
+前端只请求 Flask API，不连接数据库，不在浏览器中聚合、排序或截断正式结果，也不执行接口返回的 HTML、JavaScript 或任意 ECharts 配置。
+
+## 页面
 
 | 路由 | 页面 |
 |---|---|
 | `/overview` | 运营驾驶舱 |
 | `/hospitals` | 医院运营分析 |
 | `/diseases` | 疾病画像分析 |
-| `/cohorts` | 住院群体分析 |
-| `/costs` | 费用成本分析 |
-| `/risks` | 病情风险分析 |
+| `/cohorts` | 住院记录群体分析 |
+| `/costs` | 费用与成本分析 |
+| `/risks` | 病情严重程度与风险分析 |
 | `/payments` | 支付方式分析 |
-| `/data-quality` | 数据质量管理 |
-| `/model` | 高费用分类模型 |
+| `/data-quality` | 数据质量 |
+| `/model` | 高费用记录分类 |
 | `/assistant` | AI 问答与洞察报告 |
 
-## 启动
+## 启动流程
 
-在项目根目录启动联调快照后，再启动前端：
+### 1. 启动 Flask
+
+在仓库根目录执行：
 
 ```powershell
-$env:ANALYTICS_DATA_SOURCE='fixture'
-python backend/run.py
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+Copy-Item backend\.env.example backend\.env
+.\.venv\Scripts\python.exe backend\run.py
+```
 
+默认配置使用版本以 `fixture:` 开头的联调快照。Flask 监听 `http://127.0.0.1:5000`。
+
+### 2. 启动 Vite
+
+另开 PowerShell：
+
+```powershell
 cd frontend
 npm ci
 npm run dev
 ```
 
-Vite 默认把 `/api` 代理到 `http://127.0.0.1:5000`。跨主机或同源部署时，可在未提交的 `frontend/.env` 设置 `VITE_API_BASE_URL`。
+访问 `http://127.0.0.1:5173/overview`。Vite 将 `/api` 转发到 `http://127.0.0.1:5000`。跨主机或同源部署时，在未提交的 `frontend/.env` 中设置：
 
-## 页面状态与事实边界
+```dotenv
+VITE_API_BASE_URL=<Flask 对外地址>
+```
 
-公共分析页只维护 `loading`、`success`、`empty`、`error` 四种互斥状态。加载新筛选或切换路由时会清除旧数据；错误态显示稳定提示、错误类型和服务返回的追踪编号，并可点击重试。
+## 页面状态
 
-使用 `data_version` 以 `fixture:` 开头的结果时，页面会显示固定联调快照警告。fixture 只能用于并行开发、图表和四态验收，不能作为真实全量分析、模型效果或最终验收结论。
+公共分析页使用五个可验证行为：
 
-页面图表只接受冻结契约中的 `bar`、`pie`、`table`、`status` 四种 section 类型；`%` 指标按统一约定把 0—1 比例乘 100 展示，金额和记录数保留服务返回单位。
+- `loading`：请求进行中，旧指标与旧图表被清除；
+- `success`：展示接口返回的标题、说明、指标、分区、单位和版本；
+- `empty`：合法筛选没有记录，保留筛选与版本信息；
+- `error`：显示稳定错误提示、错误类型、追踪编号和重试按钮；
+- `retry`：依赖恢复后重新请求。
 
-## 四态复现
+`fixture:` 数据只用于开发联调和页面状态验证，页面会显示固定提示。真实展示需要 MySQL 分析快照、真实数据版本和对应验收证据。
 
-- `loading`：打开任一分析路由，在 API 响应完成前观察加载面板；切换筛选时也会重新进入该状态。
-- `success`：使用 fixture 后端打开 `/overview` 或其他已有快照的路由。
-- `empty`：进入 `/cohorts`，选择合法但尚未发布聚合的筛选组合（例如年龄组 `50 to 69`），页面保留版本信息并显示空结果面板。
-- `error`：让 Flask 暂停或以缺少分析数据源的配置启动，页面显示错误面板、错误类型和重试按钮；恢复 fixture 后点击重试即可重新加载。
+## 渲染约束
 
-正式验收必须替换为真实快照、MySQL 和 API 证据；本 README 不把 fixture 或本地页面运行误写成真实链路已通过。
+- 图表只接受 `bar`、`pie`、`table` 和 `status`；
+- `%` 指标把接口的 0—1 比例乘 100 显示；
+- 金额与记录数使用接口提供的单位；
+- 筛选枚举来自 API `options`；
+- 快速切换筛选时，较早请求的响应不能覆盖最后一次选择；
+- 页面正文在桌面和移动端不产生横向溢出，顶部导航可在自身区域横向滚动。
 
 ## 构建
 
 ```powershell
+npm ci
 npm run build
 ```
+
+构建产物位于 `frontend/dist`。该目录由构建生成，不作为项目事实来源。

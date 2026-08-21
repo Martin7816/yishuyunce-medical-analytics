@@ -91,10 +91,14 @@ def empty_profile() -> dict[str, Any]:
         "charges": [],
         "costs": [],
         "emergency_yes": 0,
+        "emergency_valid_count": 0,
         "surgical_yes": 0,
+        "surgical_valid_count": 0,
         "severe_yes": 0,
+        "severity_valid_count": 0,
         "diseases": Counter(),
         "medical_surgical": Counter(),
+        "severity": Counter(),
     }
 
 
@@ -133,8 +137,16 @@ def summarize_stream(
         if costs is not None:
             profile["costs"].append(costs)
         profile["emergency_yes"] += text(row, "emergency") == "Y"
+        profile["emergency_valid_count"] += bool(text(row, "emergency"))
         profile["surgical_yes"] += "Surgical" in text(row, "medical_surgical")
-        profile["severe_yes"] += text(row, "severity") in {"Major", "Extreme"}
+        profile["surgical_valid_count"] += bool(text(row, "medical_surgical"))
+        severity = text(row, "severity")
+        profile["severe_yes"] += severity in {"Major", "Extreme"}
+        profile["severity_valid_count"] += severity in {
+            "Minor", "Moderate", "Major", "Extreme"
+        }
+        if severity:
+            profile["severity"][severity] += 1
 
         diagnosis = text(row, "diagnosis")
         if diagnosis:
@@ -167,9 +179,15 @@ def summarize_stream(
                 if profile["costs"]
                 else None
             ),
-            "emergency_rate": rate(profile["emergency_yes"], profile["count"]),
-            "surgical_rate": rate(profile["surgical_yes"], profile["count"]),
-            "severe_rate": rate(profile["severe_yes"], profile["count"]),
+            "emergency_rate": rate(
+                profile["emergency_yes"], profile["emergency_valid_count"]
+            ),
+            "surgical_rate": rate(
+                profile["surgical_yes"], profile["surgical_valid_count"]
+            ),
+            "severe_rate": rate(
+                profile["severe_yes"], profile["severity_valid_count"]
+            ),
         }
 
     ranking = sorted(
@@ -194,6 +212,7 @@ def summarize_stream(
                 "metrics": profile_metrics(profile),
                 "diseases": ordered(profile["diseases"], 5),
                 "medical_surgical": ordered(profile["medical_surgical"]),
+                "severity": ordered(profile["severity"]),
             }
             for facility_id, profile in profiles.items()
         },
@@ -265,6 +284,8 @@ def compare(
             raise AssertionError(f"医院 {facility_id} 主要疾病 TOP5 不一致")
         if actual_sections.get("medical_surgical") != profile_expected["medical_surgical"]:
             raise AssertionError(f"医院 {facility_id} 内外科结构不一致")
+        if actual_sections.get("severity") != profile_expected["severity"]:
+            raise AssertionError(f"医院 {facility_id} 病情严重程度不一致")
 
     return {
         "status": "PASS",

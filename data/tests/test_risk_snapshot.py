@@ -37,14 +37,16 @@ def test_independent_risk_formula_includes_empty_combinations():
     aggregates = expected["aggregates"]
     assert len(aggregates) == 12
     assert aggregates[(None, None)]["count"] == 3
+    assert aggregates[(None, None)]["severity_valid_count"] == 2
     assert aggregates[(None, None)]["high_risk_count"] == 2
     assert aggregates[("0 to 17", "RSP009")]["high_risk_count"] == 1
     assert aggregates[("50 to 69", "END003")]["count"] == 0
 
     wildcard = expected_payload((None, None), aggregates[(None, None)], expected["options"])
     assert wildcard["metrics"] == [
+        {"key": "severity_valid_count", "label": "可判定风险记录", "value": 2, "unit": "条"},
         {"key": "high_risk_count", "label": "Major/Extreme记录数", "value": 2, "unit": "条"},
-        {"key": "high_risk_rate", "label": "Major/Extreme比例", "value": 0.6667, "unit": "%"},
+        {"key": "high_risk_rate", "label": "Major/Extreme比例", "value": 1.0, "unit": "%"},
         {"key": "avg_los", "label": "高风险平均住院时长", "value": 61.0, "unit": "天"},
         {"key": "avg_charges", "label": "高风险平均收费", "value": 100.0, "unit": "美元"},
         {"key": "avg_costs", "label": "高风险平均成本", "value": 30.0, "unit": "美元"},
@@ -110,9 +112,47 @@ def test_pyspark_risk_snapshot_matches_independent_verifier(tmp_path):
     assert result["status"] == "PASS"
     assert result["risk_key_count"] == 12
     assert result["empty_combination_count"] == 4
+    assert result["wildcard_severity_valid_count"] == 2
     assert result["wildcard_high_risk_count"] == 2
 
     document = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    dashboard = next(
+        record
+        for record in document["records"]
+        if record["module_key"] == "dashboard"
+    )
+    dashboard_metrics = {
+        item["key"]: item["value"] for item in dashboard["payload"]["metrics"]
+    }
+    assert dashboard_metrics["record_count"] == 3
+    assert dashboard_metrics["severe_rate"] == 1.0
+
+    quality = next(
+        record
+        for record in document["records"]
+        if record["module_key"] == "data_quality"
+    )
+    quality_metrics = {
+        item["key"]: item["value"] for item in quality["payload"]["metrics"]
+    }
+    assert quality_metrics["valid_rows"] == 3
+    assert quality_metrics["severity_valid_rows"] == 2
+    assert quality_metrics["severity_missing_rows"] == 1
+    quality_audit = quality["payload"]["options"]["audit"]
+    assert quality_audit["formula_version"] == "analytics-denominator-v1"
+    assert quality_audit["base_population"]["count"] == 3
+    assert quality_audit["fields"]["severity"] == {
+        "label": "病情严重程度",
+        "applicable_count": 3,
+        "valid_count": 2,
+        "missing_count": 1,
+    }
+    assert quality_audit["ratios"]["severe_rate"] == {
+        "numerator": 2,
+        "denominator": 2,
+        "formula": "count(severity in Major,Extreme) / valid(severity)",
+    }
+
     risk_records = {
         record["entity_key"]: record
         for record in document["records"]
@@ -125,6 +165,7 @@ def test_pyspark_risk_snapshot_matches_independent_verifier(tmp_path):
     }
     assert risk_records["age=50 to 69|diagnosis=END003"]["payload"]["metrics"] == []
     assert [item["key"] for item in risk_records["age=*|diagnosis=*"]["payload"]["metrics"]] == [
+        "severity_valid_count",
         "high_risk_count",
         "high_risk_rate",
         "avg_los",

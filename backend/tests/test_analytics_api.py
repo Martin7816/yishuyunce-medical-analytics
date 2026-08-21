@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -46,6 +48,251 @@ def test_all_read_endpoints_share_envelope_and_version():
         assert response.headers["X-Trace-ID"] == body["trace_id"]
         versions.add(body["data"]["data_version"])
     assert versions == {"fixture:sparcs_full_analytics:v1"}
+
+
+def test_risk_snapshot_exposes_frozen_metrics_and_sections():
+    response = fixture_app().test_client().get('/api/v1/risks/overview')
+
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    assert data['data_version'] == 'fixture:sparcs_full_analytics:v1'
+    assert data['options']['age_group'] == [
+        '0 to 17',
+        '18 to 29',
+        '30 to 49',
+        '50 to 69',
+        '70 or Older',
+    ]
+    assert data['options']['diagnosis_code'] == [
+        {'value': 'NVS005', 'label': 'HEART FAILURE'},
+        {
+            'value': 'INF012',
+            'label': 'CORONAVIRUS DISEASE 2019 (COVID-19)',
+        },
+    ]
+    assert [metric['key'] for metric in data['metrics']] == [
+        'severity_valid_count',
+        'high_risk_count',
+        'high_risk_rate',
+        'avg_los',
+        'avg_charges',
+        'avg_costs',
+    ]
+    metrics = {metric['key']: metric['value'] for metric in data['metrics']}
+    assert metrics['severity_valid_count'] == 2099038
+    assert metrics['high_risk_rate'] == 0.3336
+    assert [section['key'] for section in data['sections']] == [
+        'severity',
+        'mortality',
+        'disposition',
+        'age',
+        'diseases',
+    ]
+    assert len(data['sections'][-1]['items']) == 10
+    assert data['sections'][-1]['title'] == '高风险疾病 TOP10'
+
+
+def test_data_quality_exposes_business_field_denominator_evidence():
+    response = fixture_app().test_client().get('/api/v1/data-quality/summary')
+
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    metrics = {metric['key']: metric['value'] for metric in data['metrics']}
+    assert metrics['valid_rows'] == 2101588
+    assert metrics['severity_valid_rows'] == 2099038
+    assert metrics['severity_missing_rows'] == 2550
+    assert metrics['severity_valid_rows'] + metrics['severity_missing_rows'] == metrics['valid_rows']
+    audit = data['options']['audit']
+    assert audit['formula_version'] == 'analytics-denominator-v1'
+    assert audit['base_population']['count'] == metrics['valid_rows']
+    assert audit['base_population']['filters'] == {
+        'discharge_year': '2021',
+        'length_of_stay': 'parsed',
+    }
+    assert audit['fields']['severity']['applicable_count'] == metrics['valid_rows']
+    assert audit['fields']['severity']['valid_count'] == metrics['severity_valid_rows']
+    assert audit['fields']['severity']['missing_count'] == metrics['severity_missing_rows']
+    assert audit['ratios']['severe_rate']['numerator'] == 700276
+    assert audit['ratios']['severe_rate']['denominator'] == 2099038
+    assert audit['ratios']['emergency_rate']['denominator'] == 2101588
+    assert audit['ratios']['surgical_rate']['denominator'] == 2101588
+    assert 0 <= audit['ratios']['emergency_rate']['numerator'] <= 2101588
+    assert 0 <= audit['ratios']['surgical_rate']['numerator'] <= 2101588
+    sections = {section['key']: section['items'] for section in data['sections']}
+    assert {'field_validity', 'field_missing'} <= set(sections)
+    missing = {item['name']: item['value'] for item in sections['field_missing']}
+    assert missing['机构编号'] == 10642
+    assert missing['主要操作'] == 576021
+
+
+class RecordingRiskRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / 'app'
+            / 'fixtures'
+            / 'analytics_snapshot_success.json'
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+        self.base_record = self.delegate.fetch('risks', 'age=*|diagnosis=*')
+        self.calls = []
+
+    def fetch(self, module_key, entity_key):
+        self.calls.append((module_key, entity_key))
+        if module_key != 'risks' or entity_key == 'age=*|diagnosis=*':
+            return self.delegate.fetch(module_key, entity_key)
+
+        age, diagnosis = (
+            segment.split('=', 1)[1]
+            for segment in entity_key.split('|')
+        )
+        filters = {}
+        if age != '*':
+            filters['age_group'] = age
+        if diagnosis != '*':
+            filters['diagnosis_code'] = diagnosis
+        record = deepcopy(self.base_record)
+        record['payload']['filters'] = filters
+        return record
+
+
+@pytest.mark.parametrize(
+    ('query', 'expected_filters', 'expected_entity', 'expected_calls'),
+    [
+        (
+            'age_group=50%20to%2069',
+            {'age_group': '50 to 69'},
+            'age=50 to 69|diagnosis=*',
+            [
+                ('risks', 'age=*|diagnosis=*'),
+                ('risks', 'age=50 to 69|diagnosis=*'),
+            ],
+        ),
+        (
+            'diagnosis_code=NVS005',
+            {'diagnosis_code': 'NVS005'},
+            'age=*|diagnosis=NVS005',
+            [
+                ('diseases', 'index'),
+                ('risks', 'age=*|diagnosis=*'),
+                ('risks', 'age=*|diagnosis=NVS005'),
+            ],
+        ),
+        (
+            'diagnosis_code=NVS005&age_group=50%20to%2069',
+            {'age_group': '50 to 69', 'diagnosis_code': 'NVS005'},
+            'age=50 to 69|diagnosis=NVS005',
+            [
+                ('diseases', 'index'),
+                ('risks', 'age=*|diagnosis=*'),
+                ('risks', 'age=50 to 69|diagnosis=NVS005'),
+            ],
+        ),
+    ],
+)
+def test_risk_filters_use_service_seam_and_frozen_entity_order(
+    query, expected_filters, expected_entity, expected_calls
+):
+    repository = RecordingRiskRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        f'/api/v1/risks/overview?{query}'
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    assert data['filters'] == expected_filters
+    assert data['metrics'] == repository.base_record['payload']['metrics']
+    assert data['sections'] == repository.base_record['payload']['sections']
+    assert data['data_version'] == 'fixture:sparcs_full_analytics:v1'
+    assert repository.calls == expected_calls
+    assert repository.calls[-1][1] == expected_entity
+
+
+@pytest.mark.parametrize(
+    ('query', 'details'),
+    [
+        ('sql=select', {'parameters': ['sql']}),
+        ('age_group=Unknown', {'parameter': 'age_group'}),
+        ('diagnosis_code=UNKNOWN', {'parameter': 'diagnosis_code'}),
+        (
+            'age_group=50%20to%2069&age_group=70%20or%20Older',
+            {'parameters': ['age_group']},
+        ),
+        (
+            'diagnosis_code=NVS005&diagnosis_code=INF012',
+            {'parameters': ['diagnosis_code']},
+        ),
+    ],
+)
+def test_risk_filters_reject_unknown_invalid_and_repeated_values(query, details):
+    response = fixture_app().test_client().get(
+        f'/api/v1/risks/overview?{query}'
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()['code'] == 'INVALID_QUERY_PARAMETER'
+    assert response.get_json()['details'] == details
+    assert 'UNKNOWN' not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ('error', 'status', 'code'),
+    [
+        (ResultNotReadyError(), 503, 'RESULT_NOT_READY'),
+        (DatabaseUnavailableError(), 503, 'DATABASE_UNAVAILABLE'),
+        (InvalidServiceResultError(), 500, 'SERVICE_RESULT_INVALID'),
+    ],
+)
+def test_risk_base_dependency_failures_keep_stable_public_errors(
+    error, status, code
+):
+    class RaisingRepository:
+        def fetch(self, module_key, entity_key):
+            assert (module_key, entity_key) == (
+                'risks',
+                'age=*|diagnosis=*',
+            )
+            raise error
+
+    response = fixture_app(analytics_repository=RaisingRepository()).test_client().get(
+        '/api/v1/risks/overview'
+    )
+
+    assert response.status_code == status
+    assert response.get_json()['code'] == code
+    assert 'age=*|diagnosis=*' not in response.get_data(as_text=True)
+
+
+def test_risk_valid_unpublished_combination_returns_empty_snapshot():
+    fixture_path = (
+        Path(__file__).resolve().parents[1]
+        / 'app'
+        / 'fixtures'
+        / 'analytics_snapshot_success.json'
+    )
+    delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+
+    class MissingRiskCombinationRepository:
+        def fetch(self, module_key, entity_key):
+            if module_key == 'risks' and entity_key != 'age=*|diagnosis=*':
+                raise ResultNotReadyError()
+            return delegate.fetch(module_key, entity_key)
+
+    response = fixture_app(
+        analytics_repository=MissingRiskCombinationRepository()
+    ).test_client().get(
+        '/api/v1/risks/overview?diagnosis_code=NVS005&age_group=50%20to%2069'
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()['data']
+    assert data['filters'] == {
+        'age_group': '50 to 69',
+        'diagnosis_code': 'NVS005',
+    }
+    assert data['metrics'] == []
+    assert data['sections'] == []
+    assert data['data_version'] == 'fixture:sparcs_full_analytics:v1'
 
 
 def test_hospital_comparison_is_server_composed():
@@ -277,6 +524,69 @@ def test_mysql_payload_json_damage_is_a_service_result_error(monkeypatch):
     assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
 
 
+def test_mysql_adapter_reads_cost_entity_with_bound_parameters(monkeypatch):
+    import pymysql
+
+    fixture_path = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "fixtures"
+        / "analytics_snapshot_success.json"
+    )
+    document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    cost = next(
+        record
+        for record in document["records"]
+        if record["module_key"] == "costs"
+    )
+    entity = "diagnosis=NVS005|facility=*|severity=Major"
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params):
+            self.query = query
+            self.params = params
+
+        def fetchone(self):
+            return {
+                "payload_json": json.dumps(cost["payload"]),
+                "data_version": document["data_version"],
+                "generated_at": document["generated_at"],
+            }
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self):
+            return None
+
+    connection = Connection()
+    monkeypatch.setattr(pymysql, "connect", lambda **kwargs: connection)
+    repository = MySQLAnalyticsSnapshotRepository(
+        {
+            "MYSQL_HOST": "db",
+            "MYSQL_USER": "reader",
+            "MYSQL_DATABASE": "analytics",
+        }
+    )
+
+    record = repository.fetch("costs", entity)
+
+    assert record["payload"] == cost["payload"]
+    assert connection.cursor_instance.params == ("costs", entity)
+    assert "module_key" in connection.cursor_instance.query
+    assert "entity_key" in connection.cursor_instance.query
+
+
 def test_unknown_and_non_whitelisted_filters_are_rejected():
     client = fixture_app().test_client()
     assert client.get("/api/v1/cohorts/summary?sql=select").status_code == 400
@@ -364,6 +674,174 @@ def test_cost_dimensions_are_mutually_exclusive():
         "/api/v1/costs/overview?diagnosis_code=NVS005&facility_id=1"
     )
     assert response.status_code == 400
+    assert response.get_json()["details"] == {
+        "parameters": ["diagnosis_code", "facility_id"]
+    }
+
+
+class RecordingCostRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+        self.calls = []
+
+    def fetch(self, module_key, entity_key):
+        self.calls.append((module_key, entity_key))
+        return self.delegate.fetch(module_key, entity_key)
+
+
+def test_cost_overview_unfiltered_preserves_published_snapshot():
+    response = fixture_app().test_client().get("/api/v1/costs/overview")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == {}
+    assert [metric["key"] for metric in data["metrics"]] == [
+        "avg_charges",
+        "median_charges",
+        "p90_charges",
+        "avg_costs",
+        "charge_cost_gap",
+        "daily_charges",
+    ]
+    assert [section["key"] for section in data["sections"]] == [
+        "quantiles",
+        "severity",
+    ]
+    assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_filter", "expected_entity", "expected_calls"),
+    [
+        (
+            "diagnosis_code=NVS005",
+            {"diagnosis_code": "NVS005"},
+            "diagnosis=NVS005|facility=*|severity=*",
+            [
+                ("diseases", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=NVS005|facility=*|severity=*"),
+            ],
+        ),
+        (
+            "facility_id=1",
+            {"facility_id": "1"},
+            "diagnosis=*|facility=1|severity=*",
+            [
+                ("hospitals", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=*|facility=1|severity=*"),
+            ],
+        ),
+        (
+            "severity=Major",
+            {"severity": "Major"},
+            "diagnosis=*|facility=*|severity=Major",
+            [
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=*|facility=*|severity=Major"),
+            ],
+        ),
+        (
+            "diagnosis_code=NVS005&severity=Major",
+            {"diagnosis_code": "NVS005", "severity": "Major"},
+            "diagnosis=NVS005|facility=*|severity=Major",
+            [
+                ("diseases", "index"),
+                ("costs", "diagnosis=*|facility=*|severity=*"),
+                ("costs", "diagnosis=NVS005|facility=*|severity=Major"),
+            ],
+        ),
+    ],
+)
+def test_cost_filters_use_service_seam_and_frozen_entity_order(
+    query, expected_filter, expected_entity, expected_calls
+):
+    repository = RecordingCostRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        f"/api/v1/costs/overview?{query}"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == expected_filter
+    assert data["metrics"] == []
+    assert data["sections"] == []
+    assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
+    assert repository.calls == expected_calls
+    assert repository.calls[-1][1] == expected_entity
+
+
+@pytest.mark.parametrize(
+    ("query", "details"),
+    [
+        ("sql=select", {"parameters": ["sql"]}),
+        ("diagnosis_code=UNKNOWN", {"parameter": "diagnosis_code"}),
+        ("facility_id=UNKNOWN", {"parameter": "facility_id"}),
+        ("severity=UNKNOWN", {"parameter": "severity"}),
+        (
+            "diagnosis_code=NVS005&diagnosis_code=INF012",
+            {"parameters": ["diagnosis_code"]},
+        ),
+    ],
+)
+def test_cost_filters_reject_unknown_invalid_and_repeated_values(query, details):
+    response = fixture_app().test_client().get(f"/api/v1/costs/overview?{query}")
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_QUERY_PARAMETER"
+    assert response.get_json()["details"] == details
+    assert "UNKNOWN" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (ResultNotReadyError(), 503, "RESULT_NOT_READY"),
+        (DatabaseUnavailableError(), 503, "DATABASE_UNAVAILABLE"),
+        (InvalidServiceResultError(), 500, "SERVICE_RESULT_INVALID"),
+    ],
+)
+def test_cost_base_dependency_failures_keep_stable_public_errors(error, status, code):
+    class RaisingRepository:
+        def fetch(self, module_key, entity_key):
+            assert (module_key, entity_key) == (
+                "costs",
+                "diagnosis=*|facility=*|severity=*",
+            )
+            raise error
+
+    response = fixture_app(analytics_repository=RaisingRepository()).test_client().get(
+        "/api/v1/costs/overview"
+    )
+
+    assert response.status_code == status
+    assert response.get_json()["code"] == code
+    assert "diagnosis=*" not in response.get_data(as_text=True)
+
+
+def test_cost_endpoint_rejects_body_and_non_get_methods():
+    client = fixture_app().test_client()
+
+    body = client.get(
+        "/api/v1/costs/overview",
+        data="{}",
+        content_type="application/json",
+    )
+    assert body.status_code == 400
+    assert body.get_json()["code"] == "INVALID_REQUEST_FORMAT"
+
+    for method in ("post", "head", "options"):
+        response = getattr(client, method)("/api/v1/costs/overview")
+        assert response.status_code == 405
+        if method != "head":
+            assert response.get_json()["code"] == "METHOD_NOT_ALLOWED"
 
 
 def test_valid_unpublished_filter_is_a_legal_empty_result():
@@ -376,6 +854,65 @@ def test_valid_unpublished_filter_is_a_legal_empty_result():
     risk = fixture_app().test_client().get("/api/v1/risks/overview?age_group=70%20or%20Older")
     assert risk.status_code == 200
     assert risk.get_json()["data"]["metrics"] == []
+
+
+class RecordingCohortRepository:
+    def __init__(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "fixtures"
+            / "analytics_snapshot_success.json"
+        )
+        self.delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+        self.calls = []
+
+    def fetch(self, module_key, entity_key):
+        self.calls.append((module_key, entity_key))
+        if module_key == "cohorts" and entity_key != "age=*|gender=*|admission=*":
+            raise ResultNotReadyError()
+        return self.delegate.fetch(module_key, entity_key)
+
+
+def test_cohort_filters_use_frozen_order_and_return_legal_empty_results():
+    repository = RecordingCohortRepository()
+    response = fixture_app(analytics_repository=repository).test_client().get(
+        "/api/v1/cohorts/summary?admission_type=Emergency&gender=F&age_group=50%20to%2069"
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == {
+        "age_group": "50 to 69",
+        "gender": "F",
+        "admission_type": "Emergency",
+    }
+    assert data["metrics"] == []
+    assert data["sections"] == []
+    assert repository.calls == [
+        ("cohorts", "age=*|gender=*|admission=*"),
+        ("cohorts", "age=50 to 69|gender=F|admission=Emergency"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_filter"),
+    [
+        ("age_group=0%20to%2017", {"age_group": "0 to 17"}),
+        ("gender=U", {"gender": "U"}),
+        ("admission_type=Trauma", {"admission_type": "Trauma"}),
+    ],
+)
+def test_each_cohort_filter_is_validated_against_published_options(
+    query, expected_filter
+):
+    response = fixture_app().test_client().get(f"/api/v1/cohorts/summary?{query}")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == expected_filter
+    assert data["metrics"] == []
+    assert data["sections"] == []
 
 
 def test_prediction_rejects_leakage_and_returns_versioned_result():
