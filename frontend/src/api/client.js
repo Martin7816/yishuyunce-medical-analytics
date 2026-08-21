@@ -12,6 +12,7 @@ const errorMessages = {
   INVALID_REQUEST_FORMAT: '请求格式不受支持。',
   LEAKAGE_FIELD_FORBIDDEN: '请求包含不允许使用的出院后或目标字段。',
   INVALID_FEATURE_VALUE: '预测字段的取值不受支持。',
+  INCONSISTENT_DATA_VERSION: '关联分析批次不一致，已停止展示混合数据。',
   HTTP_ERROR: '数据服务返回了暂时无法处理的响应。',
   INTERNAL_ERROR: '数据服务内部出现异常。',
 }
