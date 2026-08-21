@@ -19,6 +19,7 @@ const optionSets = reactive({})
 const linkOptionSets = reactive({})
 const fullscreen = ref(false)
 const fullscreenError = ref('')
+const routeQueryMessage = ref('')
 
 let requestId = 0
 let activeController = null
@@ -28,6 +29,12 @@ const remoteOptionsCache = new Map()
 const isStage = computed(() => Boolean(props.config.stage && route.query.mode === 'screen'))
 const hasActiveFilter = computed(() => Object.values(filters).some(value => value !== '' && value != null))
 const displayedDataVersion = computed(() => data.value?.filters?.data_version || data.value?.data_version || '')
+const isFixture = computed(() => displayedDataVersion.value.startsWith('fixture:'))
+const displayedGeneratedAt = computed(() => data.value?.generated_at || '')
+const boundaryText = computed(() => props.config.boundaryNotice || '统计对象为住院出院记录，不按患者去重；页面不连接同一人的多次住院。')
+const mutuallyExclusiveMessage = computed(() => props.config.mutuallyExclusive?.length
+  ? '疾病与医院筛选互斥；选择其中一项后，另一项会暂时停用。'
+  : '')
 const visibleMetrics = computed(() => {
   if (!isStage.value || !props.config.stageMetricKeys?.length) return data.value?.metrics || []
   return (data.value?.metrics || []).filter(metric => props.config.stageMetricKeys.includes(metric.key))
@@ -59,12 +66,12 @@ function syncFiltersFromRoute() {
     const next = queryValue(route.query, filter.key)
     if (filters[filter.key] !== next) { filters[filter.key] = next; changed = true }
   }
-  const cleanQuery = {}
-  for (const key of Object.keys(route.query)) {
-    if (allowed.has(key) || (props.config.stage && key === 'mode' && route.query.mode === 'screen')) cleanQuery[key] = queryValue(route.query, key)
-  }
-  const currentQuery = JSON.stringify(route.query)
-  if (JSON.stringify(cleanQuery) !== currentQuery) router.replace({ query: cleanQuery })
+  const unknownKeys = Object.keys(route.query).filter(key => !allowed.has(key) && key !== 'mode')
+  const invalidMode = Object.prototype.hasOwnProperty.call(route.query, 'mode')
+    && (!props.config.stage || route.query.mode !== 'screen')
+  routeQueryMessage.value = unknownKeys.length || invalidMode
+    ? `当前链接包含不支持的参数：${[...unknownKeys, ...(invalidMode ? ['mode'] : [])].join('、')}。请清除参数后重试。`
+    : ''
   return changed
 }
 
@@ -131,6 +138,9 @@ function hasContent(payload) {
 }
 
 async function load() {
+  if (routeQueryMessage.value) {
+    clearActiveRequest(); data.value = null; error.value = null; validationMessage.value = routeQueryMessage.value; state.value = 'validation'; return
+  }
   const invalidSelection = duplicateSelectionMessage()
   if (invalidSelection) {
     clearActiveRequest(); data.value = null; error.value = null; validationMessage.value = invalidSelection; state.value = 'validation'; return
@@ -186,6 +196,14 @@ function clearFilters() {
   const nextQuery = allowedQuery()
   if (JSON.stringify(nextQuery) === JSON.stringify(route.query)) scheduleLoad()
   else router.push({ query: nextQuery })
+}
+
+function clearInvalidQuery() {
+  if (duplicateSelectionMessage()) {
+    clearFilters()
+    return
+  }
+  router.replace({ query: allowedQuery() })
 }
 
 function optionForLink(link, rawValue) {
@@ -260,7 +278,7 @@ watch(() => props.config, () => {
 
 watch(() => route.fullPath, () => {
   const changed = syncFiltersFromRoute()
-  if (changed) load()
+  if (changed || routeQueryMessage.value || state.value === 'validation') load()
 })
 
 onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
@@ -268,38 +286,45 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
 </script>
 
 <template>
-  <div class="page-wrap" :class="{ 'screen-mode': isStage }">
-    <a class="skip-link" href="#analysis-content">跳到主要内容</a>
+  <div class="page-wrap" :class="{ 'screen-mode': isStage }" :aria-busy="state === 'loading'">
     <header class="page-heading">
       <div>
         <p class="eyebrow">{{ config.eyebrow }}</p>
-        <h1 id="analysis-content">{{ data?.title || config.title || '医数云策分析模块' }}</h1>
-        <p>{{ data?.description || '正在读取统一分析快照。' }}</p>
+        <h1 id="page-title" data-page-title tabindex="-1">{{ data?.title || config.title || '医数云策分析模块' }}</h1>
+        <p id="page-description">{{ data?.description || '正在读取统一分析快照。' }}</p>
       </div>
       <div class="heading-actions">
         <button v-if="config.stage" type="button" class="secondary-button" @click="setStage(!isStage)">{{ isStage ? '退出大屏' : '进入大屏' }}</button>
         <button v-if="isStage" type="button" class="secondary-button" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '浏览器全屏' }}</button>
-        <span v-if="displayedDataVersion" class="version-pill" :title="displayedDataVersion">批次 {{ displayedDataVersion }}</span>
+        <div v-if="displayedDataVersion" class="data-meta" aria-label="数据批次信息">
+          <span class="status-chip" :class="isFixture ? 'is-fixture' : 'is-published'">
+            <span class="status-dot" aria-hidden="true"></span>{{ isFixture ? '固定联调快照' : '已发布数据' }}
+          </span>
+          <span class="version-pill" :title="displayedDataVersion">数据版本：{{ displayedDataVersion }}</span>
+          <span v-if="displayedGeneratedAt" class="generated-at">生成时间：{{ displayedGeneratedAt }}</span>
+        </div>
       </div>
     </header>
     <p v-if="fullscreenError" class="filter-notice" role="alert">{{ fullscreenError }}</p>
-    <p v-if="config.boundaryNotice" class="warning-note medical-boundary-note" role="note">{{ config.boundaryNotice }}</p>
-    <section v-if="config.filters?.length" class="filter-bar" aria-label="分析筛选">
+    <p class="boundary-note" role="note">{{ boundaryText }}</p>
+    <fieldset v-if="config.filters?.length" class="filter-bar">
+      <legend class="filter-legend">分析筛选</legend>
       <label v-for="filter in config.filters" :key="filter.key" :for="`filter-${filter.key}`">
         {{ filter.label }}
-        <select :id="`filter-${filter.key}`" :value="filters[filter.key] || ''" :aria-label="filter.label" :disabled="isFilterDisabled(filter)" @change="updateFilter(filter.key, $event.target.value)">
+        <select :id="`filter-${filter.key}`" :value="filters[filter.key] || ''" :aria-label="filter.label" :aria-describedby="isFilterDisabled(filter) ? 'filter-help' : undefined" :disabled="isFilterDisabled(filter)" @change="updateFilter(filter.key, $event.target.value)">
           <option value="">{{ filter.includeAll === false ? (filter.placeholder || '请选择') : '全部' }}</option>
           <option v-for="item in optionSets[filter.key]" :key="item.value" :value="item.value">{{ item.label }}</option>
         </select>
       </label>
       <button v-if="config.alwaysShowClear || hasActiveFilter || validationMessage" type="button" class="secondary-button" @click="clearFilters">清空筛选</button>
-    </section>
-    <p v-if="validationMessage" class="filter-notice" role="alert">{{ validationMessage }}</p>
-    <p v-if="displayedDataVersion.startsWith('fixture:')" class="warning-note">当前显示固定联调快照，仅用于并行开发与四态验收，不代表真实全量分析结论。</p>
+      <p v-if="mutuallyExclusiveMessage" id="filter-help" class="filter-help">{{ mutuallyExclusiveMessage }}</p>
+    </fieldset>
+    <p v-if="validationMessage && state !== 'validation'" class="filter-notice" role="alert">{{ validationMessage }}</p>
+    <p v-if="isFixture" class="warning-note" role="note">当前显示固定联调快照，仅用于并行开发与四态验收，不代表真实全量分析结论。</p>
 
-    <PageState v-if="state !== 'success' && !validationMessage" :state="state" :error="error" @retry="load" />
+    <PageState v-if="state !== 'success'" :state="state" :error="error" :message="validationMessage" @retry="load" @clear="clearInvalidQuery" />
     <template v-else-if="state === 'success'">
-      <p v-if="config.disclaimer" class="warning-note">{{ config.disclaimer }}</p>
+      <p v-if="config.disclaimer" class="warning-note" role="note">{{ config.disclaimer }}</p>
       <section class="metric-grid" :class="{ 'stage-metric-grid': isStage }">
         <MetricCard v-for="item in visibleMetrics" :key="item.key" :metric="item" :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key) || config.highlightMetricKey && filters[config.highlightMetricKey] === item.key)" />
       </section>
@@ -323,7 +348,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
         </article>
       </section>
       <InsightPanel :insights="data.insights" :stage="isStage" />
-      <footer class="data-footer"><span>数据版本：{{ displayedDataVersion }}</span><span>生成时间：{{ data.generated_at }}</span><span>记录统计不等同于患者人数</span></footer>
+      <footer class="data-footer"><span>数据版本：{{ displayedDataVersion }}</span><span>生成时间：{{ data.generated_at }}</span><span>病例量按住院出院记录计数，不等同于患者人数</span></footer>
     </template>
   </div>
 </template>

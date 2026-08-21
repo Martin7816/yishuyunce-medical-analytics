@@ -4,6 +4,15 @@ import { computed } from 'vue'
 const props = defineProps({ section: { type: Object, required: true } })
 const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
 
+function sectionUnit() {
+  if (props.section.visual?.unit || props.section.unit) return props.section.visual?.unit || props.section.unit
+  const context = `${props.section.key || ''} ${props.section.title || ''}`
+  if (/(收费|成本|金额|费用)/.test(context)) return '美元'
+  if (/(住院时长|天数)/.test(context)) return '天'
+  if (/(比例|率)/.test(context)) return '%'
+  return props.section.type === 'status' ? '' : '条'
+}
+
 function formatValue(value, unit) {
   if (value == null) return '—'
   if (typeof value !== 'number') return value
@@ -41,21 +50,22 @@ const rows = computed(() => props.section.type === 'grouped_bar'
   : props.section.items)
 
 function display(row, key) {
+  if (key === 'unit') return row.unit || sectionUnit() || '—'
   const unit = key === 'high_cost_rate' || key === 'high_risk_rate' ? '%'
     : key === 'x' ? '天'
       : key === 'y' || key === 'cost' ? '美元'
         : key === 'size' || key === 'numerator' || key === 'denominator' ? '条'
-          : key === 'value' ? row.unit || props.section.visual?.unit : undefined
+          : key === 'value' ? row.unit || sectionUnit() : undefined
   return formatValue(row[key], unit)
 }
 </script>
 
 <template>
   <div v-if="rows.length" class="chart-alternative">
-    <h3 class="sr-only">{{ section.title }}数据表</h3>
+    <h3 class="chart-alternative-title">数据表替代视图</h3>
     <div class="table-scroll">
       <table class="analytics-data-table">
-        <caption class="sr-only">{{ section.title }}的可读数据表</caption>
+        <caption>{{ section.title }}的可读数据表；数值按接口返回顺序展示。</caption>
         <thead><tr><th v-for="column in columns" :key="column.key" scope="col">{{ column.label }}</th></tr></thead>
         <tbody>
           <tr v-for="(row, rowIndex) in rows" :key="`${section.key}-row-${rowIndex}`">
