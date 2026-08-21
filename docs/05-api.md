@@ -197,22 +197,73 @@ curl.exe -X POST http://127.0.0.1:5000/api/v1/models/high-cost/predict `
 
 ## 5. AI 问答
 
+### 5.1 请求
+
 ```powershell
 curl.exe -X POST http://127.0.0.1:5000/api/v1/ai/chat `
   -H 'Content-Type: application/json' `
   -d '{"message":"请概括当前运营情况，并说明引用的数据版本。"}'
 ```
 
-请求体只允许非空 `message`。成功结果包含：
+请求体必须是 JSON 对象且只能包含 `message`。服务端会先 trim，再要求 `message` 为 1—1000 个字符；非 JSON、JSON 非对象、缺少字段、额外字段、空白消息和超长消息分别返回 400。接口只接受 POST，GET、HEAD、OPTIONS 等方法返回 405。
 
-- `answer`：回答正文；
-- `tool_trace`：工具名、执行状态和数据版本；
-- `sources`：回答引用的汇总指标；
-- `data_versions`：涉及的数据版本；
-- `boundary`：统计与医疗安全边界；
-- `chart`：可选的预定义图表数据。
+### 5.2 成功响应
 
-AI 最多调用两次白名单工具，不执行自由 SQL，不读取原始住院明细，不保存多轮历史。缺少密钥、超时或上游失败时返回错误。
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {
+    "answer": "当前运营指标已汇总。",
+    "tool_trace": [
+      {
+        "tool": "get_dashboard_overview",
+        "status": "success",
+        "data_version": "fixture:sparcs_full_analytics:v1"
+      }
+    ],
+    "sources": [
+      {
+        "tool": "get_dashboard_overview",
+        "title": "运营驾驶舱",
+        "metrics": [
+          {"key": "record_count", "label": "住院出院记录", "value": 100, "unit": "条"}
+        ],
+        "data_version": "fixture:sparcs_full_analytics:v1"
+      }
+    ],
+    "data_versions": ["fixture:sparcs_full_analytics:v1"],
+    "chart": {
+      "type": "bar",
+      "title": "运营驾驶舱",
+      "items": [{"name": "住院出院记录", "value": 100}]
+    },
+    "report": {"title": "医数云策洞察简报", "printable": true},
+    "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim."
+  },
+  "trace_id": "4f0d0000-0000-4000-8000-000000000000"
+}
+```
+
+`data` 必须包含 `answer`、`tool_trace`、`sources`、`data_versions`、`chart`、`report` 和 `boundary`。`sources[]` 只输出 `tool`、`title`、`metrics`、`data_version`；成功至少有一个 source 和一个 data version。`chart.type` 只允许公共契约中的 `bar`、`pie`、`table`、`status`，图表项只能从来源指标生成。
+
+单次问题第一轮最多调用两个固定白名单工具，工具参数必须为 `{}`；不执行自由 SQL、不读取住院明细、不保存多轮历史。多个 source 的版本不一致时，服务端保留每个 source 的 `data_version`，并在 `data_versions` 中列出全部版本，不合并或伪装成单一版本，交由验收阻断。
+
+### 5.3 错误与安全边界
+
+| 场景 | HTTP | code |
+|---|---:|---|
+| 非 JSON 或 JSON 非对象 | 400 | `INVALID_REQUEST_FORMAT` |
+| 缺少/额外字段、空消息、消息超过 1000 字符 | 400 | `INVALID_REQUEST_FIELD` |
+| 非 POST 方法 | 405 | `METHOD_NOT_ALLOWED` |
+| `DEEPSEEK_API_KEY` 缺失 | 500 | `SERVER_MISCONFIGURED` |
+| DeepSeek 超时、HTTP/断网、坏响应、空回答或白名单工具失败 | 503 | `UPSTREAM_SERVICE_ERROR` |
+
+每个成功或错误响应都带 `trace_id`，并通过 `X-Trace-ID` 响应头返回同一值。错误响应的 `data` 为 `null`，不返回 API Key、Authorization、用户 prompt、SQL、堆栈、数据库地址、口令或住院明细；真实链路证据只记录脱敏状态码、耗时和工具名。
+
+### 5.4 #81 前端交接
+
+前端按统一信封读取 `data.answer`、`data.tool_trace`、`data.sources`、`data.data_versions`、`data.chart`、`data.report` 和 `data.boundary`；错误页按 HTTP 状态和 `code` 处理 `INVALID_REQUEST_FORMAT`、`INVALID_REQUEST_FIELD`、`METHOD_NOT_ALLOWED`、`SERVER_MISCONFIGURED` 与 `UPSTREAM_SERVICE_ERROR`，并展示 `trace_id` 和重试入口。前端不得渲染未经过白名单校验的图表配置，也不得把错误详情或 Key 写入页面日志。
 
 ## 6. 数据源配置
 
