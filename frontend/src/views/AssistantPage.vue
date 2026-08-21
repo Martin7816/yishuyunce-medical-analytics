@@ -228,7 +228,7 @@ function errorMessage(caught) {
     <header class="page-heading assistant-heading">
       <div>
         <p class="eyebrow">DeepSeek · 白名单分析工具</p>
-        <h1>AI 大模型问答与洞察报告</h1>
+        <h1 id="page-title" data-page-title tabindex="-1">AI 问答与洞察报告</h1>
         <p>回答只读取已发布的群体汇总快照，不执行 SQL、不访问患者明细，也不保存多轮历史。</p>
         <div class="assistant-constraints" aria-label="AI 使用边界">
           <span>只读汇总指标</span>
@@ -300,7 +300,7 @@ function errorMessage(caught) {
       tabindex="-1"
       aria-labelledby="assistant-error-title"
     >
-      <div class="assistant-state-icon" aria-hidden="true">!</div>
+      <div class="assistant-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 21 20H3L12 3Zm0 6v5m0 3h.01" /></svg></div>
       <div>
         <p class="assistant-section-kicker">本次提问未完成</p>
         <h2 id="assistant-error-title">AI 服务未能完成回答</h2>
