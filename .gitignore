@@ -3,6 +3,7 @@
 *.CSV
 data/raw/
 data/output/
+.tmp/
 !data/fixtures/
 !data/fixtures/*.csv
 
