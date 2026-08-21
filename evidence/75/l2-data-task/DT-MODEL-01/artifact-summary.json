@@ -1,0 +1,48 @@
+{
+  "artifact_type": "pyspark_logistic_regression",
+  "model_version": "high_cost_lr_seed_20260818_185808e20900",
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "threshold_amount": 77202.39,
+  "classification_threshold": 0.5,
+  "coefficient_count": 253,
+  "seed": 20260818,
+  "source_feature_columns": [
+    "age",
+    "gender",
+    "race",
+    "ethnicity",
+    "area",
+    "facility_id",
+    "admission",
+    "emergency"
+  ],
+  "feature_names": [
+    "age_group",
+    "gender",
+    "race",
+    "ethnicity",
+    "hospital_service_area",
+    "facility_id",
+    "admission_type",
+    "emergency_indicator"
+  ],
+  "feature_metadata": {
+    "age_group": {"learned_category_size": 5, "encoder_category_size": 6, "encoded_width": 7, "unknown_bucket": "OTHER"},
+    "gender": {"learned_category_size": 3, "encoder_category_size": 4, "encoded_width": 5, "unknown_bucket": "OTHER"},
+    "race": {"learned_category_size": 4, "encoder_category_size": 5, "encoded_width": 6, "unknown_bucket": "OTHER"},
+    "ethnicity": {"learned_category_size": 4, "encoder_category_size": 5, "encoded_width": 6, "unknown_bucket": "OTHER"},
+    "hospital_service_area": {"learned_category_size": 8, "encoder_category_size": 9, "encoded_width": 10, "unknown_bucket": "OTHER"},
+    "facility_id": {"learned_category_size": 205, "encoder_category_size": 206, "encoded_width": 207, "unknown_bucket": "OTHER"},
+    "admission_type": {"learned_category_size": 6, "encoder_category_size": 7, "encoded_width": 8, "unknown_bucket": "OTHER"},
+    "emergency_indicator": {"learned_category_size": 2, "encoder_category_size": 3, "encoded_width": 4, "unknown_bucket": "OTHER"}
+  },
+  "excluded_input_columns": [
+    "year", "diagnosis", "diagnosis_code", "facility", "severity", "mortality",
+    "disposition", "payment", "medical_surgical", "procedure", "charges", "costs",
+    "los", "los_capped", "in_scope", "valid_money"
+  ],
+  "excluded_leakage_fields": [
+    "total_charges", "total_costs", "length_of_stay", "discharge_disposition",
+    "operating_room_procedure", "post_discharge_fields"
+  ]
+}

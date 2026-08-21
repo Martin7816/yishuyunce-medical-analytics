@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "run": 2,
+  "model_version": "high_cost_lr_seed_20260818_185808e20900",
+  "data_version": "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219",
+  "threshold_amount": 77202.39,
+  "train_rows": 1681301,
+  "test_rows": 420287,
+  "accuracy": 0.7773426253964553,
+  "precision": 0.6512178004210964,
+  "recall": 0.23811243643967114,
+  "f1": 0.3487187339058781,
+  "auc": 0.7968802547487498,
+  "confusion_matrix": {"tn": 301654, "fp": 13418, "fn": 80162, "tp": 25053},
+  "coefficient_count": 253
+}

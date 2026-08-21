@@ -57,10 +57,15 @@ FIELDS = {
     "payment": "Payment Typology 1",
     "medical_surgical": "APR Medical Surgical Description",
     "procedure": "CCSR Procedure Description",
-    "area": "Health Service Area",
+    "area": "Hospital Service Area",
 }
 
-FIELD_ALIASES = {"facility_id": ("Permanent Facility Id", "Facility ID")}
+FIELD_ALIASES = {
+    "facility_id": ("Permanent Facility Id", "Facility ID"),
+    # The real SPARCS export uses "Hospital Service Area".  Keep the older
+    # spelling as a fallback for small teaching fixtures and prior extracts.
+    "area": ("Hospital Service Area", "Health Service Area"),
+}
 
 SEVERITY_VALUES = ("Minor", "Moderate", "Major", "Extreme")
 HIGH_RISK_SEVERITY_VALUES = ("Major", "Extreme")
