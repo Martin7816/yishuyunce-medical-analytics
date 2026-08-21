@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { apiRequest, isAbortError, withQuery } from '../api/client.js'
+import { ApiError, apiRequest, isAbortError, withQuery } from '../api/client.js'
 import AnalyticsChart from '../components/AnalyticsChart.vue'
 import InsightPanel from '../components/InsightPanel.vue'
 import MetricCard from '../components/MetricCard.vue'
@@ -25,6 +25,12 @@ let requestId = 0
 let activeController = null
 let debounceTimer
 const remoteOptionsCache = new Map()
+
+const stageSources = [
+  { endpoint: '/hospitals', sectionKeys: ['facility_relation', 'facility_metric_comparison'] },
+  { endpoint: '/costs/overview', sectionKeys: ['cost_los_relation'] },
+  { endpoint: '/risks/overview', sectionKeys: ['age_severity_matrix'] },
+]
 
 const isStage = computed(() => Boolean(props.config.stage && route.query.mode === 'screen'))
 const hasActiveFilter = computed(() => Object.values(filters).some(value => value !== '' && value != null))
@@ -137,6 +143,43 @@ function hasContent(payload) {
   return Boolean(payload?.metrics?.length || payload?.sections?.some(section => section.items?.length))
 }
 
+function mergeStagePayload(base, relatedPayloads) {
+  const allPayloads = [base, ...relatedPayloads]
+  const versions = [...new Set(allPayloads.map(payload => payload?.data_version).filter(Boolean))]
+  if (versions.length > 1) {
+    throw new ApiError({
+      code: 'INCONSISTENT_DATA_VERSION',
+      message: '关联分析接口返回了不同的数据批次。',
+    }, 200)
+  }
+
+  const sections = [...(base.sections || [])]
+  for (const [index, source] of stageSources.entries()) {
+    const payload = relatedPayloads[index]
+    for (const section of payload?.sections || []) {
+      if (source.sectionKeys.includes(section.key)) sections.push(section)
+    }
+  }
+
+  const insights = []
+  const seenInsights = new Set()
+  for (const payload of allPayloads) {
+    for (const insight of payload?.insights || []) {
+      const key = insight.key || `${insight.title}:${insight.summary}`
+      if (!seenInsights.has(key)) {
+        seenInsights.add(key)
+        insights.push(insight)
+      }
+    }
+  }
+  return { ...base, sections, insights }
+}
+
+async function loadStagePayload(base, signal) {
+  const relatedPayloads = await Promise.all(stageSources.map(source => apiRequest(source.endpoint, { signal })))
+  return mergeStagePayload(base, relatedPayloads)
+}
+
 async function load() {
   if (routeQueryMessage.value) {
     clearActiveRequest(); data.value = null; error.value = null; validationMessage.value = routeQueryMessage.value; state.value = 'validation'; return
@@ -157,7 +200,8 @@ async function load() {
     let path = props.config.endpoint
     if (props.config.profile && filters[props.config.profile.key]) path = `${props.config.profile.path}${encodeURIComponent(filters[props.config.profile.key])}`
     else path = withQuery(path, filters)
-    const payload = await apiRequest(path, { signal: controller.signal })
+    let payload = await apiRequest(path, { signal: controller.signal })
+    if (isStage.value) payload = await loadStagePayload(payload, controller.signal)
     if (current !== requestId) return
     data.value = payload; setLocalOptions(payload); state.value = hasContent(payload) ? 'success' : 'empty'
   } catch (caught) {
