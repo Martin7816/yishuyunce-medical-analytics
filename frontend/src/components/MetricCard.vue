@@ -11,7 +11,9 @@ function display(metric) {
 <template>
   <article class="metric-card" :class="{ highlighted }" :aria-label="`${metric.label}：${display(metric)}${metric.unit === '%' ? '' : metric.unit || ''}`">
     <p>{{ metric.label }}</p>
-    <strong>{{ display(metric) }}</strong>
-    <small v-if="metric.unit !== '%' && metric.unit">{{ metric.unit }}</small>
+    <div class="metric-value-line">
+      <strong>{{ display(metric) }}</strong>
+      <small v-if="metric.unit !== '%' && metric.unit">{{ metric.unit }}</small>
+    </div>
   </article>
 </template>

@@ -34,7 +34,7 @@ def fixture_app(**kwargs):
 def test_all_read_endpoints_share_envelope_and_version():
     client = fixture_app().test_client()
     urls = [
-        "/api/v1/dashboard/overview", "/api/v1/hospitals", "/api/v1/hospitals/1",
+        "/api/v1/dashboard/overview", "/api/v1/dashboard/screen", "/api/v1/hospitals", "/api/v1/hospitals/1",
         "/api/v1/diseases", "/api/v1/diseases/NVS005", "/api/v1/cohorts/summary",
         "/api/v1/costs/overview", "/api/v1/risks/overview", "/api/v1/payments/overview",
         "/api/v1/data-quality/summary", "/api/v1/models/high-cost/metrics",
@@ -48,6 +48,56 @@ def test_all_read_endpoints_share_envelope_and_version():
         assert response.headers["X-Trace-ID"] == body["trace_id"]
         versions.add(body["data"]["data_version"])
     assert versions == {"fixture:sparcs_full_analytics:v1"}
+
+
+def test_dashboard_screen_composes_one_versioned_operating_story():
+    response = fixture_app().test_client().get("/api/v1/dashboard/screen")
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["title"] == "医疗运营指挥中心"
+    assert [metric["key"] for metric in data["metrics"]] == [
+        "record_count", "facility_count", "avg_los", "avg_charges",
+        "avg_costs", "emergency_rate", "surgical_rate", "severe_rate",
+    ]
+    sections = {section["key"]: section for section in data["sections"]}
+    assert set(sections) == {
+        "age", "payment", "disease_top10", "hospital_top10",
+        "cost_los_relation", "age_severity_matrix", "continuous_correlations",
+        "storage",
+    }
+    assert sections["payment"]["type"] == "pie"
+    assert sections["continuous_correlations"]["type"] == "correlation"
+    assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
+    assert data["options"]["quality_status"] == "FIXTURE_ONLY"
+    assert data["options"]["facilities"][0] == {
+        "value": "1", "label": "North Shore University Hospital"
+    }
+    assert data["options"]["diagnoses"][0] == {
+        "value": "NVS005", "label": "HEART FAILURE"
+    }
+    assert all(insight["related_not_causal"] for insight in data["insights"])
+
+
+def test_dashboard_screen_rejects_version_drift_and_unknown_query():
+    fixture_path = Path(__file__).resolve().parents[1] / "app" / "fixtures" / "analytics_snapshot_success.json"
+    delegate = FixtureAnalyticsSnapshotRepository(fixture_path)
+
+    class DriftRepository:
+        def fetch(self, module_key, entity_key):
+            record = delegate.fetch(module_key, entity_key)
+            if module_key == "risks":
+                record["data_version"] = "fixture:other:v1"
+            return record
+
+    client = fixture_app(analytics_repository=DriftRepository()).test_client()
+    drift = client.get("/api/v1/dashboard/screen")
+    assert drift.status_code == 500
+    assert drift.get_json()["code"] == "SERVICE_RESULT_INVALID"
+
+    unknown = fixture_app().test_client().get("/api/v1/dashboard/screen?year=2021")
+    assert unknown.status_code == 400
+    assert unknown.get_json()["code"] == "INVALID_QUERY_PARAMETER"
 
 
 def test_risk_snapshot_exposes_frozen_metrics_and_sections():
@@ -725,15 +775,17 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
         "quantiles",
         "severity",
         "cost_los_relation",
+        "continuous_correlations",
     ]
-    assert data["sections"][-1]["type"] == "scatter"
-    assert data["sections"][-1]["visual"]["summary"]["data_version"] == data["data_version"]
+    relation = next(section for section in data["sections"] if section["key"] == "cost_los_relation")
+    assert relation["type"] == "scatter"
+    assert relation["visual"]["summary"]["data_version"] == data["data_version"]
     assert data["insights"][0]["source_section"] == "cost_los_relation"
     assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
 
 
 @pytest.mark.parametrize(
-    ("query", "expected_filter", "expected_entity", "expected_calls"),
+    ("query", "expected_filter", "expected_entity", "expected_calls", "has_payload"),
     [
         (
             "diagnosis_code=NVS005",
@@ -744,6 +796,7 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
                 ("costs", "diagnosis=*|facility=*|severity=*"),
                 ("costs", "diagnosis=NVS005|facility=*|severity=*"),
             ],
+            True,
         ),
         (
             "facility_id=1",
@@ -754,6 +807,7 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
                 ("costs", "diagnosis=*|facility=*|severity=*"),
                 ("costs", "diagnosis=*|facility=1|severity=*"),
             ],
+            False,
         ),
         (
             "severity=Major",
@@ -763,6 +817,7 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
                 ("costs", "diagnosis=*|facility=*|severity=*"),
                 ("costs", "diagnosis=*|facility=*|severity=Major"),
             ],
+            False,
         ),
         (
             "diagnosis_code=NVS005&severity=Major",
@@ -773,11 +828,12 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
                 ("costs", "diagnosis=*|facility=*|severity=*"),
                 ("costs", "diagnosis=NVS005|facility=*|severity=Major"),
             ],
+            False,
         ),
     ],
 )
 def test_cost_filters_use_service_seam_and_frozen_entity_order(
-    query, expected_filter, expected_entity, expected_calls
+    query, expected_filter, expected_entity, expected_calls, has_payload
 ):
     repository = RecordingCostRepository()
     response = fixture_app(analytics_repository=repository).test_client().get(
@@ -787,8 +843,12 @@ def test_cost_filters_use_service_seam_and_frozen_entity_order(
     assert response.status_code == 200
     data = response.get_json()["data"]
     assert data["filters"] == expected_filter
-    assert data["metrics"] == []
-    assert data["sections"] == []
+    if has_payload:
+        assert data["metrics"]
+        assert data["sections"]
+    else:
+        assert data["metrics"] == []
+        assert data["sections"] == []
     assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
     assert repository.calls == expected_calls
     assert repository.calls[-1][1] == expected_entity
@@ -872,6 +932,37 @@ def test_valid_unpublished_filter_is_a_legal_empty_result():
     assert risk.get_json()["data"]["metrics"] == []
 
 
+@pytest.mark.parametrize(
+    ("url", "expected_filters"),
+    [
+        (
+            "/api/v1/cohorts/summary?age_group=0%20to%2017",
+            {"age_group": "0 to 17"},
+        ),
+        (
+            "/api/v1/costs/overview?diagnosis_code=NVS005",
+            {"diagnosis_code": "NVS005"},
+        ),
+        (
+            "/api/v1/risks/overview?age_group=18%20to%2029",
+            {"age_group": "18 to 29"},
+        ),
+        (
+            "/api/v1/payments/overview?payment_type=Department%20of%20Corrections",
+            {"payment_type": "Department of Corrections"},
+        ),
+    ],
+)
+def test_demo_filter_combinations_have_published_payloads(url, expected_filters):
+    response = fixture_app().test_client().get(url)
+
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["filters"] == expected_filters
+    assert data["metrics"]
+    assert data["sections"]
+
+
 class RecordingCohortRepository:
     def __init__(self):
         fixture_path = (
@@ -912,23 +1003,27 @@ def test_cohort_filters_use_frozen_order_and_return_legal_empty_results():
 
 
 @pytest.mark.parametrize(
-    ("query", "expected_filter"),
+    ("query", "expected_filter", "has_payload"),
     [
-        ("age_group=0%20to%2017", {"age_group": "0 to 17"}),
-        ("gender=U", {"gender": "U"}),
-        ("admission_type=Trauma", {"admission_type": "Trauma"}),
+        ("age_group=0%20to%2017", {"age_group": "0 to 17"}, True),
+        ("gender=U", {"gender": "U"}, False),
+        ("admission_type=Trauma", {"admission_type": "Trauma"}, False),
     ],
 )
 def test_each_cohort_filter_is_validated_against_published_options(
-    query, expected_filter
+    query, expected_filter, has_payload
 ):
     response = fixture_app().test_client().get(f"/api/v1/cohorts/summary?{query}")
 
     assert response.status_code == 200
     data = response.get_json()["data"]
     assert data["filters"] == expected_filter
-    assert data["metrics"] == []
-    assert data["sections"] == []
+    if has_payload:
+        assert data["metrics"]
+        assert data["sections"]
+    else:
+        assert data["metrics"] == []
+        assert data["sections"] == []
 
 
 def test_prediction_rejects_leakage_and_returns_versioned_result():

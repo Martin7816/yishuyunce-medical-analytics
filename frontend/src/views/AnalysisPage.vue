@@ -6,6 +6,7 @@ import AnalyticsChart from '../components/AnalyticsChart.vue'
 import InsightPanel from '../components/InsightPanel.vue'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
+import { prepareFilterNavigation, queryForFilters } from '../domain/filterNavigation.js'
 
 const props = defineProps({ config: { type: Object, required: true } })
 const route = useRoute()
@@ -20,9 +21,12 @@ const linkOptionSets = reactive({})
 const fullscreen = ref(false)
 const fullscreenError = ref('')
 const routeQueryMessage = ref('')
+const relatedAnalysis = ref({ status: 'idle', sectionKey: '', itemKey: '', label: '', request: null, payload: null, error: null })
 
 let requestId = 0
+let relatedRequestId = 0
 let activeController = null
+let relatedController = null
 let debounceTimer
 const remoteOptionsCache = new Map()
 
@@ -31,14 +35,36 @@ const hasActiveFilter = computed(() => Object.values(filters).some(value => valu
 const displayedDataVersion = computed(() => data.value?.filters?.data_version || data.value?.data_version || '')
 const isFixture = computed(() => displayedDataVersion.value.startsWith('fixture:'))
 const displayedGeneratedAt = computed(() => data.value?.generated_at || '')
+const displayedGeneratedAtText = computed(() => {
+  if (!displayedGeneratedAt.value) return ''
+  const date = new Date(displayedGeneratedAt.value)
+  if (Number.isNaN(date.getTime())) return displayedGeneratedAt.value
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+})
+const dataStatusText = computed(() => isFixture.value ? '演示数据' : '已发布数据')
 const boundaryText = computed(() => props.config.boundaryNotice || '统计对象为住院出院记录，不按患者去重；页面不连接同一人的多次住院。')
 const mutuallyExclusiveMessage = computed(() => props.config.mutuallyExclusive?.length
   ? '疾病与医院筛选互斥；选择其中一项后，另一项会暂时停用。'
   : '')
 const visibleMetrics = computed(() => {
-  if (!isStage.value || !props.config.stageMetricKeys?.length) return data.value?.metrics || []
-  return (data.value?.metrics || []).filter(metric => props.config.stageMetricKeys.includes(metric.key))
+  const metrics = data.value?.metrics || []
+  const keys = isStage.value ? props.config.stageMetricKeys : props.config.clientMetricKeys
+  const visible = keys?.length ? metrics.filter(metric => keys.includes(metric.key)) : metrics
+  const labels = props.config.clientMetricLabels || {}
+  return visible.map(metric => labels[metric.key] ? { ...metric, label: labels[metric.key] } : metric)
 })
+const visibleSections = computed(() => {
+  const sections = data.value?.sections || []
+  const visible = props.config.clientSectionKeys?.length
+    ? sections.filter(section => props.config.clientSectionKeys.includes(section.key))
+    : sections
+  const titles = props.config.clientSectionTitles || {}
+  return visible.map(section => titles[section.key] ? { ...section, title: titles[section.key] } : section)
+})
+const relatedMetrics = computed(() => relatedAnalysis.value.payload?.metrics?.slice(0, 4) || [])
+const relatedSections = computed(() => relatedAnalysis.value.payload?.sections || [])
+const relatedPrimarySections = computed(() => relatedSections.value.slice(0, 4))
+const relatedExtraSections = computed(() => relatedSections.value.slice(4))
 
 function normalizeOptions(values = []) {
   return values.filter(value => value != null).map(item => typeof item === 'object' ? item : ({ value: item, label: item }))
@@ -49,14 +75,8 @@ function queryValue(query, key) {
   return Array.isArray(value) ? (typeof value[0] === 'string' ? value[0] : '') : (typeof value === 'string' ? value : '')
 }
 
-function allowedQuery() {
-  const query = {}
-  for (const filter of props.config.filters || []) {
-    const value = filters[filter.key]
-    if (value !== '' && value != null) query[filter.key] = value
-  }
-  if (props.config.stage && route.query.mode === 'screen') query.mode = 'screen'
-  return query
+function allowedQuery(values = filters) {
+  return queryForFilters(props.config, values, route.query)
 }
 
 function syncFiltersFromRoute() {
@@ -177,13 +197,13 @@ function scheduleLoad() {
 }
 
 function updateFilter(key, value) {
-  filters[key] = value
-  if (props.config.mutuallyExclusive?.includes(key) && value) {
-    for (const other of props.config.mutuallyExclusive) if (other !== key) filters[other] = ''
+  const navigation = prepareFilterNavigation(filters, props.config, key, value, route.query)
+  if (navigation.shouldLoad) {
+    router.push({ query: navigation.query })
+  } else {
+    Object.assign(filters, navigation.values)
+    scheduleLoad()
   }
-  const nextQuery = allowedQuery()
-  if (JSON.stringify(nextQuery) === JSON.stringify(route.query)) scheduleLoad()
-  else router.push({ query: nextQuery })
 }
 
 function isFilterDisabled(filter) {
@@ -192,10 +212,14 @@ function isFilterDisabled(filter) {
 }
 
 function clearFilters() {
-  for (const filter of props.config.filters || []) filters[filter.key] = ''
-  const nextQuery = allowedQuery()
-  if (JSON.stringify(nextQuery) === JSON.stringify(route.query)) scheduleLoad()
-  else router.push({ query: nextQuery })
+  const nextQuery = allowedQuery({})
+  if (JSON.stringify(nextQuery) === JSON.stringify(route.query)) {
+    for (const filter of props.config.filters || []) filters[filter.key] = ''
+    scheduleLoad()
+  }
+  else {
+    router.push({ query: nextQuery })
+  }
 }
 
 function clearInvalidQuery() {
@@ -215,24 +239,26 @@ function optionForLink(link, rawValue) {
   return match?.value
 }
 
-function linkFor(section, item) {
+function relatedRequestFor(section, item) {
   const link = props.config.links?.[section.key]
   if (!link) return null
-  const raw = item[link.itemField || 'name']
+  const raw = item[link.itemField || (item.name != null ? 'name' : item.x_label != null ? 'x_label' : 'category')]
   const value = optionForLink(link, raw)
   if (value == null || value === '') return null
-  return { path: link.to, query: { [link.query]: value } }
+  return {
+    path: link.profilePath ? `${link.profilePath}${encodeURIComponent(value)}` : (link.requestEndpoint || props.config.endpoint),
+    query: link.profilePath ? {} : { [link.query]: value },
+  }
 }
 
-function linkHref(section, item) {
-  const target = linkFor(section, item)
-  return target ? router.resolve(target).href : null
+function selectedItemLabel(section, item) {
+  return item.name || item.x_label || item.category || section.title
 }
 
 function drilldownItems(section) {
   const seen = new Set()
   return (section.items || []).filter(item => {
-    const target = linkFor(section, item)
+    const target = relatedRequestFor(section, item)
     if (!target) return false
     const key = JSON.stringify(target)
     if (seen.has(key)) return false
@@ -241,12 +267,54 @@ function drilldownItems(section) {
   })
 }
 
-function navigateTo(section, item) {
-  const target = linkFor(section, item)
-  if (target) router.push(target)
+function isRelatedSelected(section, item) {
+  const request = relatedRequestFor(section, item)
+  return Boolean(request && relatedAnalysis.value.sectionKey === section.key && relatedAnalysis.value.itemKey === JSON.stringify(request))
 }
 
-function handleSectionSelect(section, item) { navigateTo(section, item) }
+function relatedAnalysisFor(section) {
+  return relatedAnalysis.value.sectionKey === section.key && relatedAnalysis.value.status !== 'idle'
+}
+
+async function loadRelatedAnalysis(selection) {
+  relatedController?.abort()
+  const current = ++relatedRequestId
+  const controller = new AbortController()
+  relatedController = controller
+  relatedAnalysis.value = { ...selection, status: 'loading', payload: null, error: null }
+  try {
+    const payload = await apiRequest(withQuery(selection.request.path, selection.request.query), { signal: controller.signal })
+    if (current !== relatedRequestId) return
+    relatedAnalysis.value = { ...relatedAnalysis.value, status: hasContent(payload) ? 'success' : 'empty', payload }
+  } catch (caught) {
+    if (current !== relatedRequestId || controller.signal.aborted || isAbortError(caught)) return
+    relatedAnalysis.value = { ...relatedAnalysis.value, status: 'error', error: caught }
+  } finally {
+    if (current === relatedRequestId && relatedController === controller) relatedController = null
+  }
+}
+
+function handleSectionSelect(section, item) {
+  const request = relatedRequestFor(section, item)
+  if (!request) return
+  void loadRelatedAnalysis({
+    sectionKey: section.key,
+    itemKey: JSON.stringify(request),
+    label: selectedItemLabel(section, item),
+    request,
+  })
+}
+
+function retryRelatedAnalysis() {
+  if (relatedAnalysis.value.request) void loadRelatedAnalysis(relatedAnalysis.value)
+}
+
+function clearRelatedAnalysis() {
+  relatedRequestId += 1
+  relatedController?.abort()
+  relatedController = null
+  relatedAnalysis.value = { status: 'idle', sectionKey: '', itemKey: '', label: '', request: null, payload: null, error: null }
+}
 
 function setStage(value) {
   const nextQuery = { ...route.query }
@@ -268,7 +336,7 @@ async function toggleFullscreen() {
 function onFullscreenChange() { fullscreen.value = Boolean(document.fullscreenElement) }
 
 watch(() => props.config, () => {
-  clearTimeout(debounceTimer); clearActiveRequest(); remoteOptionsCache.clear()
+  clearTimeout(debounceTimer); clearActiveRequest(); clearRelatedAnalysis(); remoteOptionsCache.clear()
   for (const key of Object.keys(filters)) delete filters[key]
   for (const key of Object.keys(optionSets)) delete optionSets[key]
   for (const key of Object.keys(linkOptionSets)) delete linkOptionSets[key]
@@ -282,7 +350,7 @@ watch(() => route.fullPath, () => {
 })
 
 onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
-onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); document.removeEventListener('fullscreenchange', onFullscreenChange) })
+onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); clearRelatedAnalysis(); document.removeEventListener('fullscreenchange', onFullscreenChange) })
 </script>
 
 <template>
@@ -290,25 +358,18 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
     <header class="page-heading">
       <div>
         <p class="eyebrow">{{ config.eyebrow }}</p>
-        <h1 id="page-title" data-page-title tabindex="-1">{{ data?.title || config.title || '医数云策分析模块' }}</h1>
-        <p id="page-description">{{ data?.description || '正在读取统一分析快照。' }}</p>
-      </div>
-      <div class="heading-actions">
-        <button v-if="config.stage" type="button" class="secondary-button" @click="setStage(!isStage)">{{ isStage ? '退出大屏' : '进入大屏' }}</button>
-        <button v-if="isStage" type="button" class="secondary-button" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '浏览器全屏' }}</button>
-        <div v-if="displayedDataVersion" class="data-meta" aria-label="数据批次信息">
-          <span class="status-chip" :class="isFixture ? 'is-fixture' : 'is-published'">
-            <span class="status-dot" aria-hidden="true"></span>{{ isFixture ? '固定联调快照' : '已发布数据' }}
-          </span>
-          <span class="version-pill" :title="displayedDataVersion">数据版本：{{ displayedDataVersion }}</span>
-          <span v-if="displayedGeneratedAt" class="generated-at">生成时间：{{ displayedGeneratedAt }}</span>
-        </div>
-      </div>
-    </header>
-    <p v-if="fullscreenError" class="filter-notice" role="alert">{{ fullscreenError }}</p>
-    <p class="boundary-note" role="note">{{ boundaryText }}</p>
-    <fieldset v-if="config.filters?.length" class="filter-bar">
-      <legend class="filter-legend">分析筛选</legend>
+         <h1 id="page-title" data-page-title tabindex="-1">{{ config.clientTitle || data?.title || config.title || '医数云策分析模块' }}</h1>
+         <p id="page-description">{{ config.clientDescription || data?.description || '正在读取分析数据。' }}</p>
+       </div>
+       <div class="heading-actions">
+         <button v-if="config.stage" type="button" class="secondary-button" @click="setStage(!isStage)">{{ isStage ? '退出大屏' : '大屏演示' }}</button>
+         <button v-if="isStage" type="button" class="secondary-button" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '浏览器全屏' }}</button>
+       </div>
+     </header>
+     <p v-if="fullscreenError" class="filter-notice" role="alert">{{ fullscreenError }}</p>
+     <p class="boundary-note" role="note"><strong>统计范围</strong>{{ boundaryText }}</p>
+     <fieldset v-if="config.filters?.length" class="filter-bar">
+       <legend class="filter-legend">筛选条件</legend>
       <label v-for="filter in config.filters" :key="filter.key" :for="`filter-${filter.key}`">
         {{ filter.label }}
         <select :id="`filter-${filter.key}`" :value="filters[filter.key] || ''" :aria-label="filter.label" :aria-describedby="isFilterDisabled(filter) ? 'filter-help' : undefined" :disabled="isFilterDisabled(filter)" @change="updateFilter(filter.key, $event.target.value)">
@@ -320,13 +381,12 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
       <p v-if="mutuallyExclusiveMessage" id="filter-help" class="filter-help">{{ mutuallyExclusiveMessage }}</p>
     </fieldset>
     <p v-if="validationMessage && state !== 'validation'" class="filter-notice" role="alert">{{ validationMessage }}</p>
-    <p v-if="isFixture" class="warning-note" role="note">当前显示固定联调快照，仅用于并行开发与四态验收，不代表真实全量分析结论。</p>
+     <p v-if="isFixture" class="warning-note" role="note">当前为演示数据，数值仅用于展示分析功能；正式业务结论请以已发布数据为准。</p>
 
     <PageState v-if="state !== 'success'" :state="state" :error="error" :message="validationMessage" @retry="load" @clear="clearInvalidQuery" />
     <template v-else-if="state === 'success'">
-      <p v-if="config.disclaimer" class="warning-note" role="note">{{ config.disclaimer }}</p>
-      <section class="metric-grid" :class="{ 'stage-metric-grid': isStage }">
-        <MetricCard v-for="item in visibleMetrics" :key="item.key" :metric="item" :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key) || config.highlightMetricKey && filters[config.highlightMetricKey] === item.key)" />
+       <section class="metric-grid" :class="{ 'stage-metric-grid': isStage }">
+         <MetricCard v-for="item in visibleMetrics" :key="item.key" :metric="item" :highlighted="Boolean(config.highlightMetricKeys?.includes(item.key) || config.highlightMetricKey && filters[config.highlightMetricKey] === item.key)" />
       </section>
       <template v-if="data.comparison?.length">
         <section class="comparison-grid">
@@ -338,17 +398,60 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
         </section>
       </template>
       <section class="section-grid" :class="{ 'cohort-section-grid': config.layout === 'cohort', 'risk-section-grid': config.layout === 'risk', 'payment-section-grid': config.layout === 'payments', 'quality-section-grid': config.layout === 'quality', 'stage-section-grid': isStage }">
-        <article v-for="section in data.sections" :key="section.key" class="content-card" :class="{ 'section-card-disposition': section.key === 'disposition', 'quality-section-card': config.layout === 'quality' }">
+         <article v-for="section in visibleSections" :key="section.key" class="content-card" :class="{ 'section-card-disposition': section.key === 'disposition', 'quality-section-card': config.layout === 'quality' }">
           <h2>{{ section.title }}</h2>
-          <AnalyticsChart v-if="section.items?.length || ['grouped_bar', 'scatter', 'heatmap'].includes(section.type)" :section="section" @select="handleSectionSelect(section, $event)" />
+          <AnalyticsChart v-if="section.items?.length || ['grouped_bar', 'scatter', 'heatmap', 'correlation'].includes(section.type)" :section="section" @select="handleSectionSelect(section, $event)" />
           <p v-else class="section-empty">当前条件没有可展示的条目。</p>
-          <nav v-if="drilldownItems(section).length" class="section-drilldown" :aria-label="`${section.title}下钻`">
-            <span>下钻：</span><a v-for="item in drilldownItems(section)" :key="`${section.key}-${item.name || item.x_label}`" :href="linkHref(section, item)" @click.prevent="navigateTo(section, item)">{{ item.name || item.x_label }}</a>
+          <nav v-if="drilldownItems(section).length" class="section-drilldown" :aria-label="`${section.title}关联分析`">
+            <span>选择条目开展关联分析：</span><button v-for="item in drilldownItems(section)" :key="`${section.key}-${item.name || item.x_label}`" type="button" class="related-item-button" :class="{ active: isRelatedSelected(section, item) }" @click="handleSectionSelect(section, item)">{{ selectedItemLabel(section, item) }}</button>
           </nav>
+          <aside v-if="relatedAnalysisFor(section)" class="related-analysis-panel" :aria-labelledby="`related-analysis-${section.key}`">
+            <div class="related-analysis-heading">
+              <div>
+                <p class="eyebrow">数据拓展</p>
+                <h3 :id="`related-analysis-${section.key}`">围绕“{{ relatedAnalysis.label }}”的关联分析</h3>
+                <p>基于当前已发布数据展开相关维度，不跳转到其他业务页面。</p>
+              </div>
+              <button type="button" class="secondary-button" @click="clearRelatedAnalysis">收起</button>
+            </div>
+            <PageState v-if="relatedAnalysis.status !== 'success'" :state="relatedAnalysis.status" :error="relatedAnalysis.error" @retry="retryRelatedAnalysis" />
+            <template v-else>
+              <p v-if="relatedAnalysis.payload?.description" class="related-analysis-description">{{ relatedAnalysis.payload.description }}</p>
+              <div v-if="relatedMetrics.length" class="related-analysis-metrics">
+                <MetricCard v-for="metric in relatedMetrics" :key="`related-${metric.key}`" :metric="metric" />
+              </div>
+              <div class="related-analysis-grid">
+                <article v-for="relatedSection in relatedPrimarySections" :key="`related-${relatedAnalysis.itemKey}-${relatedSection.key}`" class="related-analysis-section">
+                  <h4>{{ relatedSection.title }}</h4>
+                  <AnalyticsChart :section="relatedSection" />
+                </article>
+              </div>
+              <details v-if="relatedExtraSections.length" class="related-analysis-more">
+                <summary>查看其他关联维度（{{ relatedExtraSections.length }}项）</summary>
+                <div class="related-analysis-grid">
+                  <article v-for="relatedSection in relatedExtraSections" :key="`related-more-${relatedAnalysis.itemKey}-${relatedSection.key}`" class="related-analysis-section">
+                    <h4>{{ relatedSection.title }}</h4>
+                    <AnalyticsChart :section="relatedSection" />
+                  </article>
+                </div>
+              </details>
+            </template>
+          </aside>
         </article>
       </section>
       <InsightPanel :insights="data.insights" :stage="isStage" />
-      <footer class="data-footer"><span>数据版本：{{ displayedDataVersion }}</span><span>生成时间：{{ data.generated_at }}</span><span>病例量按住院出院记录计数，不等同于患者人数</span></footer>
+       <footer class="data-footer">
+         <span>按住院出院记录计数，不等同于患者人数</span>
+         <span v-if="isFixture">当前为演示数据</span>
+         <details v-if="displayedDataVersion" class="data-details">
+           <summary>数据说明</summary>
+           <div class="data-details-content">
+             <span>数据状态：{{ dataStatusText }}</span>
+             <span v-if="displayedGeneratedAtText">更新时间：{{ displayedGeneratedAtText }}</span>
+             <span>数据批次：{{ displayedDataVersion }}</span>
+           </div>
+         </details>
+       </footer>
     </template>
   </div>
 </template>

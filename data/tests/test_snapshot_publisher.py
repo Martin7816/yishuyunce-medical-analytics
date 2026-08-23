@@ -38,8 +38,122 @@ def test_payload_type_is_frozen_to_renderer_whitelist(tmp_path):
     invalid = tmp_path / "invalid-section.json"
     invalid.write_text(json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="只能是 bar、pie、table、status、grouped_bar、scatter 或 heatmap"):
+    with pytest.raises(ValueError, match="只能是 bar、pie、table、status、grouped_bar、scatter、heatmap 或 correlation"):
         load_snapshot(invalid)
+
+
+def test_correlation_section_accepts_frozen_statistical_evidence(tmp_path):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    costs = next(row for row in document["records"] if row["module_key"] == "costs")
+    costs["payload"]["sections"] = [
+        section
+        for section in costs["payload"]["sections"]
+        if section["key"] != "continuous_correlations"
+    ]
+    costs["payload"]["sections"].append(
+        {
+            "key": "continuous_correlations",
+            "title": "关键连续变量相关性",
+            "type": "correlation",
+            "visual": {
+                "question": "住院时长、收费与成本之间呈现怎样的线性相关关系？",
+                "x_label": "指标组合",
+                "y_label": "Pearson r",
+                "unit": "相关系数",
+                "legend": [{"key": "pearson", "label": "Pearson r", "style": "numeric"}],
+                "tooltip_fields": ["x_label", "y_label", "coefficient", "sample_size", "method"],
+                "summary": {
+                    "text": "系数按成对有效记录计算；相关不等于因果。",
+                    "source_metric_keys": ["record_count"],
+                    "source_section": "continuous_correlations",
+                    "data_version": document["data_version"],
+                    "generated_at": document["generated_at"],
+                    "boundary": "当前筛选下两项指标均有效的住院出院记录",
+                    "related_not_causal": True,
+                },
+                "fallback": {
+                    "type": "table",
+                    "columns": ["x_label", "y_label", "coefficient", "sample_size", "method"],
+                },
+                "empty": {"title": "暂无相关结果", "text": "有效样本不足或指标没有变化。"},
+            },
+            "items": [
+                {
+                    "x_key": "los",
+                    "x_label": "住院时长",
+                    "y_key": "charges",
+                    "y_label": "收费",
+                    "coefficient": 0.5,
+                    "sample_size": 20,
+                    "method": "pearson",
+                }
+            ],
+        }
+    )
+    candidate = tmp_path / "correlation.json"
+    candidate.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+
+    loaded = load_snapshot(candidate)
+    loaded_costs = next(
+        row for row in loaded["records"] if row["module_key"] == "costs"
+    )
+    section = next(
+        item
+        for item in loaded_costs["payload"]["sections"]
+        if item["key"] == "continuous_correlations"
+    )
+    assert section["items"][0]["coefficient"] == 0.5
+
+
+@pytest.mark.parametrize("coefficient", [-1.01, 1.01, float("nan")])
+def test_correlation_section_rejects_invalid_coefficients(tmp_path, coefficient):
+    path = DATA_ROOT.parent / "backend" / "app" / "fixtures" / "analytics_snapshot_success.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    costs = next(row for row in document["records"] if row["module_key"] == "costs")
+    costs["payload"]["sections"] = [
+        section
+        for section in costs["payload"]["sections"]
+        if section["key"] != "continuous_correlations"
+    ]
+    costs["payload"]["sections"].append(
+        {
+            "key": "continuous_correlations",
+            "title": "关键连续变量相关性",
+            "type": "correlation",
+            "visual": {
+                "question": "连续变量相关性",
+                "x_label": "指标组合",
+                "y_label": "Pearson r",
+                "unit": "相关系数",
+                "legend": [{"key": "pearson", "label": "Pearson r", "style": "numeric"}],
+                "tooltip_fields": ["x_label", "y_label", "coefficient", "sample_size", "method"],
+                "summary": {
+                    "text": "相关不等于因果。",
+                    "source_metric_keys": ["record_count"],
+                    "source_section": "continuous_correlations",
+                    "data_version": document["data_version"],
+                    "generated_at": document["generated_at"],
+                    "boundary": "成对有效记录",
+                    "related_not_causal": True,
+                },
+                "fallback": {"type": "table", "columns": ["coefficient", "sample_size"]},
+                "empty": {"title": "暂无相关结果", "text": "有效样本不足。"},
+            },
+            "items": [
+                {
+                    "x_key": "los", "x_label": "住院时长",
+                    "y_key": "charges", "y_label": "收费",
+                    "coefficient": coefficient, "sample_size": 2, "method": "pearson",
+                }
+            ],
+        }
+    )
+    candidate = tmp_path / "invalid-correlation.json"
+    candidate.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="coefficient"):
+        load_snapshot(candidate)
 
 
 def test_relation_visual_rejects_arbitrary_renderer_options(tmp_path):

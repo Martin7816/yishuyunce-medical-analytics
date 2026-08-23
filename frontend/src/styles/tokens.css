@@ -1,0 +1,32 @@
+:root {
+  --product-primary: #1e40af;
+  --product-primary-hover: #1d4ed8;
+  --product-navy: #081c2c;
+  --product-navy-raised: #0f2d46;
+  --screen-background: #04131f;
+  --screen-surface: #081f2e;
+  --screen-surface-raised: #0b2a3c;
+  --screen-border: #1f5268;
+  --screen-border-strong: #2d7892;
+  --screen-primary: #32d3e6;
+  --screen-secondary: #4d8dff;
+  --screen-accent: #f1ad3d;
+  --screen-success: #35c98a;
+  --screen-violet: #9c7cff;
+  --screen-text: #edfaff;
+  --screen-text-muted: #91b7c7;
+  --screen-grid: #153849;
+  --screen-glow: rgb(50 211 230 / 16%);
+  --product-cyan: #2f9dad;
+  --product-warning: #d97706;
+  --product-success: #16754a;
+  --product-danger: #b42318;
+  --product-canvas: #f3f6fa;
+  --product-surface: #ffffff;
+  --product-border: #d9e2ec;
+  --product-text: #172b3a;
+  --product-text-muted: #5b6f7d;
+  --product-radius: 12px;
+  --product-shadow: 0 8px 24px rgb(15 45 70 / 8%);
+  --product-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+}

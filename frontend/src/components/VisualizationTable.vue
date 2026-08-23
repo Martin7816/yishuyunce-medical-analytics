@@ -1,7 +1,11 @@
 <script setup>
 import { computed } from 'vue'
 
-const props = defineProps({ section: { type: Object, required: true } })
+const props = defineProps({
+  section: { type: Object, required: true },
+  collapsible: { type: Boolean, default: true },
+})
+const emit = defineEmits(['select'])
 const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
 
 function sectionUnit() {
@@ -36,6 +40,13 @@ const columns = computed(() => {
     const fallback = props.section.visual?.fallback?.columns || Object.keys(labels)
     return fallback.map(key => ({ key, label: labels[key] || key }))
   }
+  if (type === 'correlation') return [
+    { key: 'x_label', label: '指标一' },
+    { key: 'y_label', label: '指标二' },
+    { key: 'coefficient', label: '相关系数' },
+    { key: 'sample_size', label: '有效记录数' },
+    { key: 'method', label: '计算方法' },
+  ]
   if (type === 'heatmap') return [
     { key: 'x_label', label: props.section.visual?.x_label || '横轴分类' },
     { key: 'y_label', label: props.section.visual?.y_label || '纵轴分类' },
@@ -51,28 +62,40 @@ const rows = computed(() => props.section.type === 'grouped_bar'
 
 function display(row, key) {
   if (key === 'unit') return row.unit || sectionUnit() || '—'
+  if (key === 'coefficient') return typeof row[key] === 'number' ? row[key].toFixed(4) : '—'
   const unit = key === 'high_cost_rate' || key === 'high_risk_rate' ? '%'
     : key === 'x' ? '天'
       : key === 'y' || key === 'cost' ? '美元'
         : key === 'size' || key === 'numerator' || key === 'denominator' ? '条'
+          : key === 'sample_size' ? '条'
           : key === 'value' ? row.unit || sectionUnit() : undefined
   return formatValue(row[key], unit)
 }
 </script>
 
 <template>
-  <div v-if="rows.length" class="chart-alternative">
-    <h3 class="chart-alternative-title">数据表替代视图</h3>
-    <div class="table-scroll">
-      <table class="analytics-data-table">
-        <caption>{{ section.title }}的可读数据表；数值按接口返回顺序展示。</caption>
-        <thead><tr><th v-for="column in columns" :key="column.key" scope="col">{{ column.label }}</th></tr></thead>
-        <tbody>
-          <tr v-for="(row, rowIndex) in rows" :key="`${section.key}-row-${rowIndex}`">
-            <td v-for="column in columns" :key="column.key">{{ display(row, column.key) }}</td>
-          </tr>
-        </tbody>
-      </table>
+  <details v-if="rows.length" class="chart-alternative" :open="!collapsible">
+    <summary v-if="collapsible" class="chart-details-summary">
+      <span class="chart-details-title">查看数据明细</span>
+      <span class="chart-details-note">查看精确数值</span>
+    </summary>
+    <h3 v-else class="chart-alternative-title">数据表</h3>
+    <div class="chart-details-body">
+      <p class="chart-details-description">{{ section.title }}的精确数值和单位。</p>
+      <div class="table-scroll">
+        <table class="analytics-data-table">
+          <caption>{{ section.title }}数据明细。</caption>
+          <thead><tr><th v-for="column in columns" :key="column.key" scope="col">{{ column.label }}</th></tr></thead>
+          <tbody>
+            <tr v-for="(row, rowIndex) in rows" :key="`${section.key}-row-${rowIndex}`">
+              <td v-for="(column, columnIndex) in columns" :key="column.key">
+                <button v-if="columnIndex === 0" type="button" class="table-drilldown-button" @click="emit('select', row)">{{ display(row, column.key) }}</button>
+                <template v-else>{{ display(row, column.key) }}</template>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </details>
 </template>

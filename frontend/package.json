@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test tests/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
-    "echarts": "^6.1.0",
+    "d3": "^7.9.0",
     "vue": "^3.5.40",
     "vue-router": "^4.6.4"
   },
