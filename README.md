@@ -8,7 +8,7 @@
 
 | 能力 | 入口 | 项目状态 |
 |---|---|---|
-| 运营驾驶舱 | `/overview` | 真实数据、MySQL、API 与页面证据齐备 |
+| 运营工作台与指挥中心 | `/overview`、`/overview?mode=screen` | 双模式页面、聚合 API 与 fixture 截图证据齐备；真实结论以真实模式验收为准 |
 | 医院运营分析 | `/hospitals` | 真实数据、MySQL、API 与页面证据齐备 |
 | 疾病画像分析 | `/diseases` | 真实数据、MySQL、API 与页面证据齐备 |
 | 住院记录群体分析 | `/cohorts` | 真实数据、MySQL、API 与页面证据齐备 |
@@ -21,18 +21,20 @@
 
 联调快照用于验证接口、页面和错误状态，版本以 `fixture:` 开头；它不表示真实数据结论。各模块的执行记录位于 `evidence/`，最终状态以对应验收证据为准。
 
+本 README 的本地启动流程默认按真实模式配置：页面从已发布的 MySQL 分析快照读取真实的 2021 年 SPARCS 全量批次。它不是实时生产数据，接口返回的 `data_version` 应为真实批次版本，不能以 `fixture:` 开头。
+
 ## 数据链路
 
 ```text
-SPARCS CSV
-  → PySpark 清洗与聚合
+HDFS 原始 CSV / Hive 外部表
+  → PySpark（本地模式）读取、清洗与聚合
   → 统一分析快照与模型工件
   → MySQL 事务发布
   → Flask 白名单 API
-  → Vue / ECharts 页面
+  → Vue / D3 SVG 页面
   → DeepSeek 白名单分析工具
 
-HDFS 原始副本与 Hive 外部表用于课程环境检查，不承担重复统计。
+HDFS 保存原始数据，Hive 外部表提供结构化访问；PySpark 的清洗与分析逻辑不变，MySQL 继续承担面向页面的结果服务。
 ```
 
 浏览器不连接数据库、不执行 SQL、不重新聚合正式结果。AI 只能调用登记过的分析工具，不能访问原始住院明细或自由执行 SQL。
@@ -43,16 +45,45 @@ HDFS 原始副本与 Hive 外部表用于课程环境检查，不承担重复统
 
 - Python 3.11；
 - Node.js 22 LTS 与 npm；
-- 仅运行联调快照时不需要 MySQL、Hadoop、Hive、完整 CSV 或 DeepSeek 密钥。
+- 真实启动需要 MySQL 8.0、已发布的分析快照和真实高费用模型工件；重新生成批次时还需要能访问 Hadoop/Hive 集群的 Java/PySpark 环境。完整 CSV 只作为 HDFS 原始副本保存，AI 页面另需 DeepSeek 密钥。
 
 以下命令均在仓库根目录执行。
 
-### 1. 启动后端
+### 1. 配置真实数据源并启动后端
+
+真实模式要求 MySQL 中已经发布 `analysis_snapshot_result` 和 `disease_case_count_top10_result`。当前工作区已经生成可供发布和加载的真实工件：
+
+```text
+D:\HuaDi\analytics-output\analytics-snapshot.json
+D:\HuaDi\analytics-output\high-cost-model.json
+```
+
+如果 MySQL 尚未发布这批结果，先按[重新生成或发布真实数据](#重新生成或发布真实数据需要时)执行发布；如果数据库中已有同一真实版本，可以直接配置后端。
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 Copy-Item backend\.env.example backend\.env
+notepad backend\.env
+```
+
+将 `backend/.env` 中的数据源和数据库项改为真实值。数据库地址、只读账号和密码使用本机实际配置，不要把密码提交到 Git：
+
+```dotenv
+TOP10_DATA_SOURCE=mysql
+ANALYTICS_DATA_SOURCE=mysql
+HIGH_COST_MODEL_PATH=D:\HuaDi\analytics-output\high-cost-model.json
+
+MYSQL_HOST=<真实 MySQL 地址>
+MYSQL_PORT=3306
+MYSQL_USER=<只读账号>
+MYSQL_PASSWORD=<本机密码>
+MYSQL_DATABASE=medical_analytics
+```
+
+确认没有把 `TOP10_DATA_SOURCE` 或 `ANALYTICS_DATA_SOURCE` 留成 `fixture` 后，启动 Flask：
+
+```powershell
 .\.venv\Scripts\python.exe backend\run.py
 ```
 
@@ -61,17 +92,33 @@ Copy-Item backend\.env.example backend\.env
 ```powershell
 curl.exe http://127.0.0.1:5000/api/v1/health
 curl.exe http://127.0.0.1:5000/api/v1/dashboard/overview
+curl.exe http://127.0.0.1:5000/api/v1/dashboard/screen
+```
+
+检查返回的 `data.data_version`。当前真实批次应为：
+
+```text
+sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219
+```
+
+也可以用 PowerShell 自动阻止误启动到演示数据：
+
+```powershell
+$payload = Invoke-RestMethod http://127.0.0.1:5000/api/v1/dashboard/overview
+if ($payload.data.data_version -like 'fixture:*') { throw '当前仍是 fixture 演示数据，请检查 backend/.env 后重启 Flask。' }
+$payload.data.data_version
 ```
 
 ### 2. 启动前端
 
 ```powershell
 cd frontend
-npm ci
+# 首次安装或更新依赖时执行；如果 Vite 已在运行，先在其终端按 Ctrl+C
+npm ci --cache D:\HuaDi\.npm-cache-medical-analytics
 npm run dev
 ```
 
-访问 `http://127.0.0.1:5173/overview`。Vite 把 `/api` 请求转发到 `http://127.0.0.1:5000`。停止服务时在各自终端按 `Ctrl+C`。
+访问 `http://localhost:5173/overview`。Vite 把 `/api` 请求转发到 `http://127.0.0.1:5000`。停止服务时在各自终端按 `Ctrl+C`。不要在 `npm run dev` 正在运行时再次执行 `npm ci`，否则 Windows 可能无法删除正在使用的 Rollup 原生模块。
 
 ### 3. 验证工程
 
@@ -79,20 +126,27 @@ npm run dev
 .\.venv\Scripts\python.exe -m pip install -r data\requirements.txt
 .\.venv\Scripts\python.exe -m pytest backend\tests data\tests -q
 cd frontend
+npm test
 npm run build
 ```
 
-## 真实数据运行
+## 重新生成或发布真实数据（需要时）
 
-真实模式需要完整 SPARCS CSV、MySQL 8.0 和本机未提交的 `backend/.env`。完整 CSV、数据库口令、分析快照、模型工件和 API 密钥不得提交 Git。
+真实模式不在浏览器请求时重新读取 CSV，而是读取由真实 CSV 生成并发布到 MySQL 的统一快照。完整 CSV、数据库口令、分析快照、模型工件和 API 密钥不得提交 Git。当前工作区的真实批次工件位于 `D:\HuaDi\analytics-output`，已存在时不必重复计算。
 
 ```powershell
 .\.venv\Scripts\python.exe data\src\run_full_analytics_pyspark.py `
-  --input "<SPARCS CSV 路径>" `
+  --input "hdfs://hadoop001:9000/project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv" `
+  --input-sha256 "185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --data-version "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --hdfs-status VERIFIED `
+  --hive-status VERIFIED `
   --output "<输出目录>\analytics-snapshot.json"
 
 .\.venv\Scripts\python.exe data\src\train_high_cost_model_pyspark.py `
-  --input "<SPARCS CSV 路径>" `
+  --input "hdfs://hadoop001:9000/project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv" `
+  --input-sha256 "185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --data-version "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
   --artifact "<输出目录>\high-cost-model.json" `
   --metrics "<输出目录>\high-cost-metrics.json" `
   --snapshot "<输出目录>\analytics-snapshot.json"
@@ -102,7 +156,19 @@ npm run build
   --input "<输出目录>\analytics-snapshot.json" --apply
 ```
 
-在 `backend/.env` 中设置 `ANALYTICS_DATA_SOURCE=mysql`、MySQL 连接信息和 `HIGH_COST_MODEL_PATH`，再按本地启动流程运行后端与前端。AI 页面还需要 `DEEPSEEK_API_KEY`。详细检查步骤见 [开发与运行手册](docs/04-development-and-runbook.md)。
+发布器读取当前 PowerShell 会话中的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD` 和 `MYSQL_DATABASE`；仅写入 `backend/.env` 不会自动让数据发布脚本读取这些变量。发布成功后，再在 `backend/.env` 中设置 `ANALYTICS_DATA_SOURCE=mysql`、`TOP10_DATA_SOURCE=mysql` 和 `HIGH_COST_MODEL_PATH`，重启 Flask。AI 页面还需要 `DEEPSEEK_API_KEY`。详细检查步骤见 [开发与运行手册](docs/04-development-and-runbook.md)。
+
+## 联调快照（可选）
+
+只有在开发接口或验证页面状态时，才将两个数据源显式改为：
+
+```dotenv
+TOP10_DATA_SOURCE=fixture
+ANALYTICS_DATA_SOURCE=fixture
+TOP10_FIXTURE_STATE=success
+```
+
+此时页面显示的是演示数据，不得将其数值写成真实运营结论。
 
 ## 文档入口
 

@@ -42,7 +42,7 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 - `metrics[]` 只允许 `key`、`label`、`value`、`unit`，数值必须有限；
 - `%` 单位使用 0—1 的比例值，页面乘 100 展示；
 - 普通 `sections[]` 只允许 `key`、`title`、`type`、`items`；`type` 只允许 `bar`、`pie`、`table`、`status`；
-- 关系 `sections[]` 只允许 `grouped_bar`、`scatter`、`heatmap`，并必须携带白名单 `visual`：问题、坐标轴、单位、图例、Tooltip 字段、服务端摘要、table fallback 和 empty state；不接受任意 ECharts option、JavaScript、HTML、SQL 或 formatter；
+- 关系 `sections[]` 只允许 `grouped_bar`、`scatter`、`heatmap`，并必须携带白名单 `visual`：问题、坐标轴、单位、图例、Tooltip 字段、服务端摘要、table fallback 和 empty state；不接受任意可执行图表配置、JavaScript、HTML、SQL 或 formatter；
 - `grouped_bar` 每项是类别和 1—3 个同单位系列；`scatter` 每点是后端聚合的 `name/x/y/size/group`，费用关系可附 `cost/high_cost_rate`；`heatmap` 每格是 `x_label/y_label/value/unit`，比例需附分子、分母和正式比例字段；
 - `insights[]` 由服务端确定性生成，必须指向当前 section，并返回 `source_metric_keys`、`data_version`、`generated_at`、`boundary` 和 `related_not_causal`；嵌套版本与时间必须和快照外层一致；
 - `options` 保存筛选枚举或不可执行的模型元数据；

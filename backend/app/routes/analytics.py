@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from collections.abc import Iterable
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -68,6 +69,24 @@ def _reject_unknown(allowed: Iterable[str]) -> None:
 
 def _get(module: str, entity: str):
     return current_app.extensions["analytics_snapshot_service"].get(module, entity)
+
+
+def _required_section(payload: dict, key: str) -> dict:
+    section = next(
+        (item for item in payload.get("sections", []) if item.get("key") == key),
+        None,
+    )
+    if section is None:
+        raise InvalidServiceResultError()
+    return deepcopy(section)
+
+
+def _require_one_snapshot_version(payloads: list[dict]) -> tuple[str, str]:
+    versions = {payload.get("data_version") for payload in payloads}
+    timestamps = {payload.get("generated_at") for payload in payloads}
+    if len(versions) != 1 or len(timestamps) != 1 or None in versions or None in timestamps:
+        raise InvalidServiceResultError()
+    return versions.pop(), timestamps.pop()
 
 
 def _empty_result(base: dict, filters: dict[str, str]) -> dict:
@@ -198,6 +217,72 @@ def _hospital_comparison_section(
 def dashboard_overview():
     _reject_unknown(set())
     return _ok(_get("dashboard", "overview"))
+
+
+@analytics_bp.get("/api/v1/dashboard/screen")
+def dashboard_screen():
+    """Compose one atomic operating story from already-published snapshots."""
+
+    _reject_unknown(set())
+    overview = _get("dashboard", "overview")
+    hospitals = _get("hospitals", "index")
+    diseases = _get("diseases", "index")
+    costs = _get("costs", "diagnosis=*|facility=*|severity=*")
+    risks = _get("risks", RISK_BASE_ENTITY)
+    quality = _get("data_quality", "summary")
+    data_version, generated_at = _require_one_snapshot_version(
+        [overview, hospitals, diseases, costs, risks, quality]
+    )
+
+    payment = _required_section(overview, "payment")
+    payment["type"] = "pie"
+    storage = _required_section(quality, "storage")
+    storage_statuses = {
+        item.get("name"): item.get("value") for item in storage.get("items", [])
+    }
+    quality_status = storage_statuses.get("PySpark任务")
+    if not isinstance(quality_status, str) or not quality_status:
+        raise InvalidServiceResultError()
+    facilities = hospitals.get("options", {}).get("facilities")
+    diagnoses = diseases.get("options", {}).get("diagnoses")
+    if not isinstance(facilities, list) or not isinstance(diagnoses, list):
+        raise InvalidServiceResultError()
+
+    sections = [
+        _required_section(overview, "age"),
+        payment,
+        _required_section(overview, "disease_top10"),
+        _required_section(overview, "hospital_top10"),
+        _required_section(costs, "cost_los_relation"),
+        _required_section(risks, "age_severity_matrix"),
+        _required_section(costs, "continuous_correlations"),
+        storage,
+    ]
+    included_keys = {section["key"] for section in sections}
+    insights = [
+        deepcopy(insight)
+        for payload in (costs, risks)
+        for insight in payload.get("insights", [])
+        if insight.get("source_section") in included_keys
+    ]
+    return _ok(
+        {
+            "title": "医疗运营指挥中心",
+            "description": (
+                "从住院出院记录规模、费用、疾病、医院与严重程度结构观察运营全景。"
+            ),
+            "options": {
+                "quality_status": quality_status,
+                "facilities": deepcopy(facilities),
+                "diagnoses": deepcopy(diagnoses),
+            },
+            "metrics": deepcopy(overview.get("metrics", [])),
+            "sections": sections,
+            "insights": insights,
+            "data_version": data_version,
+            "generated_at": generated_at,
+        }
+    )
 
 
 @analytics_bp.get("/api/v1/hospitals")

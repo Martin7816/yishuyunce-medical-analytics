@@ -16,8 +16,6 @@ defineEmits(['retry', 'clear'])
     <p v-if="state === 'error'">{{ getApiErrorMessage(error) }}</p>
     <p v-else-if="state === 'validation'">{{ message || '当前链接中的筛选参数不受支持。' }}</p>
     <p v-else-if="state === 'empty'">当前已发布筛选没有可展示的住院出院记录。</p>
-    <small v-if="error?.code">错误类型：{{ error.code }}</small>
-    <small v-if="error?.traceId">追踪编号：{{ error.traceId }}</small>
     <button v-if="state === 'error'" type="button" class="primary-button" @click="$emit('retry')">重新加载</button>
     <button v-if="state === 'validation'" type="button" class="primary-button" @click="$emit('clear')">清除无效参数</button>
     <button v-if="state === 'empty'" type="button" class="secondary-button" @click="$emit('retry')">重新读取</button>

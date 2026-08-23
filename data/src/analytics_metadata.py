@@ -6,6 +6,7 @@ import hashlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 
 KNOWN_SOURCE_NAME = (
@@ -21,15 +22,33 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def build_data_version(csv_path: Path, digest: str) -> str:
+def _source_name(source: Path | str) -> str:
+    value = str(source)
+    parsed = urlparse(value) if "://" in value else None
+    if parsed is not None and parsed.scheme:
+        return Path(unquote(parsed.path)).name or value.rsplit("/", 1)[-1]
+    return Path(value).name
+
+
+def build_data_version(
+    csv_path: Path | str,
+    digest: str,
+    *,
+    fixture: bool | None = None,
+) -> str:
     """Build a stable version without exposing a local absolute path."""
 
-    if csv_path.name == KNOWN_SOURCE_NAME:
+    source_name = _source_name(csv_path)
+    if source_name == KNOWN_SOURCE_NAME:
         version = f"sparcs_2021_20231012_sha256_{digest}"
     else:
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", csv_path.stem).strip("._-")
+        safe_name = re.sub(
+            r"[^A-Za-z0-9._-]+", "_", Path(source_name).stem
+        ).strip("._-")
         version = f"{safe_name or 'sparcs_input'}_sha256_{digest}"
-    if any(part.lower() == "fixtures" for part in csv_path.parts):
+    if fixture is None:
+        fixture = any(part.lower() == "fixtures" for part in Path(str(csv_path)).parts)
+    if fixture:
         return f"fixture:{version}"
     return version
 

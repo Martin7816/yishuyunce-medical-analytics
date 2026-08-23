@@ -9,8 +9,8 @@
 - Git；
 - Python 3.11；
 - Node.js 22 LTS 与 npm 10；
-- 真实数据流程需要 Java 8 或 17、MySQL 8.0 和完整 SPARCS CSV；
-- HDFS 与 Hive 只在课程集群检查时需要。
+- 真实数据流程需要 Java 8 或 17、MySQL 8.0，以及可访问 Hadoop/Hive 的虚拟机环境；
+- 完整 SPARCS CSV 上传到 HDFS 后作为原始副本保存，Hive 外部表提供结构化访问。
 
 检查版本：
 
@@ -78,17 +78,37 @@ npm run dev
 .\.venv\Scripts\python.exe -m pip install -r data\requirements.txt
 ```
 
-确保 `JAVA_HOME` 指向 Java 8 或 17，并为输入与输出使用不含敏感信息的本地路径。完整 CSV、快照和模型工件不放入仓库。
+确保 `JAVA_HOME` 指向 Java 8，并在运行 PySpark 的终端加载 Hadoop/Hive 配置。当前课程集群的原始数据位置和 Hive 表为：
+
+```text
+HDFS:  /project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv
+Hive:  analytics_check.sparcs_2021_raw_issue39
+NameNode 示例: hdfs://hadoop001:9000
+```
+
+完整 CSV、快照和模型工件不放入仓库；快照和模型工件仍写到运行终端可访问的本地输出目录。
 
 ### 3.2 生成统一分析快照
 
+推荐直接从 HDFS 原始副本读取，PySpark 仍使用原有本地模式和原有清洗、聚合逻辑：
+
 ```powershell
 .\.venv\Scripts\python.exe data\src\run_full_analytics_pyspark.py `
-  --input "<SPARCS CSV 路径>" `
+  --input "hdfs://hadoop001:9000/project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv" `
+  --input-sha256 "185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --data-version "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --hdfs-status VERIFIED `
+  --hive-status VERIFIED `
   --output "<工件目录>\analytics-snapshot.json"
 ```
 
-任务读取一次 CSV，生成运营驾驶舱、医院、疾病、住院记录群体、费用成本、病情风险、支付方式和数据质量等模块记录。输出必须通过公共快照结构校验，并在同一文件中使用一致的 `data_version` 与 `generated_at`。
+如果需要让 PySpark 通过 Hive 外部表读取同一份 HDFS 数据，将 `--input` 替换为：
+
+```powershell
+--hive-table "analytics_check.sparcs_2021_raw_issue39"
+```
+
+此时仍保留 `--input-sha256` 和 `--data-version`，确保 Hive 表输入生成的快照与 HDFS 路径输入、模型工件使用同一个批次版本。任务读取一次原始数据，生成运营驾驶舱、医院、疾病、住院记录群体、费用成本、病情风险、支付方式和数据质量等模块记录。输出必须通过公共快照结构校验，并在同一文件中使用一致的 `data_version` 与 `generated_at`。
 
 比例口径按业务字段分别确定：页面记录数保留当前筛选后的基础记录总体；急诊率、外科率和 `Major/Extreme` 重症率分别使用对应字段的指标有效总体作分母，严重程度可判定值为 `Minor`、`Moderate`、`Major`、`Extreme`，未知值不作分子也不作非重症。驾驶舱、医院画像、疾病画像和住院记录群体通过严重程度分布对账；风险快照额外发布 `severity_valid_count`。完整字段有效数、适用数、缺失数和比例分子/分母集中在 `data_quality/summary.options.audit`，其公式版本为 `analytics-denominator-v1`；不在各业务页面重复展示质量告警。
 
@@ -98,7 +118,9 @@ npm run dev
 
 ```powershell
 .\.venv\Scripts\python.exe data\src\train_high_cost_model_pyspark.py `
-  --input "<SPARCS CSV 路径>" `
+  --input "hdfs://hadoop001:9000/project/yishuyunce/raw/sparcs/2021/Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv" `
+  --input-sha256 "185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
+  --data-version "sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219" `
   --artifact "<工件目录>\high-cost-model.json" `
   --metrics "<工件目录>\high-cost-metrics.json" `
   --snapshot "<工件目录>\analytics-snapshot.json" `
@@ -201,17 +223,18 @@ curl.exe http://127.0.0.1:5000/api/v1/models/high-cost/metrics
 
 自动化通过只说明代码和固定输入符合契约。真实验收还要核对 CSV、MySQL、API 和页面，并保存执行时间、提交号、数据版本、命令输出和截图。
 
-## 5. HDFS 与 Hive 检查
+## 5. HDFS 与 Hive 存储检查
 
-课程展示需要时，在虚拟机中完成：
+在虚拟机中完成以下检查后，再在 PySpark 任务中使用 `--hdfs-status VERIFIED` 和 `--hive-status VERIFIED`：
 
 1. 确认 HDFS 三个 DataNode 健康；
 2. 把完整 CSV 上传为原始副本；
 3. 建立 Hive 外部表并检查行数和字段；
 4. 记录命令、时间和结果；
-5. 保持 PySpark 本机任务为正式汇总来源。
+5. 运行 PySpark 时从 HDFS 或 Hive 表读取，保持原有清洗和聚合代码不变；
+6. 继续将分析快照发布到 MySQL，供 Flask 和前端读取。
 
-Windows 找不到 `hdfs`、`hive` 或 `mysql` 命令不表示集群故障，这些命令在对应虚拟机终端执行。
+Windows 找不到 `hdfs`、`hive` 或 `mysql` 命令不表示集群故障；存储检查和 HDFS/Hive 输入任务应在已加载集群配置的虚拟机终端执行。
 
 ## 6. 常见问题
 
