@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
@@ -186,8 +187,9 @@ def build_aggregate_batch(
 ) -> dict[str, Any]:
     """Build and optionally materialize a candidate batch.
 
-    Materialization is opt-in and writes only a candidate manifest plus Spark
-    JSON fact parts.  No MySQL connection is made by this function.
+    Materialization is opt-in and writes only a candidate manifest plus a
+    local pandas JSON Lines fact file.  No MySQL connection is made by this
+    function.
     """
 
     input_path = input_path.resolve()
@@ -260,7 +262,27 @@ def _write_candidate(
 ) -> None:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=False)
-    fact.write.mode("error").json(str(output_dir / "facts"))
+    fact_frame = fact.toPandas()
+    expected_columns = [*AGGREGATE_GRAIN, *AGGREGATE_MEASURES]
+    if list(fact_frame.columns) != expected_columns:
+        raise AggregateContractError(
+            "aggregate fact columns do not match the frozen contract"
+        )
+    if len(fact_frame) != manifest["aggregate_rows"]:
+        raise AggregateContractError(
+            "pandas candidate row count does not match the candidate manifest"
+        )
+    if int(fact_frame["record_count"].sum()) != manifest["source_records"]:
+        raise AggregateContractError(
+            "pandas candidate SUM(record_count) does not match the candidate manifest"
+        )
+    fact_frame.to_json(
+        str(output_dir / "facts.json"),
+        orient="records",
+        lines=True,
+        force_ascii=False,
+        double_precision=15,
+    )
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

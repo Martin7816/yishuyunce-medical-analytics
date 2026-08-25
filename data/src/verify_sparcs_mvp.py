@@ -16,8 +16,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.disease_rules import is_non_disease_diagnosis
+
+
 DEFAULT_SAMPLE = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv"
 DEFAULT_EXPECTED = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_expected_top10.json"
 DEFAULT_INSPECTOR = REPO_ROOT / "data" / "src" / "inspect_sparcs_mvp.py"
@@ -62,7 +67,7 @@ def independently_summarize(csv_path: Path, top_n: int = 10) -> dict[str, Any]:
                 out_of_scope_rows += 1
                 continue
             diagnosis = normalize_diagnosis(row[diagnosis_index])
-            if diagnosis:
+            if diagnosis and not is_non_disease_diagnosis(diagnosis):
                 counts[diagnosis] += 1
 
     top = [
@@ -88,18 +93,14 @@ def verify_contract_examples() -> dict[str, Any]:
     counts: Counter[str] = Counter()
     for raw_value in raw_values:
         diagnosis = normalize_diagnosis(raw_value)
-        if diagnosis:
+        if diagnosis and not is_non_disease_diagnosis(diagnosis):
             counts[diagnosis] += 1
 
     actual = [
         {"name": name, "case_count": count}
         for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
-    expected = [
-        {"name": "ASTHMA", "case_count": 2},
-        {"name": "LIVEBORN", "case_count": 2},
-        {"name": "liveborn", "case_count": 1},
-    ]
+    expected = [{"name": "ASTHMA", "case_count": 2}]
     assert_equal("contract_examples", "top", expected, actual)
     return {"status": "PASS", "input_values": len(raw_values), "groups": len(actual)}
 

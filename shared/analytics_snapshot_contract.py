@@ -12,6 +12,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
+from .disease_rules import is_non_disease_diagnosis
+
 
 PAYLOAD_KEYS = frozenset(
     {
@@ -26,9 +28,20 @@ PAYLOAD_KEYS = frozenset(
 )
 PAYLOAD_REQUIRED_KEYS = frozenset({"title", "description", "metrics", "sections"})
 SECTION_TYPES = frozenset(
-    {"bar", "pie", "table", "status", "grouped_bar", "scatter", "heatmap"}
+    {
+        "bar",
+        "pie",
+        "table",
+        "status",
+        "grouped_bar",
+        "scatter",
+        "heatmap",
+        "correlation",
+    }
 )
-COMPLEX_SECTION_TYPES = frozenset({"grouped_bar", "scatter", "heatmap"})
+COMPLEX_SECTION_TYPES = frozenset(
+    {"grouped_bar", "scatter", "heatmap", "correlation"}
+)
 DOCUMENT_KEYS = frozenset({"data_version", "generated_at", "records", "input"})
 
 VISUAL_KEYS = frozenset(
@@ -69,7 +82,7 @@ INSIGHT_KEYS = frozenset(
         "related_not_causal",
     }
 )
-VISUAL_UNITS = frozenset({"条", "天", "美元", "美元/天", "%"})
+VISUAL_UNITS = frozenset({"条", "天", "美元", "美元/天", "%", "相关系数"})
 LEGEND_STYLES = frozenset(
     {"solid", "pattern", "shape", "numeric", "numeric-gradient"}
 )
@@ -81,6 +94,17 @@ SCATTER_ITEM_KEYS = frozenset(
 )
 HEATMAP_ITEM_KEYS = frozenset(
     {"x_label", "y_label", "value", "unit", "numerator", "denominator", "high_risk_rate"}
+)
+CORRELATION_ITEM_KEYS = frozenset(
+    {
+        "x_key",
+        "x_label",
+        "y_key",
+        "y_label",
+        "coefficient",
+        "sample_size",
+        "method",
+    }
 )
 
 
@@ -299,6 +323,9 @@ def _validate_visual(visual: Any, section_key: str, section_type: str) -> None:
         "y_label",
         "numerator",
         "denominator",
+        "coefficient",
+        "sample_size",
+        "method",
     }
     _string_list(
         visual.get("tooltip_fields"),
@@ -383,6 +410,38 @@ def _validate_heatmap_items(items: list[Any], field: str) -> None:
                 _fail(f"{item_field}.high_risk_rate 必须在 0 到 1 之间")
 
 
+def _validate_correlation_items(items: list[Any], field: str) -> None:
+    if len(items) > 12:
+        _fail(f"{field} 最多允许 12 组相关系数")
+    seen_pairs: set[tuple[str, str]] = set()
+    for index, item in enumerate(items):
+        item_field = f"{field}[{index}]"
+        if not isinstance(item, dict):
+            _fail(f"{item_field} 必须是对象")
+        _object_keys(item, CORRELATION_ITEM_KEYS, item_field)
+        x_key = _string(item.get("x_key"), f"{item_field}.x_key", max_length=64)
+        y_key = _string(item.get("y_key"), f"{item_field}.y_key", max_length=64)
+        _string(item.get("x_label"), f"{item_field}.x_label", max_length=128)
+        _string(item.get("y_label"), f"{item_field}.y_label", max_length=128)
+        if x_key == y_key:
+            _fail(f"{item_field} 不能比较同一指标")
+        pair = tuple(sorted((x_key, y_key)))
+        if pair in seen_pairs:
+            _fail(f"{item_field} 不能重复同一指标组合")
+        seen_pairs.add(pair)
+        coefficient = item.get("coefficient")
+        _number(coefficient, f"{item_field}.coefficient")
+        if not -1 <= coefficient <= 1:
+            _fail(f"{item_field}.coefficient 必须在 -1 到 1 之间")
+        sample_size = item.get("sample_size")
+        if isinstance(sample_size, bool) or not isinstance(sample_size, int):
+            _fail(f"{item_field}.sample_size 必须是正整数")
+        if sample_size < 2:
+            _fail(f"{item_field}.sample_size 必须至少为 2")
+        if item.get("method") != "pearson":
+            _fail(f"{item_field}.method 只能是 pearson")
+
+
 def _validate_insights(insights: Any, section_keys: set[str]) -> None:
     if not isinstance(insights, list) or len(insights) > 8:
         _fail("payload.insights 必须是最多 8 项数组")
@@ -428,7 +487,10 @@ def _validate_sections(sections: Any) -> None:
         _string(section.get("title"), f"{field}.title")
         section_type = section.get("type")
         if section_type not in SECTION_TYPES:
-            _fail(f"{field}.type 只能是 bar、pie、table、status、grouped_bar、scatter 或 heatmap")
+            _fail(
+                f"{field}.type 只能是 bar、pie、table、status、grouped_bar、"
+                "scatter、heatmap 或 correlation"
+            )
         allowed_section_keys = {"key", "title", "type", "items"}
         if section_type in COMPLEX_SECTION_TYPES:
             allowed_section_keys.add("visual")
@@ -442,8 +504,10 @@ def _validate_sections(sections: Any) -> None:
                 _validate_grouped_bar_items(items, f"{field}.items")
             elif section_type == "scatter":
                 _validate_scatter_items(items, f"{field}.items")
-            else:
+            elif section_type == "heatmap":
                 _validate_heatmap_items(items, f"{field}.items")
+            else:
+                _validate_correlation_items(items, f"{field}.items")
             continue
         for item_index, item in enumerate(items):
             item_field = f"{field}.items[{item_index}]"
@@ -476,6 +540,49 @@ def validate_payload(payload: Any) -> dict:
         section_keys = {section["key"] for section in payload["sections"]}
         _validate_insights(payload["insights"], section_keys)
     _json_value(payload, "payload")
+    return payload
+
+
+def validate_disease_semantics(
+    payload: dict, module_key: str = "", entity_key: str = ""
+) -> dict:
+    """Reject non-disease diagnosis labels from every disease-facing section."""
+
+    options = payload.get("options") or {}
+    for option in options.get("diagnoses", []):
+        values = option.values() if isinstance(option, dict) else (option,)
+        if any(is_non_disease_diagnosis(value) for value in values):
+            _fail("疾病选项不能包含非疾病标签")
+
+    if module_key == "diseases" and entity_key.startswith("profile:"):
+        if is_non_disease_diagnosis(payload.get("title")):
+            _fail("疾病画像不能使用非疾病标签")
+
+    for section in payload.get("sections", []):
+        key = str(section.get("key") or "").lower()
+        title = str(section.get("title") or "")
+        is_disease_section = (
+            "disease" in key
+            or "diagnos" in key
+            or key in {"diseases", "top10"}
+            or "疾病" in title
+            or "诊断" in title
+        )
+        if not is_disease_section:
+            continue
+        for item in section.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            candidates = [item.get("name"), item.get("category")]
+            series = item.get("series")
+            if isinstance(series, list):
+                candidates.extend(
+                    entry.get("label")
+                    for entry in series
+                    if isinstance(entry, dict)
+                )
+            if any(is_non_disease_diagnosis(value) for value in candidates):
+                _fail("疾病分析结果不能包含非疾病标签")
     return payload
 
 
@@ -525,6 +632,7 @@ def validate_snapshot_document(document: Any) -> dict:
         if key in seen:
             _fail(f"快照主键重复: {key}")
         payload = validate_payload(record.get("payload"))
+        validate_disease_semantics(payload, module_key, entity_key)
         validate_payload_metadata(payload, document["data_version"], document["generated_at"])
         seen.add(key)
 

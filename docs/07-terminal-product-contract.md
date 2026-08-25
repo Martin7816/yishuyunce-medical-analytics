@@ -42,7 +42,7 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 - `metrics[]` 只允许 `key`、`label`、`value`、`unit`，数值必须有限；
 - `%` 单位使用 0—1 的比例值，页面乘 100 展示；
 - 普通 `sections[]` 只允许 `key`、`title`、`type`、`items`；`type` 只允许 `bar`、`pie`、`table`、`status`；
-- 关系 `sections[]` 只允许 `grouped_bar`、`scatter`、`heatmap`，并必须携带白名单 `visual`：问题、坐标轴、单位、图例、Tooltip 字段、服务端摘要、table fallback 和 empty state；不接受任意 ECharts option、JavaScript、HTML、SQL 或 formatter；
+- 关系 `sections[]` 只允许 `grouped_bar`、`scatter`、`heatmap`，并必须携带白名单 `visual`：问题、坐标轴、单位、图例、Tooltip 字段、服务端摘要、table fallback 和 empty state；不接受任意可执行图表配置、JavaScript、HTML、SQL 或 formatter；
 - `grouped_bar` 每项是类别和 1—3 个同单位系列；`scatter` 每点是后端聚合的 `name/x/y/size/group`，费用关系可附 `cost/high_cost_rate`；`heatmap` 每格是 `x_label/y_label/value/unit`，比例需附分子、分母和正式比例字段；
 - `insights[]` 由服务端确定性生成，必须指向当前 section，并返回 `source_metric_keys`、`data_version`、`generated_at`、`boundary` 和 `related_not_causal`；嵌套版本与时间必须和快照外层一致；
 - `options` 保存筛选枚举或不可执行的模型元数据；
@@ -119,9 +119,9 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 支付模块发布未筛选键和支付方式×年龄组组合。`payment_type` 来自 `Payment Typology 1`，金额指标只使用可解析且非负的收费。支付方式、年龄和疾病排行排除空分组；疾病排行严格取十项。
 
-### 5.7 数据质量
+### 5.7 数据质量校验
 
-数据质量页集中发布基础记录总体、严重程度有效/缺失数，以及现有业务使用字段的有效记录数和非零缺失数。`Birth Weight`、`Payment Typology 2/3` 等未进入当前业务的字段不改变基础记录总体，也不进入业务页面。
+数据质量接口集中发布基础记录总体、严重程度有效/缺失数，以及现有业务使用字段的有效记录数和非零缺失数，供后端审计、指标口径校验和必要的运维检查使用；当前不提供独立前端页面。`Birth Weight`、`Payment Typology 2/3` 等未进入当前业务的字段不改变基础记录总体，也不进入业务页面。
 
 ### 5.8 高费用模型
 
@@ -179,6 +179,6 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 ## 8. 前端与 AI
 
-前端固定提供 `/overview`、`/hospitals`、`/diseases`、`/cohorts`、`/costs`、`/risks`、`/payments`、`/data-quality`、`/model` 和 `/assistant`。八个分析页复用公共渲染器，模型和 AI 使用各自必要的交互。
+前端固定提供 `/overview`、`/hospitals`、`/diseases`、`/cohorts`、`/costs`、`/risks`、`/payments` 和 `/assistant`。六个专题分析页复用公共渲染器，AI 使用必要的交互；数据质量和高费用模型只保留后端接口，不作为前端页面提供。旧 `/model` 地址重定向到 `/overview`。
 
 AI 使用 DeepSeek 的 OpenAI 兼容 Chat Completions 接口，超时 20 秒，单次问题最多调用两次白名单工具，不保存历史。回答必须包含工具轨迹、来源指标、数据版本和统计边界；依赖失败时返回错误，不生成无来源内容。

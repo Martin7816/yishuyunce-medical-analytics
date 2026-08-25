@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from app import create_app
@@ -38,6 +39,21 @@ class RecordingRepository:
         return self.delegate.fetch(module_key, entity_key)
 
 
+class NonDiseaseLabelRepository:
+    def __init__(self):
+        self.delegate = FixtureAnalyticsSnapshotRepository(FIXTURE_PATH)
+
+    def fetch(self, module_key, entity_key):
+        result = self.delegate.fetch(module_key, entity_key)
+        if (module_key, entity_key) != ("diseases", "index"):
+            return result
+        payload = deepcopy(result["payload"])
+        section = next(section for section in payload["sections"] if section["key"] == "top10")
+        section["items"].insert(0, {"name": "LIVEBORN", "value": 1})
+        result["payload"] = payload
+        return result
+
+
 def test_disease_index_keeps_published_top10_and_enum_order():
     response = fixture_app().test_client().get("/api/v1/diseases")
 
@@ -46,14 +62,23 @@ def test_disease_index_keeps_published_top10_and_enum_order():
     top10 = next(section for section in data["sections"] if section["key"] == "top10")
     assert len(top10["items"]) == 10
     assert [item["name"] for item in top10["items"][:3]] == [
-        "LIVEBORN",
         "SEPTICEMIA",
-        "OSTEOARTHRITIS",
+        "CORONAVIRUS DISEASE 2019 (COVID-19)",
+        "HEART FAILURE",
     ]
     assert [item["value"] for item in data["options"]["diagnoses"]] == [
         "NVS005",
         "INF012",
     ]
+
+
+def test_disease_snapshot_rejects_non_disease_label():
+    response = fixture_app(NonDiseaseLabelRepository()).test_client().get(
+        "/api/v1/diseases"
+    )
+
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
 
 
 def test_disease_profile_uses_index_then_profile_entity_and_required_sections():

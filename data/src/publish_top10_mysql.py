@@ -11,9 +11,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.disease_rules import is_non_disease_diagnosis
 
 
 TABLE_NAME = "disease_case_count_top10_result"
@@ -81,6 +88,8 @@ def load_service_result(path: Path) -> dict[str, Any]:
             raise ValueError("rank 必须从 1 连续递增")
         if not isinstance(name, str) or not name or len(name) > 255:
             raise ValueError("diagnosis_name 不能为空且不能超过 255 字符")
+        if is_non_disease_diagnosis(name):
+            raise ValueError("diagnosis_name 不能是非疾病标签")
         if name in names:
             raise ValueError("diagnosis_name 不能重复")
         if isinstance(count, bool) or not isinstance(count, int) or count <= 0:

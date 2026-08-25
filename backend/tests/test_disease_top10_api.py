@@ -231,6 +231,18 @@ def test_blank_diagnosis_name_is_rejected(make_client):
     assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
 
 
+def test_non_disease_diagnosis_name_is_rejected(make_client):
+    snapshot = {
+        **SUCCESS_SNAPSHOT,
+        "items": [{"rank": 1, "diagnosis_name": "LIVEBORN", "case_count": 3}],
+    }
+    client = make_client(StaticRepository(snapshot))
+    response = client.get("/api/v1/diseases/top10")
+
+    assert response.status_code == 500
+    assert response.get_json()["code"] == "SERVICE_RESULT_INVALID"
+
+
 def test_more_than_ten_published_rows_are_rejected(make_client):
     snapshot = {
         **SUCCESS_SNAPSHOT,

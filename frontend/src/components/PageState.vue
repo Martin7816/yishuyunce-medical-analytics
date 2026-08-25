@@ -12,12 +12,10 @@ defineEmits(['retry', 'clear'])
       <svg v-else-if="state === 'validation'" viewBox="0 0 24 24"><path d="M12 3 21 20H3L12 3Zm0 6v5m0 3h.01" /></svg>
       <svg v-else viewBox="0 0 24 24"><path d="M12 3 21 20H3L12 3Zm0 6v5m0 3h.01" /></svg>
     </span>
-    <h2>{{ state === 'loading' ? '正在加载分析快照' : state === 'empty' ? '当前条件暂无数据' : state === 'validation' ? '请先修正筛选条件' : '数据加载失败' }}</h2>
+    <h2>{{ state === 'loading' ? '正在加载分析数据' : state === 'empty' ? '当前条件暂无数据' : state === 'validation' ? '请先修正筛选条件' : '数据加载失败' }}</h2>
     <p v-if="state === 'error'">{{ getApiErrorMessage(error) }}</p>
     <p v-else-if="state === 'validation'">{{ message || '当前链接中的筛选参数不受支持。' }}</p>
-    <p v-else-if="state === 'empty'">当前已发布筛选没有可展示的住院出院记录。</p>
-    <small v-if="error?.code">错误类型：{{ error.code }}</small>
-    <small v-if="error?.traceId">追踪编号：{{ error.traceId }}</small>
+    <p v-else-if="state === 'empty'">当前筛选条件没有可展示的住院出院记录。</p>
     <button v-if="state === 'error'" type="button" class="primary-button" @click="$emit('retry')">重新加载</button>
     <button v-if="state === 'validation'" type="button" class="primary-button" @click="$emit('clear')">清除无效参数</button>
     <button v-if="state === 'empty'" type="button" class="secondary-button" @click="$emit('retry')">重新读取</button>

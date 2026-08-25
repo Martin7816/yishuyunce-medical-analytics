@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from itertools import product
 from pathlib import Path
@@ -30,6 +31,14 @@ from analytics_metadata import (  # noqa: E402
 from shared.analytics_snapshot_contract import (  # noqa: E402
     normalize_utc_timestamp,
     validate_snapshot_document,
+)
+from shared.disease_rules import NON_DISEASE_DIAGNOSIS_NAMES  # noqa: E402
+from storage_input import (  # noqa: E402
+    DataSource,
+    add_source_arguments,
+    ensure_local_source_exists,
+    fingerprint_source,
+    read_source,
 )
 
 # Backward-compatible name used by the model task in this workflow.
@@ -98,6 +107,11 @@ COST_DIMENSIONS = ("diagnosis_code", "facility_id", "severity")
 COST_MISSING = "__COST_MISSING__"
 COST_PERCENTILES = (("p25", 0.25), ("p50", 0.5), ("p75", 0.75), ("p90", 0.9))
 COST_COMPARISON_LIMIT = 10
+COST_CORRELATION_PAIRS = (
+    ("los", "住院时长", "charges", "收费"),
+    ("los", "住院时长", "costs", "成本"),
+    ("charges", "收费", "costs", "成本"),
+)
 
 # These bins are part of the public relation contract.  The upper bound is
 # exclusive; ``120 +`` is normalized to 120 by ``clean_frame`` and therefore
@@ -115,6 +129,20 @@ LOS_BINS = (
 LOS_BIN_ORDER = {label: index for index, (label, _, _) in enumerate(LOS_BINS)}
 RELATION_GROUP_MISSING = "未分类"
 FACILITY_RELATION_LIMIT = 50
+
+
+def _nonempty_disease_label(column: str = "diagnosis"):
+    """Return the shared disease-only predicate for a cleaned Spark column."""
+
+    return (
+        F.col(column).isNotNull()
+        & (F.length(F.col(column)) > 0)
+        & ~F.upper(F.col(column)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
+    )
+
+
+def _disease_frame(frame: DataFrame) -> DataFrame:
+    return frame.where(_nonempty_disease_label())
 
 
 def clean_frame(raw: DataFrame) -> DataFrame:
@@ -197,6 +225,8 @@ def rows(
     """Collect only a small, stable aggregate result; never raw records."""
 
     nonempty = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        nonempty = nonempty & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     grouped = frame.where(nonempty).groupBy(group)
     if value == "count":
         result = grouped.count().withColumnRenamed("count", "value")
@@ -228,6 +258,8 @@ def grouped_rows(
     """Aggregate all profile sections for a pair of dimensions in one job."""
 
     nonempty = (F.length(F.col(parent)) > 0) & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        nonempty = nonempty & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     grouped = frame.where(nonempty).groupBy(parent, group)
     result = (
         grouped.count().withColumnRenamed("count", "value")
@@ -857,10 +889,13 @@ def _cohort_section_rows(
 ) -> dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one chart dimension for every legal cohort filter."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _cohort_dimension_frame(frame).withColumn(
         "_cohort_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -1052,10 +1087,13 @@ def _payment_section_rows(
 ) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one payment page section for every legal filter pair."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _payment_dimension_frame(frame).withColumn(
         "_payment_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -1237,6 +1275,81 @@ def _cost_summary_rows(frame: DataFrame) -> dict[tuple[Any, Any, Any], Any]:
     }
 
 
+def _cost_correlation_rows(
+    frame: DataFrame,
+) -> dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]]:
+    """Calculate pairwise-valid Pearson evidence for every legal cost filter."""
+
+    decorated = frame
+    grouped_dimensions = []
+    for field in COST_DIMENSIONS:
+        grouped_field = f"_corr_{field}"
+        grouped_dimensions.append(grouped_field)
+        decorated = decorated.withColumn(
+            grouped_field,
+            F.when(
+                F.col(field).isNotNull() & (F.length(F.col(field)) > 0),
+                F.col(field),
+            ).otherwise(F.lit(COST_MISSING)),
+        )
+
+    aggregate_expressions = []
+    for x_key, _, y_key, _ in COST_CORRELATION_PAIRS:
+        pair_key = f"{x_key}_{y_key}"
+        pair_valid = (
+            F.col(x_key).isNotNull()
+            & F.col(y_key).isNotNull()
+            & (F.col(x_key) >= 0)
+            & (F.col(y_key) >= 0)
+        )
+        x_column = f"_corr_{pair_key}_x"
+        y_column = f"_corr_{pair_key}_y"
+        decorated = decorated.withColumn(
+            x_column, F.when(pair_valid, F.col(x_key))
+        ).withColumn(y_column, F.when(pair_valid, F.col(y_key)))
+        aggregate_expressions.extend(
+            [
+                F.corr(x_column, y_column).alias(f"corr_{pair_key}"),
+                F.count(x_column).alias(f"count_{pair_key}"),
+            ]
+        )
+
+    result: dict[
+        tuple[str | None, str | None, str | None], list[dict[str, Any]]
+    ] = {}
+    for row in decorated.cube(*grouped_dimensions).agg(
+        *aggregate_expressions
+    ).collect():
+        current = tuple(
+            None if row[field] is None else str(row[field])
+            for field in grouped_dimensions
+        )
+        items = []
+        for x_key, x_label, y_key, y_label in COST_CORRELATION_PAIRS:
+            pair_key = f"{x_key}_{y_key}"
+            coefficient = row[f"corr_{pair_key}"]
+            sample_size = int(row[f"count_{pair_key}"] or 0)
+            if (
+                sample_size < 2
+                or coefficient is None
+                or not math.isfinite(float(coefficient))
+            ):
+                continue
+            items.append(
+                {
+                    "x_key": x_key,
+                    "x_label": x_label,
+                    "y_key": y_key,
+                    "y_label": y_label,
+                    "coefficient": round(float(coefficient), 4),
+                    "sample_size": sample_size,
+                    "method": "pearson",
+                }
+            )
+        result[current] = items
+    return result
+
+
 def _los_bin_column() -> Any:
     expression = F.lit(None).cast("string")
     for label, lower, upper in reversed(LOS_BINS):
@@ -1409,6 +1522,7 @@ def _cost_sections(
     facility_options: list[dict[str, str]],
     severity_options: list[str],
     relation_items: list[dict[str, Any]],
+    correlation_items: list[dict[str, Any]],
     high_cost_threshold: float,
     data_version: str,
     generated_at: str,
@@ -1497,6 +1611,50 @@ def _cost_sections(
             empty_text="当前筛选下没有同时具备有效住院时长、收费和成本的分组点。",
         )
     )
+    correlation_key = "continuous_correlations"
+    correlation_boundary = (
+        "当前筛选下两项指标均为有效非负值的住院出院记录；"
+        "各指标组合按自身成对有效记录计算"
+    )
+    correlation_summary = (
+        "Pearson r 用于描述住院时长、收费和成本之间的线性相关程度；"
+        "每组结果同时给出成对有效样本量，相关不等于因果。"
+    )
+    sections.append(
+        complex_section(
+            correlation_key,
+            "关键连续变量相关性",
+            "correlation",
+            correlation_items,
+            question="住院时长、收费与成本之间呈现怎样的线性相关关系？",
+            x_label="指标组合",
+            y_label="Pearson r",
+            unit="相关系数",
+            legend=[
+                {"key": "pearson", "label": "Pearson r", "style": "numeric"}
+            ],
+            tooltip_fields=[
+                "x_label",
+                "y_label",
+                "coefficient",
+                "sample_size",
+                "method",
+            ],
+            source_metric_keys=["record_count"],
+            summary_text=correlation_summary,
+            boundary=correlation_boundary,
+            data_version=data_version,
+            generated_at=generated_at,
+            fallback_columns=[
+                "x_label",
+                "y_label",
+                "coefficient",
+                "sample_size",
+                "method",
+            ],
+            empty_text="当前筛选下有效样本不足，或指标没有可计算的变化。",
+        )
+    )
     diagnosis, facility, _ = current
     if diagnosis is None:
         sections.extend(
@@ -1574,6 +1732,7 @@ def _cost_sections(
 
 def build_cost_records(
     cost_frame: DataFrame,
+    correlation_frame: DataFrame,
     diagnosis_options: list[dict[str, str]],
     facility_options: list[dict[str, str]],
     severity_options: list[str],
@@ -1596,6 +1755,7 @@ def build_cost_records(
         severity_options,
         high_cost_threshold,
     )
+    correlation_rows = _cost_correlation_rows(correlation_frame)
     keys: list[tuple[str | None, str | None, str | None]] = [
         (None, None, severity) for severity in [None, *severity_options]
     ]
@@ -1640,6 +1800,7 @@ def build_cost_records(
             facility_options,
             severity_options,
             relation_rows.get(current, []),
+            correlation_rows.get(current, []),
             high_cost_threshold,
             data_version,
             generated_at,
@@ -1759,10 +1920,13 @@ def _risk_section_rows(
 ) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one risk section for every legal wildcard/finite filter."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _risk_dimension_frame(frame).withColumn(
         "_risk_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -2221,6 +2385,8 @@ def build_data_quality_record(
     raw_count: int,
     execution_status: str,
     mysql_status: str,
+    hdfs_status: str = "CHECK_REQUIRED",
+    hive_status: str = "CHECK_REQUIRED",
 ) -> dict[str, Any]:
     """Build #71 from one named aggregate over the cached clean frame."""
 
@@ -2312,8 +2478,8 @@ def build_data_quality_record(
                 "storage",
                 "存储与服务检查",
                 [
-                    {"name": "HDFS", "value": "CHECK_REQUIRED"},
-                    {"name": "Hive", "value": "CHECK_REQUIRED"},
+                    {"name": "HDFS", "value": hdfs_status},
+                    {"name": "Hive", "value": hive_status},
                     {"name": "MySQL", "value": mysql_status},
                     {"name": "PySpark任务", "value": execution_status},
                 ],
@@ -2409,7 +2575,7 @@ def _legacy_build_records(
         )
 
     diagnoses = (
-        valid.where(F.length("diagnosis_code") > 0)
+        _disease_frame(valid).where(F.length("diagnosis_code") > 0)
         .select("diagnosis_code", "diagnosis")
         .dropDuplicates(["diagnosis_code"])
     )
@@ -2666,6 +2832,9 @@ def build_records(
     mysql_status: str = "NOT_PUBLISHED",
     data_version: str = "fixture:unversioned:v1",
     generated_at: str = "1970-01-01T00:00:00.000000Z",
+    *,
+    hdfs_status: str = "CHECK_REQUIRED",
+    hive_status: str = "CHECK_REQUIRED",
 ) -> list[dict[str, Any]]:
     """Build all modules with batched grouped actions over the cached frame."""
 
@@ -2674,9 +2843,8 @@ def build_records(
         & F.col("los").isNotNull()
     )
     cost_frame = scoped.where(F.col("valid_money"))
-    valid_diagnosis = scoped.where(
-        (F.length(F.col("diagnosis_code")) > 0)
-        & (F.length(F.col("diagnosis")) > 0)
+    valid_diagnosis = _disease_frame(scoped).where(
+        F.length(F.col("diagnosis_code")) > 0
     )
     overall = {
         "age": rows(scoped, "age", limit=None),
@@ -2826,6 +2994,7 @@ def build_records(
     records.extend(
         build_cost_records(
             cost_frame,
+            scoped,
             diagnosis_options,
             facility_options,
             option_values("severity"),
@@ -2849,7 +3018,12 @@ def build_records(
 
     records.append(
         build_data_quality_record(
-            frame, raw_count, execution_status, mysql_status
+            frame,
+            raw_count,
+            execution_status,
+            mysql_status,
+            hdfs_status,
+            hive_status,
         )
     )
     return records
@@ -2863,24 +3037,27 @@ def _validate_input_columns(raw: DataFrame) -> None:
         if not any(column in raw.columns for column in FIELD_ALIASES.get(name, (FIELDS[name],)))
     ]
     if missing:
-        raise ValueError("输入 CSV 缺少必要字段: " + ", ".join(missing))
+        raise ValueError("输入数据缺少必要字段: " + ", ".join(missing))
 
 
 def build_document(
     cleaned: DataFrame,
-    input_path: Path,
+    input_source: DataSource,
     digest: str,
     generated_at: str,
     module: str,
     mysql_status: str,
+    *,
+    data_version_override: str | None = None,
+    hdfs_status: str = "CHECK_REQUIRED",
+    hive_status: str = "CHECK_REQUIRED",
 ) -> tuple[dict[str, Any], int]:
     """Materialize the shared frame once and build the requested snapshot."""
 
     raw_count = cleaned.count()
-    fixture_root = (REPO_ROOT / "data" / "fixtures").resolve()
     execution_status = (
         "FIXTURE_ONLY"
-        if input_path.resolve().parent == fixture_root
+        if input_source.is_fixture
         else "PASS"
     )
     effective_mysql_status = (
@@ -2888,7 +3065,9 @@ def build_document(
         if execution_status == "FIXTURE_ONLY"
         else mysql_status
     )
-    data_version = build_data_version(input_path, digest)
+    data_version = data_version_override or build_data_version(
+        input_source.version_path, digest, fixture=input_source.is_fixture
+    )
     normalized_generated_at = normalize_utc_timestamp(generated_at)
     dashboard_frame = cleaned.where(
         F.coalesce(F.col("in_scope"), F.lit(False))
@@ -2906,13 +3085,15 @@ def build_document(
             effective_mysql_status,
             data_version,
             normalized_generated_at,
+            hdfs_status=hdfs_status,
+            hive_status=hive_status,
         )
     )
     document = {
         "data_version": data_version,
         "generated_at": normalized_generated_at,
         "input": {
-            "file_name": input_path.name,
+            "file_name": input_source.name,
             "sha256": digest,
             "raw_rows": raw_count,
         },
@@ -2923,7 +3104,7 @@ def build_document(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, required=True)
+    add_source_arguments(parser, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--generated-at")
     parser.add_argument(
@@ -2946,35 +3127,48 @@ def main() -> None:
         default="NOT_PUBLISHED",
         help="真实 MySQL 发布证据取得前保持 NOT_PUBLISHED；取得证据后才可使用 VERIFIED。",
     )
+    parser.add_argument(
+        "--hdfs-status",
+        choices=("CHECK_REQUIRED", "VERIFIED"),
+        default="CHECK_REQUIRED",
+        help="取得 HDFS 集群检查证据后使用 VERIFIED。",
+    )
+    parser.add_argument(
+        "--hive-status",
+        choices=("CHECK_REQUIRED", "VERIFIED"),
+        default="CHECK_REQUIRED",
+        help="取得 Hive 表检查证据后使用 VERIFIED。",
+    )
     args = parser.parse_args()
 
-    input_path = args.input.resolve()
-    digest = sha256_file(input_path)
+    input_source = DataSource.from_arguments(args.input, args.hive_table)
+    ensure_local_source_exists(input_source)
+    digest = fingerprint_source(input_source, args.input_sha256)
     generated_at = normalize_generated_at(args.generated_at)
-    spark = (
+    builder = (
         SparkSession.builder.master(args.master)
         .appName("yishuyunce-full-analytics")
         .config("spark.ui.enabled", "false")
         .config("spark.sql.shuffle.partitions", "4")
-        .getOrCreate()
     )
+    if input_source.kind == "hive":
+        builder = builder.enableHiveSupport()
+    spark = builder.getOrCreate()
     cleaned = None
     try:
-        raw = (
-            spark.read.option("header", "true")
-            .option("inferSchema", "false")
-            .option("mode", "FAILFAST")
-            .csv(str(input_path))
-        )
+        raw = read_source(spark, input_source)
         _validate_input_columns(raw)
         cleaned = clean_frame(raw).persist(StorageLevel.MEMORY_AND_DISK)
         document, raw_count = build_document(
             cleaned,
-            input_path,
+            input_source,
             digest,
             generated_at,
             args.module,
             args.mysql_status,
+            data_version_override=args.data_version,
+            hdfs_status=args.hdfs_status,
+            hive_status=args.hive_status,
         )
     finally:
         if cleaned is not None:

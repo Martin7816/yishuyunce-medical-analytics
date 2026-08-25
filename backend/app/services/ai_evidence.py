@@ -32,7 +32,7 @@ _MAX_FACTS = 80
 _NUMBER_PATTERN = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?")
 
 _SIMPLE_SECTION_TYPES = frozenset({"bar", "pie", "table", "status"})
-_COMPLEX_SECTION_TYPES = frozenset({"grouped_bar", "scatter", "heatmap"})
+_COMPLEX_SECTION_TYPES = frozenset({"grouped_bar", "scatter", "heatmap", "correlation"})
 
 _UNSAFE_TERMS = (
     "个人诊断",
@@ -366,6 +366,21 @@ def _safe_section_item(section_type: str, item: Mapping[str, Any]) -> dict[str, 
             if value is not None:
                 result[key] = value
         if "x_label" not in result or "y_label" not in result or "value" not in result:
+            return None
+        return result
+
+    if section_type == "correlation":
+        result = {}
+        for key in ("x_key", "x_label", "y_key", "y_label", "method"):
+            text = _safe_text(item.get(key), max_length=256)
+            if text is not None:
+                result[key] = text
+        for key in ("coefficient", "sample_size"):
+            value = _safe_number(item.get(key))
+            if value is not None:
+                result[key] = value
+        required = ("x_key", "x_label", "y_key", "y_label", "coefficient")
+        if any(key not in result for key in required):
             return None
         return result
 

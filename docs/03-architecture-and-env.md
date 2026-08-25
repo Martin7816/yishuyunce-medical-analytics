@@ -5,9 +5,9 @@
 系统需要让同一批住院运营指标可生成、可发布、可查询、可展示和可核对。每一层只承担一类责任，避免在数据任务、API 和页面中分别维护不同的计算逻辑。
 
 ```text
-原始层：SPARCS CSV
+原始层：HDFS 中的 SPARCS CSV（Hive 外部表提供结构化访问）
     ↓
-计算层：PySpark 清洗、聚合、模型训练
+计算层：PySpark 读取 HDFS/Hive，清洗、聚合、模型训练
     ↓
 工件层：分析快照 JSON、模型 JSON
     ↓
@@ -15,24 +15,24 @@
     ↓
 接口层：Flask /api/v1
     ↓
-展示层：Vue Router + ECharts
+展示层：Vue Router + D3 SVG
     ↓
 解释层：DeepSeek + 白名单分析工具
 ```
 
-HDFS 保存课程环境需要的原始副本，Hive 提供外部表和字段检查。二者不产生另一套正式汇总结果。
+HDFS 保存正式分析使用的原始副本，Hive 提供外部表和字段检查；PySpark 的清洗、聚合和模型逻辑保持不变。HDFS/Hive 不重复生成另一套正式汇总结果，MySQL 继续承担前端查询服务结果的发布与读取。
 
 ## 2. 组件职责
 
 | 组件 | 输入 | 输出 | 不承担的工作 |
 |---|---|---|---|
-| PySpark 数据任务 | SPARCS CSV | 统一分析快照 | HTTP 服务、页面展示 |
-| PySpark 模型任务 | SPARCS CSV | 高费用模型与指标工件 | 个人诊断、治疗判断 |
+| PySpark 数据任务 | HDFS CSV 或 Hive 外部表 | 统一分析快照 | HTTP 服务、页面展示 |
+| PySpark 模型任务 | HDFS CSV 或 Hive 外部表 | 高费用模型与指标工件 | 个人诊断、治疗判断 |
 | MySQL | 经过校验的分析快照 | 可按模块和实体键读取的服务结果 | 原始 CSV 存储、指标重算 |
 | Flask | MySQL 或联调快照 | 白名单 API 响应 | 原始数据聚合、页面排序 |
-| Vue / ECharts | Flask 响应 | 指标卡、图表、表格和交互状态 | 数据库访问、正式指标重算 |
+| Vue / D3 SVG | Flask 响应 | 指标卡、图表、表格和交互状态 | 数据库访问、正式指标重算 |
 | DeepSeek 工具层 | 用户问题与汇总 API | 带来源、版本和统计边界的回答 | 自由 SQL、原始明细访问、多轮记忆 |
-| HDFS / Hive | 原始 CSV 副本 | 集群与表结构检查结果 | 正式指标的重复计算 |
+| HDFS / Hive | 原始 CSV 副本与外部表 | PySpark 的正式输入、集群与表结构检查 | 指标的重复计算、服务结果发布 |
 
 ## 3. 统一分析快照
 
@@ -70,7 +70,7 @@ HDFS 保存课程环境需要的原始副本，Hive 提供外部表和字段检�
 
 ### 5.2 课程虚拟机环境
 
-三节点环境使用 Hadoop 3.3.4、Hive 3.1.3、MySQL 8.0.30 和 Java 8。Windows 本机执行 PySpark 正式计算；虚拟机提供 HDFS、Hive 和 MySQL 支撑。虚拟机没有 `spark-submit` 不影响这条职责边界。
+三节点环境使用 Hadoop 3.3.4、Hive 3.1.3、MySQL 8.0.30 和 Java 8。PySpark 仍按原有本地模式执行清洗、聚合和模型训练，但原始数据改由虚拟机中的 HDFS/Hive 提供；运行任务的终端需要能够读取对应的 Hadoop/Hive 配置。虚拟机没有 `spark-submit` 不影响本项目的本地 PySpark 处理方式。
 
 ### 5.3 默认地址
 
@@ -89,8 +89,10 @@ backend/.env                              本机运行配置，不提交
 backend/.env.example                      配置字段示例
 frontend/.env                             可选前端地址配置，不提交
 data/sql/002-analysis-snapshot.sql        统一快照表结构
-data/src/run_full_analytics_pyspark.py    分析快照生成入口
-data/src/train_high_cost_model_pyspark.py 模型训练入口
+data/src/run_full_analytics_pyspark.py    分析快照生成入口（支持 HDFS/Hive 输入）
+data/src/train_high_cost_model_pyspark.py 模型训练入口（支持 HDFS/Hive 输入）
+data/src/run_sparcs_top10_pyspark.py     TOP10 服务结果入口（支持 HDFS/Hive 输入）
+data/src/storage_input.py                 原始数据存储输入适配层
 data/src/publish_analytics_snapshot_mysql.py
                                           MySQL 发布入口
 ```

@@ -180,9 +180,10 @@ def connection_options(config: dict[str, Any] | None = None) -> dict[str, Any]:
 def _connect(config: dict[str, Any] | None = None):
     try:
         import pymysql
+        from pymysql.cursors import DictCursor
     except ImportError as error:
         raise RuntimeError("PyMySQL is required for aggregate publishing") from error
-    return pymysql.connect(**connection_options(config))
+    return pymysql.connect(**connection_options(config), cursorclass=DictCursor)
 
 
 def _generated_at_sql(value: str) -> str:
@@ -340,6 +341,47 @@ def _same_aggregate_identity(first: dict[str, Any], second: dict[str, Any]) -> b
     return True
 
 
+def _fetch_fact_reconciliation(cursor: Any, batch_id: str) -> dict[str, int]:
+    """Return database fact totals through a stable mapping contract."""
+
+    cursor.execute(
+        f"""
+SELECT COUNT(*) AS `fact_rows`,
+       COALESCE(SUM(`record_count`), 0) AS `record_count_sum`
+FROM `{AGGREGATE_FACT_TABLE}`
+WHERE `batch_id` = %s
+""".strip(),
+        (batch_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return {"fact_rows": 0, "record_count_sum": 0}
+    if isinstance(row, dict):
+        values = (
+            row.get("fact_rows"),
+            row.get("record_count_sum", row.get("source_records")),
+        )
+    elif isinstance(row, (tuple, list)) and len(row) == 2:
+        values = (row[0], row[1])
+    else:
+        raise AggregateContractError(
+            "aggregate fact reconciliation returned an unsupported row type"
+        )
+    if any(value is None for value in values):
+        raise AggregateContractError(
+            "aggregate fact reconciliation returned incomplete totals"
+        )
+    try:
+        return {
+            "fact_rows": int(values[0]),
+            "record_count_sum": int(values[1]),
+        }
+    except (TypeError, ValueError) as error:
+        raise AggregateContractError(
+            "aggregate fact reconciliation totals are not integers"
+        ) from error
+
+
 def _stage_and_validate(
     cursor: Any,
     manifest: dict[str, Any],
@@ -382,18 +424,9 @@ VALUES ({', '.join(['%s'] * (1 + len(AGGREGATE_GRAIN) + len(AGGREGATE_MEASURES))
         fact_record_count=source_records,
     )
 
-    cursor.execute(
-        f"""
-SELECT COUNT(*) AS `fact_rows`,
-       COALESCE(SUM(`record_count`), 0) AS `source_records`
-FROM `{AGGREGATE_FACT_TABLE}`
-WHERE `batch_id` = %s
-""".strip(),
-        (manifest["batch_id"],),
-    )
-    checked = cursor.fetchone() or {}
-    checked_row_count = int(checked.get("fact_rows", -1))
-    checked_source_records = int(checked.get("source_records", -1))
+    checked = _fetch_fact_reconciliation(cursor, manifest["batch_id"])
+    checked_row_count = checked["fact_rows"]
+    checked_source_records = checked["record_count_sum"]
     validate_aggregate_reconciliation(
         source_scope_row_count=manifest["source_records"],
         aggregate_row_count=manifest["aggregate_rows"],
