@@ -68,6 +68,25 @@ def test_valid_planner_response_returns_validated_query_plan_and_strict_schema()
     )
 
 
+def test_chinese_filtered_disease_question_is_normalized_before_validation():
+    planner, client = make_planner({"parsed": valid_plan()})
+
+    result = planner.generate_plan("50岁男性最容易得什么病")
+
+    assert result.to_document() == {
+        "version": QUERY_ANALYTICS_VERSION,
+        "dimensions": ["diagnosis"],
+        "measures": ["case_count"],
+        "filters": [
+            {"dimension": "age_group", "operator": "eq", "value": "50 to 69"},
+            {"dimension": "gender", "operator": "eq", "value": "M"},
+        ],
+        "sort": [{"by": "case_count", "direction": "desc"}],
+        "limit": 10,
+    }
+    assert client.calls[0][0][1]["content"] == "50岁男性最容易得什么病"
+
+
 def test_patient_cohort_aggregate_question_is_allowed_for_planning():
     planner, client = make_planner({"parsed": valid_plan()})
 
@@ -75,7 +94,16 @@ def test_patient_cohort_aggregate_question_is_allowed_for_planning():
         "Medicare\u60a3\u8005\u5e73\u5747\u8d39\u7528\u662f\u591a\u5c11\uff1f"
     )
 
-    assert result.to_document() == valid_plan()
+    assert result.to_document() == {
+        "version": QUERY_ANALYTICS_VERSION,
+        "dimensions": [],
+        "measures": ["avg_charges"],
+        "filters": [
+            {"dimension": "payment", "operator": "eq", "value": "Medicare"}
+        ],
+        "sort": [],
+        "limit": 10,
+    }
     assert len(client.calls) == 1
 
 

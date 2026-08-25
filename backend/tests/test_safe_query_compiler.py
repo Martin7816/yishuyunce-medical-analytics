@@ -43,6 +43,18 @@ def test_valid_compile_returns_repository_neutral_query() -> None:
     assert "table" not in compiled.to_document()
 
 
+def test_gender_diagnosis_distribution_is_an_explicit_supported_shape() -> None:
+    compiled = SafeQueryCompiler().compile(
+        make_plan(
+            dimensions=["gender", "diagnosis"],
+            filters=[],
+            sort=[{"by": "case_count", "direction": "desc"}],
+        )
+    )
+
+    assert compiled.source_capability == "aggregate_gender_diagnosis"
+
+
 def test_unknown_dimension_is_rejected() -> None:
     with pytest.raises(SafeQueryCompilerError, match="unknown dimension"):
         SafeQueryCompiler().compile(

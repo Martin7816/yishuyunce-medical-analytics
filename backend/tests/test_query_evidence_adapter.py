@@ -72,6 +72,25 @@ def test_ranking_conversion_uses_query_rows():
     assert evidence["facts"] == evidence["derived_facts"]
 
 
+def test_filtered_question_adds_coarsening_and_case_count_scope_notes():
+    result = result_for(
+        dimensions=("diagnosis",),
+        rows=({"diagnosis": "D1", "case_count": 20},),
+    )
+
+    evidence = QueryEvidenceAdapter().adapt(
+        result,
+        "ranking",
+        question="50岁男性最容易得什么病",
+    )
+
+    assert evidence["query_scope_notes"] == [
+        "50岁已按发布年龄组映射为50 to 69",
+        "本结果统计住院出院记录中的病例量，不等同于一般人群患病率或个体患病风险",
+    ]
+    assert evidence["query_scope_notes"][0] in evidence["limitations"]
+
+
 def test_provenance_is_preserved_in_evidence_and_chart():
     result = result_for(
         measures=("avg_los", "avg_charges"),

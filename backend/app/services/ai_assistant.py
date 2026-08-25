@@ -30,6 +30,7 @@ from .evidence_answer_generator import (
     EvidenceAnswerGenerator,
     EvidenceAnswerGeneratorError,
 )
+from .query_intent import infer_natural_language_intent
 from .semantic_registry import semantic_registry
 
 
@@ -284,6 +285,13 @@ def is_new_analytics_question(question: str) -> bool:
     normalized = question.strip()
     if is_patient_level_question(normalized):
         return False
+    # Route any high-confidence aggregate shape through the structured agent:
+    # rankings, distributions, comparisons, explicit measures and published
+    # dimension filters.  This is intentionally generic; a new wording should
+    # be handled by the semantic vocabulary/planner rather than a new branch.
+    intent = infer_natural_language_intent(normalized)
+    if intent.has_structured_intent:
+        return True
     dimensions, measures = _semantic_mentions(normalized)
     if not measures:
         return False
@@ -340,11 +348,36 @@ def tool_definitions() -> list[dict]:
 
 
 class DeepSeekChatClient:
-    def __init__(self, api_key: str | None, base_url: str, model: str, timeout: int) -> None:
+    def __init__(
+        self,
+        api_key: str | None,
+        base_url: str,
+        model: str,
+        timeout: int,
+        *,
+        thinking_mode: str = "enabled",
+        reasoning_effort: str = "high",
+        structured_max_tokens: int = 4096,
+    ) -> None:
         self.api_key = api_key
         self.url = f"{base_url.rstrip('/')}/chat/completions"
         self.model = model
         self.timeout = timeout
+        self.thinking_enabled = str(thinking_mode).strip().lower() in {
+            "enabled",
+            "enable",
+            "true",
+            "1",
+            "on",
+        }
+        self.reasoning_effort = str(reasoning_effort).strip().lower()
+        if self.reasoning_effort not in {"low", "high", "max"}:
+            self.reasoning_effort = "high"
+        if isinstance(structured_max_tokens, bool) or not isinstance(
+            structured_max_tokens, int
+        ):
+            structured_max_tokens = 4096
+        self.structured_max_tokens = max(512, min(structured_max_tokens, 16384))
 
     def complete(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         if not self.api_key:
@@ -401,7 +434,6 @@ class DeepSeekChatClient:
         body = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0.0,
             # DeepSeek Chat Completions currently exposes JSON Output rather
             # than the JSON-Schema response format.  The adapters still pass
             # their full internal schemas and validate the parsed object
@@ -411,8 +443,16 @@ class DeepSeekChatClient:
                 if response_format.get("type") == "json_schema"
                 else dict(response_format)
             ),
-            "max_tokens": 2048,
+            "max_tokens": self.structured_max_tokens,
         }
+        if self.thinking_enabled:
+            # Keep reasoning internal to the one-shot planner/answer call. A
+            # legacy multi-turn tool call needs reasoning_content replayed by
+            # the caller, which this client intentionally does not fabricate.
+            body["thinking"] = {"type": "enabled"}
+            body["reasoning_effort"] = self.reasoning_effort
+        else:
+            body["temperature"] = 0.0
         request = Request(
             self.url,
             data=json.dumps(body).encode("utf-8"),

@@ -149,6 +149,10 @@ def test_chinese_aggregate_intents_route_to_new_analytics_agent():
     assert all(is_new_analytics_question(question) for question in questions)
 
 
+def test_filtered_chinese_disease_question_enters_new_agent():
+    assert is_new_analytics_question("50岁男性最容易得什么病") is True
+
+
 def test_patient_cohort_aggregate_intents_route_but_individual_patient_does_not():
     assert is_new_analytics_question(
         "Medicare\u60a3\u8005\u5e73\u5747\u8d39\u7528\u662f\u591a\u5c11\uff1f"
@@ -158,8 +162,8 @@ def test_patient_cohort_aggregate_intents_route_but_individual_patient_does_not(
     assert is_new_analytics_question("\u67d0\u60a3\u8005\u8d39\u7528\u662f\u591a\u5c11\uff1f") is False
 
 
-def test_hospital_case_count_natural_language_keeps_legacy_route():
-    assert is_new_analytics_question("哪些医院病例量最高？") is False
+def test_hospital_case_count_natural_language_enters_generic_agent():
+    assert is_new_analytics_question("哪些医院病例量最高？") is True
 
 
 def test_conversation_bypasses_analytics_agent():

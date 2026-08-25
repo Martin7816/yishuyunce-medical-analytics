@@ -117,6 +117,11 @@ def create_app(
             app.config["DEEPSEEK_BASE_URL"],
             app.config["DEEPSEEK_MODEL"],
             app.config["DEEPSEEK_TIMEOUT_SECONDS"],
+            thinking_mode=app.config.get("DEEPSEEK_THINKING_MODE", "enabled"),
+            reasoning_effort=app.config.get("DEEPSEEK_REASONING_EFFORT", "high"),
+            structured_max_tokens=app.config.get(
+                "DEEPSEEK_STRUCTURED_MAX_TOKENS", 4096
+            ),
         )
     )
     selected_analytics_agent = (

@@ -49,6 +49,7 @@ HDFS 保存课程环境需要的原始副本，Hive 提供外部表和字段检�
 | `ANALYTICS_DATA_SOURCE` | `fixture` | 读取仓库内联调快照 |
 | `ANALYTICS_DATA_SOURCE` | `mysql` | 读取 MySQL 统一分析快照 |
 | `TOP10_DATA_SOURCE` | `fixture` / `mysql` | 疾病病例量 TOP10 独立接口的数据源 |
+| `AGGREGATE_DATA_SOURCE` | `mysql` | 受控语义问数读取 ACTIVE 聚合事实表 |
 
 未设置或填写未知值时，后端返回配置错误，不会自动把联调数据当作真实结果。
 
@@ -104,6 +105,7 @@ data/src/publish_analytics_snapshot_mysql.py
 - 模块结果不存在时，API 返回 `RESULT_NOT_READY`；
 - 合法筛选没有记录时，API 返回带版本信息的空结果；
 - DeepSeek 密钥缺失、超时或网络失败时，AI 接口返回真实错误，不生成替代答案；
+- 结构化语义规划和证据回答默认使用 DeepSeek thinking mode；旧版工具多轮仍按兼容协议传递消息；
 - 前端在请求失败时清除旧指标和图表，显示错误类型、追踪编号和重试入口。
 
 启动、发布和排障命令见 [开发与运行手册](04-development-and-runbook.md)。

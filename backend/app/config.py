@@ -35,6 +35,14 @@ class Config:
     DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     DEEPSEEK_TIMEOUT_SECONDS = int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "20"))
+    # Thinking is enabled only on the one-shot structured planner/answer
+    # requests.  Legacy tool-call turns keep their original payload because
+    # DeepSeek requires reasoning_content to be replayed on tool follow-ups.
+    DEEPSEEK_THINKING_MODE = os.getenv("DEEPSEEK_THINKING_MODE", "enabled")
+    DEEPSEEK_REASONING_EFFORT = os.getenv("DEEPSEEK_REASONING_EFFORT", "high")
+    DEEPSEEK_STRUCTURED_MAX_TOKENS = int(
+        os.getenv("DEEPSEEK_STRUCTURED_MAX_TOKENS", "4096")
+    )
 
     MYSQL_HOST = os.getenv("MYSQL_HOST")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))

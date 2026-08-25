@@ -22,6 +22,7 @@ from shared.query_plan_contract import (
 
 from .ai_evidence import assess_question_scope, is_simple_conversation
 from .query_plan_validator import QueryPlanValidationError, QueryPlanValidator
+from .query_intent import infer_natural_language_intent, merge_query_plan_with_intent
 from .semantic_registry import SemanticRegistry, semantic_registry
 
 
@@ -58,6 +59,24 @@ length of stay uses "avg_los", average charges or fees use "avg_charges", and
 average costs use "avg_costs". Do not invent variants such as "avg_cost".
 For a Medicare average-charge question, the canonical shape is:
 {"version":"query_analytics-v1","dimensions":[],"measures":["avg_charges"],"filters":[{"dimension":"payment","operator":"eq","value":"Medicare"}],"sort":[],"limit":1}
+
+Natural-language examples:
+- “50岁男性最容易得什么病” means a diagnosis ranking by case_count,
+  filtered by age_group="50 to 69" and gender="M", sorted descending, limit 10.
+- “50至69岁女性病例最多的疾病” means the same diagnosis ranking with
+  age_group="50 to 69" and gender="F".
+- “哪些医院病例量最高” means dimensions=["hospital"],
+  measures=["case_count"], sorted by case_count descending.
+- “哪个医院平均住院时间最长” means dimensions=["hospital"],
+  measures=["avg_los"], sorted by avg_los descending.
+- “不同性别疾病分布” means dimensions=["gender","diagnosis"],
+  measures=["case_count"]. Only choose a dimension combination allowed by
+  the server capability contract; never invent a missing aggregate shape.
+The published age field is grouped. A single age such as 50岁 must be mapped
+to its published bucket “50 to 69”; “50岁以上” must use the published buckets
+“50 to 69” and “70 or Older”. Do not pretend that an exact age filter exists.
+Case count means inpatient discharge records, not prevalence, incidence, or an
+individual patient's disease risk.
 """
 
 
@@ -187,6 +206,9 @@ def _looks_like_analytics_question(
 ) -> bool:
     """Require a small deterministic analytics-intent signal before routing."""
 
+    intent = infer_natural_language_intent(question)
+    if intent.has_structured_intent:
+        return True
     if any(_contains_hint(question, hint) for hint in _ANALYTICS_HINTS):
         return True
 
@@ -347,6 +369,11 @@ class DeepSeekPlannerAdapter:
             response_format,
         )
         document = _extract_structured_document(response)
+        # Provider output remains the source of semantic interpretation, but
+        # deterministic published-value filters must not be lost because the
+        # model selected an overly broad or coarsened plan. The resulting plan
+        # still passes the same frozen validator and capability compiler.
+        document = merge_query_plan_with_intent(normalized_question, document)
         try:
             return self.validator.validate(document)
         except QueryPlanValidationError as error:
