@@ -6,7 +6,10 @@ from pathlib import Path
 from app import create_app
 from app.services.ai_assistant import AIAssistantService, is_new_analytics_question
 from app.services.analytics_snapshot import AnalyticsSnapshotService
-from app.services.evidence_answer_generator import AnswerResult
+from app.services.evidence_answer_generator import (
+    AnswerResult,
+    EvidenceAnswerOutputError,
+)
 from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotRepository
 
 
@@ -103,6 +106,19 @@ class FakeAnswerGenerator:
         )
 
 
+class FailingAnswerGenerator(FakeAnswerGenerator):
+    def generate(self, question, evidence):
+        raise EvidenceAnswerOutputError("provider unavailable")
+
+    def deterministic_fallback(self, question, evidence):
+        return AnswerResult(
+            status="ok",
+            answer_text="根据已核验的汇总数据：Hospital A: 50。",
+            used_evidence_ids=("query-routing-1",),
+            provenance=PROVENANCE,
+        )
+
+
 def make_service(client, agent=None, answer_generator=None):
     analytics = AnalyticsSnapshotService(FixtureAnalyticsSnapshotRepository(FIXTURE_PATH))
     return AIAssistantService(
@@ -149,6 +165,10 @@ def test_chinese_aggregate_intents_route_to_new_analytics_agent():
     assert all(is_new_analytics_question(question) for question in questions)
 
 
+def test_filtered_chinese_disease_question_enters_new_agent():
+    assert is_new_analytics_question("50岁男性最容易得什么病") is True
+
+
 def test_patient_cohort_aggregate_intents_route_but_individual_patient_does_not():
     assert is_new_analytics_question(
         "Medicare\u60a3\u8005\u5e73\u5747\u8d39\u7528\u662f\u591a\u5c11\uff1f"
@@ -158,8 +178,8 @@ def test_patient_cohort_aggregate_intents_route_but_individual_patient_does_not(
     assert is_new_analytics_question("\u67d0\u60a3\u8005\u8d39\u7528\u662f\u591a\u5c11\uff1f") is False
 
 
-def test_hospital_case_count_natural_language_keeps_legacy_route():
-    assert is_new_analytics_question("哪些医院病例量最高？") is False
+def test_hospital_case_count_natural_language_enters_generic_agent():
+    assert is_new_analytics_question("哪些医院病例量最高？") is True
 
 
 def test_conversation_bypasses_analytics_agent():
@@ -197,6 +217,20 @@ def test_new_analytics_question_uses_agent_and_answer_generator():
     ]
     assert result["sources"][0]["provenance"] == PROVENANCE
     assert "query_plan" not in result["sources"][0]
+
+
+def test_model_answer_failure_uses_evidence_only_fallback():
+    client = LegacyClient()
+    agent = FakeAnalyticsAgent()
+    answer_generator = FailingAnswerGenerator()
+
+    result = make_service(client, agent, answer_generator).chat(
+        {"message": "Show case_count by hospital and severity"}
+    )
+
+    assert result["answer"] == "根据已核验的汇总数据：Hospital A: 50。"
+    assert result["data_versions"] == [PROVENANCE["data_version"]]
+    assert client.complete_calls == []
 
 
 def test_legacy_supported_question_keeps_old_tool_path():

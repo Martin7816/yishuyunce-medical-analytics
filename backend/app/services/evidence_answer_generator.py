@@ -11,6 +11,7 @@ the evidence by the server.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -88,6 +89,11 @@ Never invent or estimate a number, metric, category, ranking, or data version.
 For rankings, copy only the category/value pairs present in the supplied rows.
 Never calculate or add totals, shares, percentages, gaps, differences, or other
 derived numbers, even when they could be computed from the rows.
+When the evidence contains a filtered diagnosis ranking, answer that ranking
+directly instead of refusing merely because patient-level detail is absent.
+Respect query_scope_notes and mention their age-group or record-count caveat
+briefly when it matters. Treat “病例量” as the number of inpatient discharge
+records; do not call it prevalence, incidence, or an individual's disease risk.
 Never infer causality or use causal explanations. Never give a diagnosis,
 treatment, medication, medical recommendation, or patient-level conclusion.
 If the evidence does not support the question, return a concise insufficient
@@ -501,6 +507,141 @@ def _insufficient_result(provenance: dict[str, str] | None) -> AnswerResult:
     )
 
 
+def _fallback_number(value: object) -> str | None:
+    """Format a number without deriving, rounding, or inventing a value."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return f"{int(value):,}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return f"{value:,.6f}".rstrip("0").rstrip(".")
+
+
+def _fallback_text_parts(
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[list[str], list[str]]:
+    """Extract display lines from Safe Evidence without model interpretation."""
+
+    lines: list[str] = []
+    used_ids: list[str] = []
+
+    for item in prepared:
+        evidence_id = item.get("evidence_id")
+        raw = item.get("evidence")
+        if not isinstance(evidence_id, str) or not isinstance(raw, Mapping):
+            continue
+
+        local_lines: list[str] = []
+        sections = raw.get("sections")
+        if isinstance(sections, Sequence) and not isinstance(sections, (str, bytes)):
+            for section in sections:
+                if not isinstance(section, Mapping):
+                    continue
+                section_items = section.get("items")
+                if not isinstance(section_items, Sequence) or isinstance(
+                    section_items, (str, bytes)
+                ):
+                    continue
+                for section_item in section_items[:10]:
+                    if not isinstance(section_item, Mapping):
+                        continue
+                    label = section_item.get("name", section_item.get("category"))
+                    if not isinstance(label, str) or not label.strip():
+                        label = "Aggregate"
+                    label = label.strip()
+                    series = section_item.get("series")
+                    if isinstance(series, Sequence) and not isinstance(
+                        series, (str, bytes)
+                    ):
+                        values: list[str] = []
+                        for series_item in series[:6]:
+                            if not isinstance(series_item, Mapping):
+                                continue
+                            value = _fallback_number(series_item.get("value"))
+                            series_label = series_item.get("label", series_item.get("key"))
+                            if value is None or not isinstance(series_label, str):
+                                continue
+                            values.append(f"{series_label.strip()}={value}")
+                        if values:
+                            local_lines.append(f"{label}: {', '.join(values)}")
+                        continue
+                    value = _fallback_number(section_item.get("value"))
+                    if value is not None:
+                        local_lines.append(f"{label}: {value}")
+
+        if not local_lines:
+            metrics = raw.get("metrics")
+            if isinstance(metrics, Sequence) and not isinstance(metrics, (str, bytes)):
+                for metric in metrics[:10]:
+                    if not isinstance(metric, Mapping):
+                        continue
+                    value = _fallback_number(metric.get("value"))
+                    label = metric.get("label", metric.get("key"))
+                    if value is not None and isinstance(label, str) and label.strip():
+                        local_lines.append(f"{label.strip()}: {value}")
+
+        if not local_lines:
+            facts = raw.get("derived_facts", raw.get("facts"))
+            if isinstance(facts, Sequence) and not isinstance(facts, (str, bytes)):
+                for fact in facts[:10]:
+                    if not isinstance(fact, Mapping):
+                        continue
+                    value = _fallback_number(fact.get("value"))
+                    label = fact.get("label", fact.get("key"))
+                    if value is not None and isinstance(label, str) and label.strip():
+                        local_lines.append(f"{label.strip()}: {value}")
+
+        if local_lines:
+            used_ids.append(evidence_id)
+            lines.extend(local_lines)
+
+    return lines[:10], used_ids
+
+
+def _deterministic_fallback_result(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+    provenance: dict[str, str] | None,
+) -> AnswerResult:
+    lines, used_ids = _fallback_text_parts(prepared)
+    if not lines or not used_ids:
+        return _insufficient_result(provenance)
+
+    notes: list[str] = []
+    for item in prepared:
+        raw = item.get("evidence")
+        if not isinstance(raw, Mapping):
+            continue
+        for key in ("query_scope_notes", "limitations"):
+            values = raw.get(key)
+            if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+                continue
+            for value in values:
+                if isinstance(value, str) and value.strip() and value.strip() not in notes:
+                    notes.append(value.strip())
+
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    if is_chinese:
+        answer = "根据已核验的汇总数据：" + "；".join(lines) + "。"
+        if notes:
+            answer += "口径说明：" + "；".join(notes[:2])
+    else:
+        answer = "Based on the validated aggregate evidence: " + "; ".join(lines) + "."
+        if notes:
+            answer += " Scope notes: " + "; ".join(notes[:2])
+
+    return AnswerResult(
+        status=ANSWER_STATUS_OK,
+        answer_text=answer,
+        used_evidence_ids=tuple(dict.fromkeys(used_ids)),
+        provenance=dict(provenance) if provenance is not None else None,
+    )
+
+
 class EvidenceAnswerGenerator:
     """Generate one grounded answer from one or more Safe Evidence blocks."""
 
@@ -719,6 +860,45 @@ class EvidenceAnswerGenerator:
             answer_text=answer,
             used_evidence_ids=used_ids,
             provenance=dict(provenance) if provenance is not None else None,
+        )
+
+    def deterministic_fallback(
+        self,
+        question: str,
+        safe_evidence: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+        *,
+        evidence_type: str | None = None,
+    ) -> AnswerResult:
+        """Answer from server-owned evidence when the model answer fails.
+
+        This is intentionally a summary fallback, not a second language
+        model.  It lets the API remain useful during a provider timeout while
+        preserving the same evidence IDs and provenance as the normal path.
+        """
+
+        if not isinstance(question, str) or not question.strip():
+            raise EvidenceAnswerGeneratorError("question must be a non-empty string")
+        normalized_question = question.strip()
+        if evidence_type is not None and evidence_type not in SUPPORTED_EVIDENCE_TYPES:
+            raise EvidenceAnswerGeneratorError(
+                f"unsupported evidence type: {evidence_type}"
+            )
+        prepared, provenance, has_content = self._prepare_evidence(safe_evidence)
+        if not prepared or not has_content:
+            return _insufficient_result(provenance)
+        scope = assess_question_scope(normalized_question)
+        if (
+            scope is not None
+            or is_simple_conversation(normalized_question)
+            or is_patient_level_question(normalized_question)
+            or _CAUSAL_PATTERN.search(normalized_question)
+            or _MEDICAL_OR_PATIENT_PATTERN.search(normalized_question)
+        ):
+            return _insufficient_result(provenance)
+        return _deterministic_fallback_result(
+            normalized_question,
+            prepared,
+            provenance,
         )
 
     def generate_answer(

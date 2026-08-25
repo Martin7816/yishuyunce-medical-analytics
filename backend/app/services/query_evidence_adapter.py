@@ -22,6 +22,7 @@ from shared.query_result_contract import (
 from .ai_chart import build_chart_from_evidence
 from .ai_evidence import build_safe_evidence
 from .diagnosis_label_catalog import DiagnosisLabelResolver
+from .query_intent import query_scope_notes
 
 
 SUPPORTED_EVIDENCE_TYPES = frozenset(
@@ -417,6 +418,13 @@ class QueryEvidenceAdapter:
         evidence["provenance"] = dict(validated.provenance)
         evidence["query_id"] = validated.query_id
         evidence["query_plan"] = validated.query_plan
+        scope_notes = query_scope_notes(question)
+        if scope_notes:
+            evidence["query_scope_notes"] = list(scope_notes)
+            limitations = evidence.get("limitations")
+            if not isinstance(limitations, list):
+                limitations = []
+            evidence["limitations"] = list(dict.fromkeys([*limitations, *scope_notes]))
 
         chart_question = question or f"{section_type} {_dimension_label(validated)}"
         chart = build_chart_from_evidence(chart_question, [evidence])

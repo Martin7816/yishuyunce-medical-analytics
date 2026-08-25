@@ -56,6 +56,10 @@ _SUPPORTED_DIMENSION_SHAPES: tuple[tuple[str, frozenset[str]], ...] = (
         frozenset({"age_group", "diagnosis"}),
     ),
     (
+        "aggregate_gender_diagnosis",
+        frozenset({"gender", "diagnosis"}),
+    ),
+    (
         "aggregate_hospital_severity",
         frozenset({"hospital", "severity"}),
     ),

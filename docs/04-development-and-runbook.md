@@ -169,6 +169,7 @@ SOURCE data/sql/002-analysis-snapshot.sql;
 ```dotenv
 TOP10_DATA_SOURCE=mysql
 ANALYTICS_DATA_SOURCE=mysql
+AGGREGATE_DATA_SOURCE=mysql
 HIGH_COST_MODEL_PATH=<高费用模型工件绝对路径>
 
 MYSQL_HOST=<MySQL 地址>
@@ -186,6 +187,9 @@ DEEPSEEK_API_KEY=<本机密钥>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_TIMEOUT_SECONDS=20
+DEEPSEEK_THINKING_MODE=enabled
+DEEPSEEK_REASONING_EFFORT=high
+DEEPSEEK_STRUCTURED_MAX_TOKENS=4096
 ```
 
 重新启动 Flask 和前端，逐页检查 `data_version` 与 `generated_at` 是否一致。

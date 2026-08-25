@@ -146,6 +146,15 @@ def test_provenance_is_preserved_end_to_end():
     assert result["evidence"]["provenance"] == PROVENANCE
 
 
+def test_distribution_intent_selects_distribution_evidence_projection():
+    agent, _, _ = make_agent()
+
+    result = agent.run("不同性别疾病分布")
+
+    assert result["evidence_type"] == "distribution"
+    assert result["evidence"]["sections"][0]["type"] == "pie"
+
+
 def test_conversation_bypasses_planner_and_repository():
     agent, planner, repository = make_agent()
 

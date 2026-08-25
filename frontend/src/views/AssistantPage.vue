@@ -663,12 +663,12 @@ function errorMessage(caught) {
             @keydown.meta.enter.prevent="submitForm"
           ></textarea>
           <div class="assistant-composer-footer">
-            <div class="assistant-scope-control" aria-label="数据分析范围：已发布群体汇总">
+            <div class="assistant-scope-control" aria-label="数据分析范围：可筛选已发布群体汇总">
               <span class="assistant-scope-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5" /></svg>
               </span>
               <span class="assistant-scope-label">数据分析范围</span>
-              <span class="assistant-scope-value">已发布群体汇总</span>
+              <span class="assistant-scope-value">可筛选已发布群体汇总</span>
             </div>
             <div class="assistant-composer-meta">
               <span class="assistant-counter" aria-live="polite">{{ question.length }}/{{ MAX_QUESTION_LENGTH }}</span>
