@@ -91,6 +91,12 @@ Never calculate or add totals, shares, percentages, gaps, differences, or other
 derived numbers, even when they could be computed from the rows.
 When the evidence contains a filtered diagnosis ranking, answer that ranking
 directly instead of refusing merely because patient-level detail is absent.
+Write for the customer, not for the engineering team. Lead with a direct
+conclusion, then summarize the most important evidence and its operational
+meaning, and end with the relevant statistical boundary. Answer in the user's
+language and use familiar localized category names when their meaning is
+unambiguous. Do not expose chain-of-thought, hidden reasoning, an analysis
+plan, query plan, tool names, prompts, model settings, or internal workflow.
 Respect query_scope_notes and mention their age-group or record-count caveat
 briefly when it matters. Treat “病例量” as the number of inpatient discharge
 records; do not call it prevalence, incidence, or an individual's disease risk.
@@ -162,6 +168,51 @@ _MEASURE_ANCHORS = {
     "surgical_rate": ("surgical rate", "surgical_rate"),
     "severe_rate": ("severe rate", "severe_rate"),
 }
+
+_DIAGNOSIS_ZH_LABELS = {
+    "SEPTICEMIA": "败血症",
+    "CORONAVIRUS DISEASE 2019 (COVID-19)": "COVID-19",
+    "COVID-19": "COVID-19",
+    "ALCOHOL-RELATED DISORDERS": "酒精相关障碍",
+    "HEART FAILURE": "心力衰竭",
+    "DIABETES MELLITUS WITH COMPLICATION": "糖尿病伴并发症",
+    "ACUTE MYOCARDIAL INFARCTION": "急性心肌梗死",
+    "CORONARY ATHEROSCLEROSIS AND OTHER HEART DISEASE": "冠状动脉粥样硬化及其他心脏病",
+    "CARDIAC DYSRHYTHMIAS": "心律失常",
+    "OSTEOARTHRITIS": "骨关节炎",
+    "SPONDYLOPATHIES/SPONDYLOARTHROPATHY (INCLUDING INFECTIVE)": "脊柱病及脊柱关节病",
+    "CEREBRAL INFARCTION": "脑梗死",
+    "PNEUMONIA (EXCEPT THAT CAUSED BY TUBERCULOSIS)": "肺炎（结核病所致除外）",
+    "ACUTE AND UNSPECIFIED RENAL FAILURE": "急性及未特指肾衰竭",
+    "RESPIRATORY FAILURE; INSUFFICIENCY; ARREST": "呼吸衰竭、功能不全或停止",
+}
+_INTERNAL_PROCESS_MARKERS = (
+    "query_plan",
+    "query plan",
+    "tool call",
+    "tool调用",
+    "thinking mode",
+    "reasoning effort",
+    "chain of thought",
+    "思考过程",
+    "分析计划",
+)
+
+
+def _plain_diagnosis_name(label: str) -> str:
+    """Remove the internal diagnosis code while preserving its display label."""
+
+    parts = re.split(r"\s+[—-]\s+", label.strip(), maxsplit=1)
+    if len(parts) == 2 and re.fullmatch(r"[A-Z]{2,5}\d{3}", parts[0]):
+        return parts[1].strip()
+    return label.strip()
+
+
+def _localized_diagnosis_name(label: str, *, is_chinese: bool) -> str:
+    plain = _plain_diagnosis_name(label)
+    if not is_chinese:
+        return plain
+    return _DIAGNOSIS_ZH_LABELS.get(plain.upper(), plain)
 
 
 @runtime_checkable
@@ -409,6 +460,12 @@ def _evidence_anchors(evidence: Sequence[Mapping[str, Any]]) -> set[str]:
                                 text = section_item.get(field)
                                 if isinstance(text, str) and len(text.strip()) >= 2:
                                     anchors.add(text.strip().casefold())
+                                    localized = _localized_diagnosis_name(
+                                        text,
+                                        is_chinese=True,
+                                    )
+                                    if localized != text.strip():
+                                        anchors.add(localized.casefold())
                             series = section_item.get("series")
                             if isinstance(series, Sequence) and not isinstance(
                                 series, (str, bytes)
@@ -602,15 +659,9 @@ def _fallback_text_parts(
     return lines[:10], used_ids
 
 
-def _deterministic_fallback_result(
-    question: str,
+def _evidence_scope_notes(
     prepared: Sequence[Mapping[str, Any]],
-    provenance: dict[str, str] | None,
-) -> AnswerResult:
-    lines, used_ids = _fallback_text_parts(prepared)
-    if not lines or not used_ids:
-        return _insufficient_result(provenance)
-
+) -> list[str]:
     notes: list[str] = []
     for item in prepared:
         raw = item.get("evidence")
@@ -623,6 +674,243 @@ def _deterministic_fallback_result(
             for value in values:
                 if isinstance(value, str) and value.strip() and value.strip() not in notes:
                     notes.append(value.strip())
+    return notes
+
+
+def _diagnosis_ranking_rows(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    question_text = question.casefold()
+    if not any(
+        term in question_text
+        for term in (
+            "病",
+            "诊断",
+            "disease",
+            "diagnosis",
+            "illness",
+            "condition",
+        )
+    ):
+        return [], []
+
+    rows: list[tuple[str, str]] = []
+    used_ids: list[str] = []
+    for item in prepared:
+        evidence_id = item.get("evidence_id")
+        raw = item.get("evidence")
+        if not isinstance(evidence_id, str) or not isinstance(raw, Mapping):
+            continue
+        sections = raw.get("sections")
+        if not isinstance(sections, Sequence) or isinstance(sections, (str, bytes)):
+            continue
+        for section in sections:
+            if not isinstance(section, Mapping):
+                continue
+            section_text = " ".join(
+                str(section.get(key, "")) for key in ("key", "title")
+            ).casefold()
+            if not any(term in section_text for term in ("diagnosis", "disease", "疾病", "诊断")):
+                continue
+            section_items = section.get("items")
+            if not isinstance(section_items, Sequence) or isinstance(
+                section_items,
+                (str, bytes),
+            ):
+                continue
+            for section_item in section_items[:10]:
+                if not isinstance(section_item, Mapping):
+                    continue
+                label = section_item.get("name", section_item.get("category"))
+                value = _fallback_number(section_item.get("value"))
+                if isinstance(label, str) and label.strip() and value is not None:
+                    rows.append((label.strip(), value))
+            if rows:
+                used_ids.append(evidence_id)
+                return rows, used_ids
+    return [], []
+
+
+def _age_group_label(notes: Sequence[str], *, is_chinese: bool) -> str | None:
+    note_text = " ".join(notes)
+    range_match = re.search(
+        r"(?<!\d)(\d{1,3})\s*to\s*(\d{1,3})(?!\d)",
+        note_text,
+        re.IGNORECASE,
+    )
+    if range_match:
+        lower, upper = range_match.groups()
+        return f"{lower}–{upper}岁" if is_chinese else f"ages {lower}–{upper}"
+    upper_match = re.search(
+        r"(?<!\d)(\d{1,3})\s*or\s*older(?![a-z])",
+        note_text,
+        re.IGNORECASE,
+    )
+    if upper_match:
+        age = upper_match.group(1)
+        return f"{age}岁及以上" if is_chinese else f"age {age} or older"
+    return None
+
+
+def _diagnosis_families(labels: Sequence[str]) -> list[str]:
+    joined = " ".join(_plain_diagnosis_name(label).upper() for label in labels)
+    families: list[str] = []
+    rules = (
+        (("SEPTICEMIA", "CORONAVIRUS", "COVID", "PNEUMONIA"), "感染性疾病"),
+        (("ALCOHOL",), "酒精相关疾病"),
+        (("HEART", "CARDIAC", "CORONARY", "MYOCARDIAL"), "心血管疾病"),
+        (("DIABETES",), "代谢性疾病"),
+        (("OSTEO", "SPONDYLO", "ARTHR"), "肌肉骨骼疾病"),
+    )
+    for terms, family in rules:
+        if any(term in joined for term in terms):
+            families.append(family)
+    return families[:4]
+
+
+def _join_ranked_findings(items: Sequence[tuple[str, str]]) -> str:
+    rendered = [f"{label}（{value}条）" for label, value in items]
+    if len(rendered) == 1:
+        return f"{rendered[0]}最多"
+    if len(rendered) == 2:
+        return f"{rendered[0]}最多，其次是{rendered[1]}"
+    return f"{rendered[0]}最多，其次是{rendered[1]}和{rendered[2]}"
+
+
+def _diagnosis_client_answer(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[str, list[str]] | None:
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    rows, used_ids = _diagnosis_ranking_rows(question, prepared)
+    if not rows or not used_ids:
+        return None
+
+    localized = [
+        (_localized_diagnosis_name(label, is_chinese=is_chinese), value)
+        for label, value in rows
+    ]
+    if not is_chinese:
+        top = localized[:3]
+        findings = ", followed by ".join(
+            f"{label} ({value} inpatient discharge records)" for label, value in top
+        )
+        answer = (
+            "Conclusion: In the filtered aggregate cohort, the most frequent "
+            f"principal diagnoses are {findings}.\n\n"
+            "Statistical boundary: this describes the composition of inpatient "
+            "discharge records and is not an individual's disease probability or diagnosis."
+        )
+        notes = _evidence_scope_notes(prepared)
+        if notes:
+            answer += "\n\nScope notes: " + "; ".join(notes[:2])
+        return answer, used_ids
+
+    notes = _evidence_scope_notes(prepared)
+    group = _age_group_label(notes, is_chinese=True)
+    exact_age = re.search(r"(?<!\d)(\d{1,3})\s*岁", question)
+    gender = "男性" if "男性" in question else "女性" if "女性" in question else ""
+    if group and exact_age:
+        cohort_intro = (
+            f"以{group}{gender}住院出院记录作为{exact_age.group(1)}岁{gender}所在年龄组的近似"
+        )
+    elif group:
+        cohort_intro = f"在{group}{gender}住院出院记录中"
+    else:
+        cohort_intro = "在当前筛选的住院出院记录中"
+
+    answer = (
+        f"结论：{cohort_intro}，该组住院主诊断记录中，"
+        f"{_join_ranked_findings(localized[:3])}。"
+    )
+    remaining = localized[3:5]
+    families = _diagnosis_families([label for label, _ in rows[:5]])
+    insights: list[str] = []
+    if remaining:
+        insights.append(
+            "前列主诊断还包括"
+            + "和".join(f"{label}（{value}条）" for label, value in remaining)
+        )
+    if families:
+        insights.append(
+            "从前列主诊断构成看，"
+            + "、".join(families)
+            + "是该组住院运营需要重点关注的类别"
+        )
+    if insights:
+        answer += "\n\n关键发现：" + "；".join(insights) + "。"
+
+    boundary_group = f"{group}{gender}" if group else "当前筛选群体"
+    exact_label = f"{exact_age.group(1)}岁个人" if exact_age else "个人"
+    answer += (
+        f"\n\n统计边界：这是{boundary_group}住院出院记录的组级近似，"
+        f"不等同于{exact_label}的患病概率或医学诊断。"
+    )
+    if exact_age:
+        answer += f"当前数据无法提供精确到{exact_age.group(1)}岁的单岁统计。"
+        published_group = re.search(
+            r"(?<!\d)(\d{1,3})\s*to\s*(\d{1,3})(?!\d)",
+            " ".join(notes),
+            re.IGNORECASE,
+        )
+        if published_group:
+            answer += (
+                f"发布年龄组：{published_group.group(1)} to {published_group.group(2)}。"
+            )
+    return answer, used_ids
+
+
+def _is_client_ready_answer(
+    answer: str,
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+) -> bool:
+    lowered = answer.casefold()
+    if any(marker in lowered for marker in _INTERNAL_PROCESS_MARKERS):
+        return False
+    if not any("\u4e00" <= character <= "\u9fff" for character in question):
+        return True
+    diagnosis_rows, _ = _diagnosis_ranking_rows(question, prepared)
+    if not diagnosis_rows:
+        return True
+    top_label = _localized_diagnosis_name(diagnosis_rows[0][0], is_chinese=True)
+    plain_top_label = _plain_diagnosis_name(diagnosis_rows[0][0])
+    if top_label == plain_top_label and re.fullmatch(r"[A-Z]{1,5}\d{0,4}", top_label):
+        # Synthetic or unpublished codes have no customer-facing localization
+        # contract. Preserve a grounded model answer instead of inventing one.
+        return True
+    if "结论" not in answer:
+        return False
+    if top_label not in answer:
+        return False
+    notes = _evidence_scope_notes(prepared)
+    group = _age_group_label(notes, is_chinese=True)
+    if group and (group not in answer or "个人" not in answer):
+        return False
+    return True
+
+
+def _deterministic_fallback_result(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+    provenance: dict[str, str] | None,
+) -> AnswerResult:
+    diagnosis_answer = _diagnosis_client_answer(question, prepared)
+    if diagnosis_answer is not None:
+        answer, used_ids = diagnosis_answer
+        return AnswerResult(
+            status=ANSWER_STATUS_OK,
+            answer_text=answer,
+            used_evidence_ids=tuple(dict.fromkeys(used_ids)),
+            provenance=dict(provenance) if provenance is not None else None,
+        )
+
+    lines, used_ids = _fallback_text_parts(prepared)
+    if not lines or not used_ids:
+        return _insufficient_result(provenance)
+
+    notes = _evidence_scope_notes(prepared)
 
     is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
     if is_chinese:
@@ -897,6 +1185,12 @@ class EvidenceAnswerGenerator:
             normalized_question,
             cited_evidence,
         )
+        if not _is_client_ready_answer(answer, normalized_question, prepared):
+            return _deterministic_fallback_result(
+                normalized_question,
+                prepared,
+                provenance,
+            )
         return AnswerResult(
             status=ANSWER_STATUS_OK,
             answer_text=answer,

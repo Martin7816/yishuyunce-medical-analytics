@@ -5,6 +5,7 @@ import AnalyticsChart from '../components/AnalyticsChart.vue'
 import { renderSafeMarkdown } from '../utils/markdown.js'
 import { displayText } from '../domain/displayLabels.js'
 import { consumeAssistantStream } from '../domain/assistantStream.js'
+import { hasAggregateEvidence } from '../domain/assistantEvidence.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status', 'grouped_bar', 'scatter', 'heatmap'])
@@ -89,10 +90,10 @@ function normalizeSource(source) {
   const metrics = Array.isArray(source.metrics)
     ? source.metrics.map(normalizeMetric).filter(Boolean)
     : []
-  if (!tool || !title || !dataVersion || !metrics.length) return null
   const sectionKeys = Array.isArray(source.sections)
     ? source.sections.map(section => normalizeText(section?.key)).filter(Boolean)
     : []
+  if (!tool || !title || !dataVersion || !hasAggregateEvidence(metrics, sectionKeys)) return null
   return { tool, title, data_version: dataVersion, metrics, section_keys: sectionKeys }
 }
 
@@ -511,7 +512,7 @@ async function consumeStream(text, controller) {
     onDone: (data, finalAnswer) => {
       const completedAnswer = answer || finalAnswer
       result.value = normalizePayload({ ...data, answer: completedAnswer })
-      streamStage.value = { stage: 'complete', label: '分析完成' }
+      streamStage.value = null
       // The terminal application event owns the UI state. Reader cleanup is
       // best-effort and must not keep the button in the loading state.
       loading.value = false

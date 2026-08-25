@@ -69,6 +69,41 @@ def cohort_cost_evidence() -> dict[str, object]:
     }
 
 
+def male_age_group_diagnosis_evidence() -> dict[str, object]:
+    return {
+        "query_id": "query-male-50-to-69-diagnosis",
+        "title": "Diagnosis ranking by Age group / Gender / Diagnosis",
+        "description": "Validated aggregate inpatient discharge record counts.",
+        "metrics": [],
+        "sections": [
+            {
+                "key": "diagnosis_ranking",
+                "title": "Diagnosis ranking",
+                "type": "bar",
+                "items": [
+                    {"name": "INF002 — SEPTICEMIA", "value": 26687},
+                    {
+                        "name": "INF012 — CORONAVIRUS DISEASE 2019 (COVID-19)",
+                        "value": 17384,
+                    },
+                    {
+                        "name": "MBD017 — ALCOHOL-RELATED DISORDERS",
+                        "value": 14278,
+                    },
+                    {"name": "CIR019 — HEART FAILURE", "value": 11256},
+                ],
+            }
+        ],
+        "facts": [],
+        "derived_facts": [],
+        "query_scope_notes": [
+            "筛选口径：50岁已按发布年龄组映射为50 to 69，无法提供精确到50岁的单岁统计；性别筛选为男性（M）。",
+            "本结果统计住院出院记录中的病例量，不等同于一般人群患病率或个体患病风险。",
+        ],
+        "provenance": PROVENANCE,
+    }
+
+
 class FakeStructuredAnswerClient:
     def __init__(self, response: object) -> None:
         self.response = response
@@ -193,6 +228,56 @@ def test_deterministic_fallback_summarizes_only_validated_evidence():
     assert "Hospital B" in result.answer_text
     assert result.used_evidence_ids == ("query-evidence-1",)
     assert client.calls == []
+
+
+def test_deterministic_fallback_turns_cohort_ranking_into_client_ready_analysis():
+    generator, client = make_generator(grounded_response())
+
+    result = generator.deterministic_fallback(
+        "50岁男性最容易得什么病？",
+        male_age_group_diagnosis_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.status == ANSWER_STATUS_OK
+    assert result.answer_text.startswith("结论：")
+    assert "50–69岁男性" in result.answer_text
+    assert "败血症" in result.answer_text
+    assert "26,687" in result.answer_text
+    assert "COVID-19" in result.answer_text
+    assert "17,384" in result.answer_text
+    assert "酒精相关障碍" in result.answer_text
+    assert "14,278" in result.answer_text
+    assert "住院主诊断记录" in result.answer_text
+    assert "不等同于50岁个人的患病概率或医学诊断" in result.answer_text
+    assert "query_plan" not in result.answer_text.casefold()
+    assert "tool" not in result.answer_text.casefold()
+    assert "thinking" not in result.answer_text.casefold()
+    assert result.used_evidence_ids == ("query-male-50-to-69-diagnosis",)
+    assert client.calls == []
+
+
+def test_low_quality_model_ranking_is_replaced_by_client_ready_grounded_answer():
+    generator, client = make_generator(
+        {
+            "parsed": {
+                "answer_text": "INF002 — SEPTICEMIA: 26,687; INF012 — CORONAVIRUS DISEASE 2019 (COVID-19): 17,384.",
+                "used_evidence_ids": ["query-male-50-to-69-diagnosis"],
+            }
+        }
+    )
+
+    result = generator.generate(
+        "50岁男性最容易得什么病？",
+        male_age_group_diagnosis_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.answer_text.startswith("结论：")
+    assert "败血症" in result.answer_text
+    assert "50–69岁男性" in result.answer_text
+    assert "不等同于50岁个人的患病概率或医学诊断" in result.answer_text
+    assert len(client.calls) == 1
 
 
 def test_causal_wording_is_rejected():
