@@ -4,6 +4,7 @@ import { apiRequest, getApiErrorMessage } from '../api/client.js'
 import AnalyticsChart from '../components/AnalyticsChart.vue'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
+import { displayOptionLabel } from '../domain/displayLabels.js'
 
 const state = ref('loading')
 const metrics = ref(null)
@@ -41,16 +42,10 @@ const confusionItems = computed(() => {
   ]
 })
 const supportingSections = computed(() => (metrics.value?.sections || []).filter(section => section.key !== 'confusion'))
-const countFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 })
+const countFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0, useGrouping: false })
 
 function formatCount(value) {
   return typeof value === 'number' ? countFormatter.format(value) : '—'
-}
-
-function modelStatusMessage() {
-  return metrics.value?.data_version?.startsWith('fixture:')
-    ? '当前指标来自固定联调工件，不代表真实模型效果。'
-    : '当前指标来自已发布模型工件；请以版本和数据批次核对结果。'
 }
 
 async function load() {
@@ -101,21 +96,15 @@ onMounted(load)
 <template>
   <div class="page-wrap model-page" :aria-busy="state === 'loading' || predicting">
     <header class="page-heading">
-      <div><p class="eyebrow">可复现的运营分类</p><h1 id="page-title" data-page-title tabindex="-1">高费用记录分类模型</h1><p id="model-page-description">阈值仅由训练集收费 P75 产生；预测只使用入院时可得类别字段。</p></div>
-      <div v-if="metrics" class="data-meta" aria-label="模型版本信息">
-        <span class="status-chip" :class="metrics.data_version?.startsWith('fixture:') ? 'is-fixture' : 'is-published'"><span class="status-dot" aria-hidden="true"></span>{{ metrics.data_version?.startsWith('fixture:') ? '固定联调工件' : '已发布模型工件' }}</span>
-        <span class="version-pill" :title="metrics.model_version">模型版本：{{ metrics.model_version }}</span>
-        <span v-if="metrics.generated_at" class="generated-at">生成时间：{{ metrics.generated_at }}</span>
-      </div>
+      <div><p class="eyebrow">运营辅助分析</p><h1 id="page-title" data-page-title tabindex="-1">高费用记录识别</h1><p id="model-page-description">根据入院时可得的类别信息，辅助识别可能需要重点关注的高费用记录。</p></div>
     </header>
     <PageState v-if="state !== 'success'" :state="state" :error="error" @retry="load" />
     <template v-else>
-      <p class="warning-note model-status-note">{{ modelStatusMessage() }}<span v-if="metrics.data_version?.startsWith('fixture:')">正式演示必须替换为 PySpark 训练工件。</span></p>
-      <p class="warning-note model-boundary-note">用于群体运营分析，不构成诊断或治疗建议。预测只使用入院时可得的八个类别字段。</p>
+      <p v-if="metrics.data_version?.startsWith('fixture:')" class="warning-note model-status-note">当前为演示数据，识别结果仅用于展示功能。</p>
       <section class="metric-grid"><MetricCard v-for="item in metrics.metrics" :key="item.key" :metric="item" /></section>
       <section class="model-grid">
         <article class="content-card evaluation-card">
-          <h2 id="model-evaluation-title">评估结果</h2>
+          <h2 id="model-evaluation-title">识别表现</h2>
           <div v-if="confusionSection" class="confusion-block">
             <h3>{{ confusionSection.title }}</h3>
             <table class="confusion-table" aria-label="混淆矩阵">
@@ -128,12 +117,12 @@ onMounted(load)
               <tbody><tr>
                 <th class="confusion-axis confusion-row-label" scope="row">非高费用</th>
                 <td v-for="item in confusionItems.slice(0, 2)" :key="item.key" class="confusion-cell" :class="`confusion-${item.key.toLowerCase()}`">
-                  <span>{{ item.key }} · {{ item.label }}</span><strong>{{ formatCount(item.value) }}</strong>
+                   <span>{{ item.label }}</span><strong>{{ formatCount(item.value) }}</strong>
                 </td>
               </tr><tr>
                 <th class="confusion-axis confusion-row-label" scope="row">高费用</th>
                 <td v-for="item in confusionItems.slice(2)" :key="item.key" class="confusion-cell" :class="`confusion-${item.key.toLowerCase()}`">
-                  <span>{{ item.key }} · {{ item.label }}</span><strong>{{ formatCount(item.value) }}</strong>
+                   <span>{{ item.label }}</span><strong>{{ formatCount(item.value) }}</strong>
                 </td>
               </tr></tbody>
             </table>
@@ -142,20 +131,20 @@ onMounted(load)
           <p v-else class="section-empty">当前模型未发布混淆矩阵。</p>
           <AnalyticsChart v-for="section in supportingSections" :key="section.key" :section="section" />
         </article>
-        <article class="content-card prediction-card"><h2 id="model-prediction-title">单条记录预测</h2><form class="prediction-form" aria-labelledby="model-prediction-title" :aria-busy="predicting" @submit.prevent="predict()">
+        <article class="content-card prediction-card"><h2 id="model-prediction-title">识别一条记录</h2><form class="prediction-form" aria-labelledby="model-prediction-title" :aria-busy="predicting" @submit.prevent="predict()">
           <label v-for="field in fields" :key="field.key" :for="`model-${field.key}`">{{ field.label }}
             <select :id="`model-${field.key}`" v-model="form[field.key]" required :aria-label="field.label" :disabled="predicting">
-              <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
+               <option v-for="option in field.options" :key="option" :value="option">{{ displayOptionLabel(field.key, option) }}</option>
             </select>
           </label>
           <button class="primary-button" :disabled="predicting">{{ predicting ? '正在计算' : '执行预测' }}</button>
         </form>
         <p v-if="predictionState === 'loading'" class="loading-note" role="status" aria-live="polite">正在提交预测请求，请稍候…</p>
-        <div v-if="predictionError" ref="predictionErrorPanel" class="inline-error" role="alert" tabindex="-1" aria-labelledby="prediction-error-title"><strong id="prediction-error-title">{{ getApiErrorMessage(predictionError) }}</strong><small v-if="predictionError.code">错误类型：{{ predictionError.code }}</small><small v-if="predictionError.traceId">追踪编号：{{ predictionError.traceId }}</small><button type="button" class="secondary-button" @click="retryPrediction">重试预测</button></div>
-        <div v-if="result" class="prediction-result" role="status" aria-live="polite" aria-label="预测结果"><strong>{{ result.prediction === 'HIGH_COST' ? '高费用记录' : '非高费用记录' }}</strong><span>概率 {{ (result.probability * 100).toFixed(1) }}%</span><span v-if="result.threshold_amount != null">高费用阈值：{{ Number(result.threshold_amount).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) }} 美元</span><small>{{ result.model_version }} · {{ result.data_version }}<br><b v-if="result.fixture_only">当前为固定联调工件，不代表真实模型评估。</b><br>{{ result.boundary }}</small></div>
+        <div v-if="predictionError" ref="predictionErrorPanel" class="inline-error" role="alert" tabindex="-1" aria-labelledby="prediction-error-title"><strong id="prediction-error-title">{{ getApiErrorMessage(predictionError) }}</strong><button type="button" class="secondary-button" @click="retryPrediction">重试识别</button></div>
+        <div v-if="result" class="prediction-result" role="status" aria-live="polite" aria-label="识别结果"><strong>{{ result.prediction === 'HIGH_COST' ? '高费用记录' : '非高费用记录' }}</strong><span>识别概率 {{ (result.probability * 100).toFixed(1) }}%</span><small>结果仅作为运营分析参考，不用于个人医疗判断。</small></div>
         </article>
       </section>
-      <footer class="data-footer"><span>模型版本：{{ metrics.model_version }}</span><span>数据版本：{{ metrics.data_version }}</span><span v-if="metrics.generated_at">生成时间：{{ metrics.generated_at }}</span><span>用于群体运营分析，不构成诊断或治疗建议</span></footer>
+      <footer class="data-footer"><span>高费用记录识别仅用于运营分析</span><span>不提供个人诊断或治疗建议</span></footer>
     </template>
   </div>
 </template>

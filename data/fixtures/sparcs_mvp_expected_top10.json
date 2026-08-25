@@ -4,15 +4,11 @@
     "rows": 16,
     "malformed_rows": 0,
     "out_of_scope_rows": 0,
-    "diagnosis_nonempty_rows": 15,
-    "diagnosis_nonempty_distinct": 12,
+    "diagnosis_nonempty_rows": 13,
+    "diagnosis_nonempty_distinct": 11,
     "top10": [
       {
         "name": "COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER",
-        "case_count": 2
-      },
-      {
-        "name": "LIVEBORN",
         "case_count": 2
       },
       {
@@ -46,6 +42,10 @@
       {
         "name": "PARALYSIS (OTHER THAN CEREBRAL PALSY)",
         "case_count": 1
+      },
+      {
+        "name": "PREVIOUS C-SECTION",
+        "case_count": 1
       }
     ],
     "required_values": {
@@ -69,14 +69,6 @@
       },
       {
         "rank": 2,
-        "diagnosis_name": "LIVEBORN",
-        "case_count": 2,
-        "unit": "discharge_records",
-        "data_version": "fixture:sparcs_mvp_sample:v1",
-        "generated_at": "2026-08-17T00:00:00Z"
-      },
-      {
-        "rank": 3,
         "diagnosis_name": "TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER",
         "case_count": 2,
         "unit": "discharge_records",
@@ -84,7 +76,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 4,
+        "rank": 3,
         "diagnosis_name": "ACUTE MYOCARDIAL INFARCTION",
         "case_count": 1,
         "unit": "discharge_records",
@@ -92,7 +84,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 5,
+        "rank": 4,
         "diagnosis_name": "ASTHMA",
         "case_count": 1,
         "unit": "discharge_records",
@@ -100,7 +92,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 6,
+        "rank": 5,
         "diagnosis_name": "CORONAVIRUS DISEASE 2019 (COVID-19)",
         "case_count": 1,
         "unit": "discharge_records",
@@ -108,7 +100,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 7,
+        "rank": 6,
         "diagnosis_name": "DIABETES MELLITUS WITH COMPLICATION",
         "case_count": 1,
         "unit": "discharge_records",
@@ -116,7 +108,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 8,
+        "rank": 7,
         "diagnosis_name": "MULTIPLE SCLEROSIS",
         "case_count": 1,
         "unit": "discharge_records",
@@ -124,7 +116,7 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 9,
+        "rank": 8,
         "diagnosis_name": "NONINFECTIOUS GASTROENTERITIS",
         "case_count": 1,
         "unit": "discharge_records",
@@ -132,8 +124,16 @@
         "generated_at": "2026-08-17T00:00:00Z"
       },
       {
-        "rank": 10,
+        "rank": 9,
         "diagnosis_name": "PARALYSIS (OTHER THAN CEREBRAL PALSY)",
+        "case_count": 1,
+        "unit": "discharge_records",
+        "data_version": "fixture:sparcs_mvp_sample:v1",
+        "generated_at": "2026-08-17T00:00:00Z"
+      },
+      {
+        "rank": 10,
+        "diagnosis_name": "PREVIOUS C-SECTION",
         "case_count": 1,
         "unit": "discharge_records",
         "data_version": "fixture:sparcs_mvp_sample:v1",
@@ -145,13 +145,9 @@
     "rows": 2101588,
     "malformed_rows": 0,
     "out_of_scope_rows": 0,
-    "diagnosis_nonempty_rows": 2099954,
-    "diagnosis_nonempty_distinct": 477,
+    "diagnosis_nonempty_rows": 1900940,
+    "diagnosis_nonempty_distinct": 476,
     "top10": [
-      {
-        "name": "LIVEBORN",
-        "case_count": 199014
-      },
       {
         "name": "SEPTICEMIA",
         "case_count": 138035
@@ -187,6 +183,10 @@
       {
         "name": "CARDIAC DYSRHYTHMIAS",
         "case_count": 33849
+      },
+      {
+        "name": "CEREBRAL INFARCTION",
+        "case_count": 28841
       }
     ]
   }

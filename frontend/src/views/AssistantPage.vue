@@ -3,6 +3,7 @@ import { nextTick, ref } from 'vue'
 import { apiStreamRequest, getApiErrorMessage, isAbortError } from '../api/client.js'
 import AnalyticsChart from '../components/AnalyticsChart.vue'
 import { renderSafeMarkdown } from '../utils/markdown.js'
+import { displayText } from '../domain/displayLabels.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status', 'grouped_bar', 'scatter', 'heatmap'])
@@ -23,7 +24,7 @@ const presets = Object.freeze([
   '概括当前运营情况',
   '费用与成本有哪些主要特征？',
   '疾病病例量排名如何？',
-  '高费用模型表现如何？',
+  '医院运营情况如何？',
 ])
 
 const quickActionMeta = Object.freeze([
@@ -72,7 +73,7 @@ function normalizeText(value) {
 function normalizeMetric(item) {
   if (!item || typeof item !== 'object') return null
   const key = normalizeText(item.key)
-  const label = normalizeText(item.label)
+  const label = displayText(normalizeText(item.label))
   const value = item.value
   if (!label) return null
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
@@ -82,7 +83,7 @@ function normalizeMetric(item) {
 function normalizeSource(source) {
   if (!source || typeof source !== 'object') return null
   const tool = normalizeText(source.tool)
-  const title = normalizeText(source.title)
+  const title = displayText(normalizeText(source.title))
   const dataVersion = normalizeText(source.data_version)
   const metrics = Array.isArray(source.metrics)
     ? source.metrics.map(normalizeMetric).filter(Boolean)
@@ -258,7 +259,7 @@ function normalizeChart(chart) {
 function buildSafeChart(source) {
   return {
     type: 'bar',
-    title: `${source.title}来源指标`,
+    title: `${source.title}主要指标`,
     items: source.metrics.slice(0, 8).map(metric => ({
       name: metric.label,
       value: metric.value,
@@ -333,7 +334,7 @@ function normalizePayload(payload) {
     [...sourceVersions].some(version => !dataVersions.includes(version))
     || [...traceVersions].some(version => !dataVersions.includes(version))
   ) {
-    throw createResultError('当前回答的来源版本无法核对，未展示回答。请重试。')
+    throw createResultError('当前回答的来源数据无法核对，未展示回答。请重试。')
   }
 
   const normalizedChart = normalizeChart(payload.chart)
@@ -359,7 +360,7 @@ function normalizePayload(payload) {
   }
   const safeChart = normalizedChart || buildSafeChart(sources[0])
   return {
-    answer,
+    answer: displayText(answer),
     tool_trace: toolTrace,
     sources,
     data_versions: [...new Set(dataVersions)],
@@ -549,14 +550,6 @@ function printReport() {
   window.print()
 }
 
-function toolLabel(tool) {
-  return TOOL_LABELS[tool] || '分析工具'
-}
-
-function toolStatus(status) {
-  return status === 'success' ? '已读取并记录来源' : '未完成'
-}
-
 function formatMetric(metric) {
   if (metric.value == null) return '—'
   if (typeof metric.value !== 'number') return metric.value
@@ -741,10 +734,6 @@ function errorMessage(caught) {
         <p class="assistant-section-kicker">本次提问未完成</p>
         <h2 id="assistant-error-title">AI 服务未能完成回答</h2>
         <p class="assistant-error-message">{{ errorMessage(error) }}</p>
-        <div class="assistant-error-meta">
-          <span v-if="error.code">错误类型：<code>{{ error.code }}</code></span>
-          <span v-if="error.traceId">追踪编号：<code>{{ error.traceId }}</code></span>
-        </div>
         <button type="button" class="primary-button assistant-retry" @click="retry">重新提问</button>
       </div>
     </section>
@@ -823,18 +812,17 @@ function errorMessage(caught) {
           <article v-for="source in result.sources" :key="`${source.tool}-${source.data_version}`" class="source-block assistant-source-block">
             <header class="assistant-source-header">
               <div>
-                <h4>{{ source.title }}</h4>
-                <p>{{ toolLabel(source.tool) }}</p>
+                <h4>{{ displayText(source.title) }}</h4>
+                <p>汇总指标</p>
               </div>
                 <span class="assistant-source-status"><span aria-hidden="true">✓</span>已核验</span>
             </header>
             <ul class="assistant-metric-list">
               <li v-for="metric in source.metrics" :key="metric.label">
-                <span>{{ metric.label }}</span>
+                <span>{{ displayText(metric.label) }}</span>
                 <strong>{{ formatMetric(metric) }}</strong>
               </li>
             </ul>
-            <p class="assistant-source-version"><span>数据版本</span><code>{{ source.data_version }}</code></p>
           </article>
         </div>
         </section>

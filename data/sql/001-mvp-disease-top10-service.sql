@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS `disease_case_count_top10_result` (
     UNIQUE KEY `uq_top10_version_diagnosis` (`data_version`, `diagnosis_name`),
     CONSTRAINT `ck_top10_rank` CHECK (`rank` BETWEEN 1 AND 10),
     CONSTRAINT `ck_top10_diagnosis_name` CHECK (CHAR_LENGTH(`diagnosis_name`) > 0),
+    CONSTRAINT `ck_top10_disease_name` CHECK (UPPER(TRIM(`diagnosis_name`)) NOT IN ('LIVEBORN', '活产儿')),
     CONSTRAINT `ck_top10_case_count` CHECK (`case_count` > 0),
     CONSTRAINT `ck_top10_unit` CHECK (`unit` = 'discharge_records'),
     CONSTRAINT `ck_top10_data_version` CHECK (CHAR_LENGTH(`data_version`) > 0)

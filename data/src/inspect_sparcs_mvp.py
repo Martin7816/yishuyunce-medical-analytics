@@ -10,9 +10,16 @@ import argparse
 import csv
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.disease_rules import is_non_disease_diagnosis
 
 
 INTEGER = re.compile(r"^[+-]?\d+$")
@@ -105,7 +112,7 @@ def inspect(csv_path: Path, diagnosis_field: str, top_n: int) -> dict[str, objec
             continue
 
         diagnosis = clean(row[diagnosis_index])
-        if diagnosis:
+        if diagnosis and not is_non_disease_diagnosis(diagnosis):
             diagnosis_counts[diagnosis] += 1
 
     field_summary = []

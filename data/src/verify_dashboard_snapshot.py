@@ -13,9 +13,16 @@ import csv
 import hashlib
 import json
 import math
+import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.disease_rules import is_non_disease_diagnosis
 
 
 FIELD = {
@@ -80,7 +87,7 @@ def counts(rows: list[dict[str, str | None]], field_name: str) -> list[dict[str,
     grouped: dict[str, int] = {}
     for row in rows:
         value = text(row, field_name)
-        if value:
+        if value and not (field_name == "diagnosis" and is_non_disease_diagnosis(value)):
             grouped[value] = grouped.get(value, 0) + 1
     return [
         {"name": name, "value": value}
@@ -177,7 +184,7 @@ def summarize_stream(reader: csv.DictReader) -> tuple[dict[str, Any], int, int]:
         in_scope_rows += 1
         for name in grouped:
             value = text(row, name)
-            if value:
+            if value and not (name == "diagnosis" and is_non_disease_diagnosis(value)):
                 grouped[name][value] = grouped[name].get(value, 0) + 1
         facility_id = text(row, "facility_id")
         if facility_id:

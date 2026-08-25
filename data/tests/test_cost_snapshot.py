@@ -123,5 +123,40 @@ def test_pyspark_cost_snapshot_matches_independent_verifier(tmp_path):
         "daily_charges",
         "daily_costs",
     }
+    correlation = next(
+        section
+        for section in wildcard["payload"]["sections"]
+        if section["key"] == "continuous_correlations"
+    )
+    assert correlation["type"] == "correlation"
+    assert correlation["items"] == [
+        {
+            "x_key": "los",
+            "x_label": "住院时长",
+            "y_key": "charges",
+            "y_label": "收费",
+            "coefficient": 1.0,
+            "sample_size": 2,
+            "method": "pearson",
+        },
+        {
+            "x_key": "los",
+            "x_label": "住院时长",
+            "y_key": "costs",
+            "y_label": "成本",
+            "coefficient": -0.2631,
+            "sample_size": 3,
+            "method": "pearson",
+        },
+        {
+            "x_key": "charges",
+            "x_label": "收费",
+            "y_key": "costs",
+            "y_label": "成本",
+            "coefficient": 1.0,
+            "sample_size": 2,
+            "method": "pearson",
+        },
+    ]
 
 

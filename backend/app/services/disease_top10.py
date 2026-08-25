@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from shared.disease_rules import is_non_disease_diagnosis
+
 from ..errors import InvalidServiceResultError
 
 
@@ -86,6 +88,8 @@ class DiseaseTop10Service:
             clean_name = name.strip()
             if not clean_name or name != clean_name or len(clean_name) > 255:
                 raise ValueError("invalid diagnosis name")
+            if is_non_disease_diagnosis(clean_name):
+                raise ValueError("non-disease diagnosis label")
             if name in names:
                 raise ValueError("duplicate diagnosis name")
             if isinstance(count, bool) or not isinstance(count, int) or count <= 0:

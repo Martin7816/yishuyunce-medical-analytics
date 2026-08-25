@@ -24,6 +24,8 @@
 | `Discharge Year` | 全部为 2021 |
 | `CCSR Diagnosis Description` 非空记录 | 2,099,954 |
 | `CCSR Diagnosis Description` 非空去重值 | 477 |
+| 疾病统计可用非空记录（排除 `LIVEBORN`/`活产儿`） | 1,900,940 |
+| 疾病统计可用类别（排除 `LIVEBORN`/`活产儿`） | 476 |
 
 数据中的一行按项目术语解释为一条住院出院记录，不等于唯一患者。项目不根据重复行删除记录；每一行按一次住院出院事件计数，具体规则见指标契约。
 
@@ -47,26 +49,28 @@
 | `Birth Weight` | 混合 | 206,857 | 1,894,731 | 数值文本；`UNKN` 有 119 条 |
 | `Permanent Facility Id` | 整数 | 2,090,946 | 10,642 | 整数文本 |
 
+上表的诊断非空数量仍是原始输入质量口径；疾病分析在此基础上再排除 `LIVEBORN`/`活产儿`，因此疾病统计可用数量为 1,900,940 条、476 个类别。
+
 `Length of Stay`、`Zip Code - 3 digits` 和 `Birth Weight` 不能直接对全部非空值强转整数。它们不参与疾病病例量 TOP10 分组；进入住院时长或费用分析时遵守对应模块的转换规则。
 
-## 4. 疾病病例量 TOP10 全量侦察结果
+## 4. 排除非疾病标签后的疾病病例量 TOP10 全量侦察结果
 
-按 `CCSR Diagnosis Description` 去除首尾空格、排除空值、逐条记录计数，并按病例量降序、疾病名称升序稳定排序后，独立核对与侦察脚本得到相同结果：
+按 `CCSR Diagnosis Description` 去除首尾空格、排除空值和非疾病标签 `LIVEBORN`（中文展示名为“活产儿”），逐条记录计数，并按病例量降序、疾病名称升序稳定排序后，独立核对与侦察脚本得到相同结果：
 
 | 排名 | 主诊断描述 | 病例量 |
 |---:|---|---:|
-| 1 | LIVEBORN | 199,014 |
-| 2 | SEPTICEMIA | 138,035 |
-| 3 | CORONAVIRUS DISEASE 2019 (COVID-19) | 82,597 |
-| 4 | HEART FAILURE | 58,562 |
-| 5 | COMPLICATIONS SPECIFIED DURING CHILDBIRTH | 40,711 |
-| 6 | DIABETES MELLITUS WITH COMPLICATION | 40,529 |
-| 7 | ALCOHOL-RELATED DISORDERS | 39,326 |
-| 8 | SCHIZOPHRENIA SPECTRUM AND OTHER PSYCHOTIC DISORDERS | 37,204 |
-| 9 | OSTEOARTHRITIS | 35,562 |
-| 10 | CARDIAC DYSRHYTHMIAS | 33,849 |
+| 1 | SEPTICEMIA | 138,035 |
+| 2 | CORONAVIRUS DISEASE 2019 (COVID-19) | 82,597 |
+| 3 | HEART FAILURE | 58,562 |
+| 4 | COMPLICATIONS SPECIFIED DURING CHILDBIRTH | 40,711 |
+| 5 | DIABETES MELLITUS WITH COMPLICATION | 40,529 |
+| 6 | ALCOHOL-RELATED DISORDERS | 39,326 |
+| 7 | SCHIZOPHRENIA SPECTRUM AND OTHER PSYCHOTIC DISORDERS | 37,204 |
+| 8 | OSTEOARTHRITIS | 35,562 |
+| 9 | CARDIAC DYSRHYTHMIAS | 33,849 |
+| 10 | CEREBRAL INFARCTION | 28,841 |
 
-这里的“病例量”是满足统计条件的住院出院记录数量，不是患者人数。以上结果构成该原始文件的侦察和独立复核基线；分析快照任务使用同一数据版本和指标契约。
+这里的“病例量”是满足统计条件的住院出院记录数量，不是患者人数。原始文件中的 199,014 条 `LIVEBORN` 记录仍保留在原始输入和数据质量统计中，但不进入疾病排行、疾病选项或疾病画像；以上结果构成排除非疾病标签后的侦察和独立复核基线。
 
 ## 5. 数据处理规则
 
@@ -75,29 +79,30 @@
 1. 输入是一条住院出院记录一行的 CSV，正式范围为 `Discharge Year=2021`；
 2. 疾病分组字段为 `CCSR Diagnosis Description`，代码字段只用于追溯；
 3. 分组前去除首尾空白，缺失、空字符串和清洗后空白不参与 TOP10；
-4. 每条符合条件的记录计数一次，不删除重复记录；
-5. 按病例量降序排序，并列时使用清洗后疾病名称升序作为稳定次序；
-6. 稳定排序后严格返回前 10 项，少于 10 项时返回全部；
-7. `Length of Stay`、费用和其他字段不参与疾病病例量 TOP10 分组，字段异常不改变该指标的计数规则。
+4. 清洗后名称为 `LIVEBORN` 或 `活产儿` 的非疾病标签不参与疾病统计，但原始行仍计入输入质量统计；
+5. 每条符合条件的记录计数一次，不删除重复记录；
+6. 按病例量降序排序，并列时使用清洗后疾病名称升序作为稳定次序；
+7. 稳定排序后严格返回前 10 项，少于 10 项时返回全部；
+8. `Length of Stay`、费用和其他字段不参与疾病病例量 TOP10 分组，字段异常不改变该指标的计数规则。
 
 ## 6. 固定脱敏样本与期望结果
 
-`data/fixtures/sparcs_mvp_sample.csv` 是从同一份真实 CSV 选取的 16 条记录，仅保留 MVP 核验所需的 12 个字段，不包含完整原始列集或大文件。样本包含 1 条空诊断、`Length of Stay=120 +`、`Zip Code - 3 digits=OOS` 和 `Birth Weight=UNKN`，用于复查缺失和特殊值处理。
+`data/fixtures/sparcs_mvp_sample.csv` 是从同一份真实 CSV 选取的 16 条记录，仅保留 MVP 核验所需的 12 个字段，不包含完整原始列集或大文件。样本包含 1 条空诊断、2 条 `LIVEBORN` 非疾病标签、`Length of Stay=120 +`、`Zip Code - 3 digits=OOS` 和 `Birth Weight=UNKN`，用于复查缺失、排除和特殊值处理。
 
-独立期望结果保存在 `data/fixtures/sparcs_mvp_expected_top10.json`。固定样本应有 15 条非空诊断、12 个非空诊断值，TOP10 如下：
+独立期望结果保存在 `data/fixtures/sparcs_mvp_expected_top10.json`。固定样本应有 13 条疾病统计可用非空诊断、11 个疾病统计可用诊断值，TOP10 如下：
 
 | 排名 | 主诊断描述 | 病例量 |
 |---:|---|---:|
 | 1 | COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER | 2 |
-| 2 | LIVEBORN | 2 |
-| 3 | TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER | 2 |
-| 4 | ACUTE MYOCARDIAL INFARCTION | 1 |
-| 5 | ASTHMA | 1 |
-| 6 | CORONAVIRUS DISEASE 2019 (COVID-19) | 1 |
-| 7 | DIABETES MELLITUS WITH COMPLICATION | 1 |
-| 8 | MULTIPLE SCLEROSIS | 1 |
-| 9 | NONINFECTIOUS GASTROENTERITIS | 1 |
-| 10 | PARALYSIS (OTHER THAN CEREBRAL PALSY) | 1 |
+| 2 | TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER | 2 |
+| 3 | ACUTE MYOCARDIAL INFARCTION | 1 |
+| 4 | ASTHMA | 1 |
+| 5 | CORONAVIRUS DISEASE 2019 (COVID-19) | 1 |
+| 6 | DIABETES MELLITUS WITH COMPLICATION | 1 |
+| 7 | MULTIPLE SCLEROSIS | 1 |
+| 8 | NONINFECTIOUS GASTROENTERITIS | 1 |
+| 9 | PARALYSIS (OTHER THAN CEREBRAL PALSY) | 1 |
+| 10 | PREVIOUS C-SECTION | 1 |
 
 ## 7. 可复查命令与结果
 
@@ -107,7 +112,7 @@
 python data/src/verify_sparcs_mvp.py
 ```
 
-预期输出顶层字段为 `"status": "PASS"`，并报告样本 `rows=16`、`malformed_rows=0`、`diagnosis_nonempty_rows=15`、`diagnosis_nonempty_distinct=12`。
+预期输出顶层字段为 `"status": "PASS"`，并报告样本 `rows=16`、`malformed_rows=0`、`diagnosis_nonempty_rows=13`、`diagnosis_nonempty_distinct=11`。
 
 在拥有本地完整 CSV 时，执行全量独立核对：
 
@@ -115,11 +120,11 @@ python data/src/verify_sparcs_mvp.py
 python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
 ```
 
-该命令使用独立计数逻辑读取样本或全量文件，再调用 `inspect_sparcs_mvp.py` 对同一输入进行比较；全量基线要求 2,101,588 行、0 条解析异常、477 个非空诊断值，并与第 4 节 TOP10 完全一致。它不会修改原始文件，也不会把完整数据写入仓库。
+该命令使用独立计数逻辑读取样本或全量文件，再调用 `inspect_sparcs_mvp.py` 对同一输入进行比较；全量基线要求 2,101,588 行、0 条解析异常、原始非空诊断 2,099,954 条/477 个值，排除非疾病标签后为 1,900,940 条/476 个值，并与第 4 节 TOP10 完全一致。它不会修改原始文件，也不会把完整数据写入仓库。
 
 ## 8. 实现约束与数据风险
 
-- 疾病病例量 TOP10 使用主诊断描述、2021 年范围、首尾空白清洗、不去重、稳定排序和严格十项截断；
+- 疾病病例量 TOP10 使用主诊断描述、2021 年范围、首尾空白清洗、排除 `LIVEBORN`/`活产儿`、不去重、稳定排序和严格十项截断；
 - 年龄、性别和入院方式可用于住院记录群体筛选；
 - 收费、成本和住院时长进入对应分析模块时遵守公共产品契约；
 - 数据没有患者唯一 ID，一行只能解释为一次住院出院记录，不能用于患者跨次住院追踪；

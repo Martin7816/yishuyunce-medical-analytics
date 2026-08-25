@@ -10,6 +10,7 @@ Flask API 为网页和 AI 工具提供统一的住院运营汇总结果。除高
 |---|---|---|
 | GET | `/health` | 应用存活检查 |
 | GET | `/dashboard/overview` | 运营驾驶舱 |
+| GET | `/dashboard/screen` | 产品大屏原子快照 |
 | GET | `/hospitals` | 医院排行或双院比较 |
 | GET | `/hospitals/{facility_id}` | 单院画像 |
 | GET | `/diseases` | 疾病排行与疾病枚举 |
@@ -55,7 +56,9 @@ HTTP 响应头 `X-Trace-ID` 与正文 `trace_id` 相同。分析接口的 `data`
 
 合法筛选没有记录时仍返回 `200`，保留标题、说明、筛选、版本和时间，`metrics`、`sections` 与 `insights` 为空。
 
-关系 section 只允许 `grouped_bar`、`scatter`、`heatmap`。它们必须使用后端返回的有限 `visual` 元数据和 table fallback；浏览器不得读取原始 CSV、执行 SQL、按分箱重算或透传任意 ECharts option。`insights[]` 是服务端确定性摘要，必须指向当前 section，并带来源指标、版本、生成时间、统计边界和 `related_not_causal`。
+关系 section 只允许 `grouped_bar`、`scatter`、`heatmap`、`correlation`。它们必须使用后端返回的有限 `visual` 元数据和 table fallback；浏览器不得读取原始 CSV、执行 SQL、按分箱重算或透传任意可执行图表配置。`insights[]` 是服务端确定性摘要，必须指向当前 section，并带来源指标、版本、生成时间、统计边界和 `related_not_causal`。
+
+`correlation` 条目固定包含 `x_key`、`x_label`、`y_key`、`y_label`、`coefficient`、`sample_size` 和 `method`。`method` 只能为 `pearson`，系数范围为 `[-1, 1]`，样本量为正整数；无成对有效样本或零方差时不返回该关系。
 
 ### 2.2 错误
 
@@ -87,6 +90,14 @@ HTTP 响应头 `X-Trace-ID` 与正文 `trace_id` 相同。分析接口的 `data`
 ## 3. 只读分析接口
 
 只读接口拒绝请求体、未知参数、重复参数和非 GET 方法。筛选枚举来自对应索引或基础快照的 `options`。
+
+### 3.1 产品大屏
+
+```text
+GET /api/v1/dashboard/screen
+```
+
+该接口原子组合总览、医院、疾病、费用、风险和数据质量快照，返回 8 个核心指标、6 个主图、Pearson 相关性证据及合法下钻枚举。所有依赖必须具有完全相同的 `data_version` 与 `generated_at`；版本漂移或快照损坏返回 `SERVICE_RESULT_INVALID`。接口不接受查询参数。
 
 ### 3.1 医院
 

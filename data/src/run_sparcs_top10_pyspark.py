@@ -1,14 +1,16 @@
 """Run the frozen SPARCS TOP10 contract with local PySpark.
 
 This is the formal M1 computation path for the current environment decision:
-PySpark runs in local mode on the leader's computer.  The standard-library
-verifier remains an independent check and is deliberately not imported here.
+PySpark runs in local mode, while the raw input may come from the HDFS/Hive
+course environment.  The standard-library verifier remains an independent
+check and is deliberately not imported here.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,39 +18,40 @@ import pyspark
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
 from analytics_metadata import (
-    KNOWN_SOURCE_NAME,
     build_data_version,
     normalize_generated_at,
-    sha256_file,
+)
+from storage_input import (
+    DataSource,
+    add_source_arguments,
+    ensure_local_source_exists,
+    fingerprint_source,
+    read_source,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from shared.disease_rules import NON_DISEASE_DIAGNOSIS_NAMES
+
 DEFAULT_SAMPLE = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv"
 DIAGNOSIS_FIELD = "CCSR Diagnosis Description"
 YEAR_FIELD = "Discharge Year"
 SERVICE_METRIC = "disease_case_count_top10"
 SERVICE_UNIT = "discharge_records"
-KNOWN_SOURCE_NAME = (
-    "Hospital_Inpatient_Discharges__SPARCS_De-Identified___2021_20231012.csv"
-)
 EDGE_WHITESPACE = r"^[\s\p{Z}\ufeff]+|[\s\p{Z}\ufeff]+$"
 
 
-def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str, Any]:
+def calculate_top10(
+    spark: SparkSession, source: DataSource, top_n: int
+) -> dict[str, Any]:
     """Calculate the TOP10 using the frozen contract and local Spark."""
 
-    frame = (
-        spark.read.option("header", "true")
-        .option("inferSchema", "false")
-        .option("mode", "FAILFAST")
-        # Spark on Windows does not decode percent-escaped non-ASCII local
-        # paths produced by Path.as_uri(); pass the resolved path directly.
-        .csv(str(csv_path.resolve()))
-    )
+    frame = read_source(spark, source)
     missing = {DIAGNOSIS_FIELD, YEAR_FIELD}.difference(frame.columns)
     if missing:
-        raise ValueError(f"CSV 缺少指标字段: {sorted(missing)}")
+        raise ValueError(f"输入数据缺少指标字段: {sorted(missing)}")
 
     diagnosis = F.regexp_replace(
         F.col(DIAGNOSIS_FIELD), EDGE_WHITESPACE, ""
@@ -58,6 +61,7 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
         frame.where(year == F.lit("2021"))
         .select(diagnosis)
         .where(F.length(F.col("diagnosis")) > 0)
+        .where(~F.upper(F.col("diagnosis")).isin(*NON_DISEASE_DIAGNOSIS_NAMES))
     )
     ranked: DataFrame = (
         valid.groupBy("diagnosis")
@@ -74,7 +78,7 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
         "status": "PASS",
         "engine": "pyspark-local",
         "pyspark_version": pyspark.__version__,
-        "input": csv_path.name,
+        "input": source.name,
         "rows": frame.count(),
         "malformed_rows": 0,
         "out_of_scope_rows": frame.where(
@@ -87,10 +91,15 @@ def calculate_top10(spark: SparkSession, csv_path: Path, top_n: int) -> dict[str
 
 
 def build_run_document(
-    result: dict[str, Any], csv_path: Path, generated_at: str
+    result: dict[str, Any],
+    source: DataSource,
+    digest: str,
+    generated_at: str,
+    data_version_override: str | None = None,
 ) -> dict[str, Any]:
-    digest = sha256_file(csv_path)
-    data_version = build_data_version(csv_path, digest)
+    data_version = data_version_override or build_data_version(
+        source.version_path, digest, fixture=source.is_fixture
+    )
     service_result = {
         "metric": SERVICE_METRIC,
         "unit": SERVICE_UNIT,
@@ -105,20 +114,22 @@ def build_run_document(
             for rank, item in enumerate(result["top10"], start=1)
         ],
     }
+    input_fingerprint = {
+        "file_name": source.name,
+        "sha256": digest,
+    }
+    if source.local_path is not None:
+        input_fingerprint["size_bytes"] = source.local_path.stat().st_size
     return {
         **result,
-        "input_fingerprint": {
-            "file_name": csv_path.name,
-            "size_bytes": csv_path.stat().st_size,
-            "sha256": digest,
-        },
+        "input_fingerprint": input_fingerprint,
         "service_result": service_result,
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, default=DEFAULT_SAMPLE)
+    add_source_arguments(parser, required=False)
     parser.add_argument(
         "--expected",
         type=Path,
@@ -139,14 +150,22 @@ def main() -> None:
     if args.top < 1:
         raise ValueError("--top 必须为正整数")
 
-    spark = (
+    if args.input is None and args.hive_table is None:
+        args.input = str(DEFAULT_SAMPLE)
+    source = DataSource.from_arguments(args.input, args.hive_table)
+    ensure_local_source_exists(source)
+    digest = fingerprint_source(source, args.input_sha256)
+
+    builder = (
         SparkSession.builder.master("local[2]")
         .appName("yishuyunce-sparcs-top10")
         .config("spark.ui.enabled", "false")
-        .getOrCreate()
     )
+    if source.kind == "hive":
+        builder = builder.enableHiveSupport()
+    spark = builder.getOrCreate()
     try:
-        result = calculate_top10(spark, args.input, args.top)
+        result = calculate_top10(spark, source, args.top)
     finally:
         spark.stop()
 
@@ -154,7 +173,7 @@ def main() -> None:
         expected_document = json.loads(args.expected.read_text(encoding="utf-8"))
         expected_key = (
             "sample"
-            if args.input.resolve() == DEFAULT_SAMPLE.resolve()
+            if source.local_path == DEFAULT_SAMPLE.resolve()
             else "full_scan"
         )
         expected = expected_document[expected_key]
@@ -173,7 +192,11 @@ def main() -> None:
             raise AssertionError("top10 不一致")
 
     document = build_run_document(
-        result, args.input.resolve(), normalize_generated_at(args.generated_at)
+        result,
+        source,
+        digest,
+        normalize_generated_at(args.generated_at),
+        args.data_version,
     )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

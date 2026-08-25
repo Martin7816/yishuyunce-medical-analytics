@@ -29,9 +29,16 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from analytics_metadata import build_data_version  # noqa: E402
-from run_full_analytics_pyspark import clean_frame, fingerprint  # noqa: E402
+from run_full_analytics_pyspark import clean_frame  # noqa: E402
 from shared.analytics_snapshot_contract import (  # noqa: E402
     validate_snapshot_document,
+)
+from storage_input import (  # noqa: E402
+    DataSource,
+    add_source_arguments,
+    ensure_local_source_exists,
+    fingerprint_source,
+    read_source,
 )
 
 
@@ -546,7 +553,7 @@ def _write_json(path: Path, document: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, required=True)
+    add_source_arguments(parser, required=True)
     parser.add_argument("--artifact", type=Path, required=True)
     parser.add_argument("--metrics", type=Path, required=True)
     parser.add_argument(
@@ -568,12 +575,16 @@ def main() -> None:
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("--repetitions 必须大于等于 1")
-    input_path = args.input.resolve()
-    if not input_path.is_file():
-        parser.error(f"输入文件不存在: {input_path}")
+    try:
+        input_source = DataSource.from_arguments(args.input, args.hive_table)
+        ensure_local_source_exists(input_source)
+        digest = fingerprint_source(input_source, args.input_sha256)
+    except ValueError as error:
+        parser.error(str(error))
 
-    digest = fingerprint(input_path)
-    data_version = build_data_version(input_path, digest)
+    data_version = args.data_version or build_data_version(
+        input_source.version_path, digest, fixture=input_source.is_fixture
+    )
     model_version = f"high_cost_lr_seed_{SEED}_{digest[:12]}"
 
     snapshot_generated_at = None
@@ -585,22 +596,19 @@ def main() -> None:
         timespec="microseconds"
     ).replace("+00:00", "Z")
 
-    spark = (
+    builder = (
         SparkSession.builder.master("local[*]")
         .appName("yishuyunce-high-cost-model")
         .config("spark.ui.enabled", "false")
-        .getOrCreate()
     )
+    if input_source.kind == "hive":
+        builder = builder.enableHiveSupport()
+    spark = builder.getOrCreate()
     frame = None
     train_base = None
     test_base = None
     try:
-        raw = (
-            spark.read.option("header", "true")
-            .option("inferSchema", "false")
-            .option("mode", "FAILFAST")
-            .csv(str(input_path))
-        )
+        raw = read_source(spark, input_source)
         frame = clean_frame(raw).where(
             F.col("in_scope") & F.col("valid_money") & F.col("charges").isNotNull()
         ).persist(StorageLevel.MEMORY_AND_DISK)
