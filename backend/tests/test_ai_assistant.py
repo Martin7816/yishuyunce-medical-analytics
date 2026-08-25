@@ -179,6 +179,9 @@ class StreamAnalyticsAIClient(FakeAIClient):
         "你是谁",
         "你能做什么",
         "帮助",
+        "What can you do?",
+        "Who are you?",
+        "How can you help?",
     ],
 )
 def test_simple_conversation_uses_text_completion_without_tools(question):

@@ -85,7 +85,7 @@ def test_filtered_question_adds_coarsening_and_case_count_scope_notes():
     )
 
     assert evidence["query_scope_notes"] == [
-        "50岁已按发布年龄组映射为50 to 69",
+        "筛选口径：50岁已按发布年龄组映射为50 to 69，无法提供精确到50岁的单岁统计；性别筛选为男性（M）",
         "本结果统计住院出院记录中的病例量，不等同于一般人群患病率或个体患病风险",
     ]
     assert evidence["query_scope_notes"][0] in evidence["limitations"]

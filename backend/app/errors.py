@@ -28,11 +28,11 @@ class ResultNotReadyError(AppError):
         super().__init__(
             503,
             "RESULT_NOT_READY",
-            f"The {resource} has not been published yet.",
+            f"{resource}尚未发布。",
         )
 
 class UpstreamServiceError(AppError):
-    def __init__(self, message: str = "The AI service is temporarily unavailable."):
+    def __init__(self, message: str = "AI 服务暂时不可用，请稍后重试。"):
         super().__init__(503, "UPSTREAM_SERVICE_ERROR", message)
 
 class DatabaseUnavailableError(AppError):
@@ -40,7 +40,7 @@ class DatabaseUnavailableError(AppError):
         super().__init__(
             503,
             "DATABASE_UNAVAILABLE",
-            "The data service is temporarily unavailable.",
+            "数据服务暂时不可用，请检查数据库连接。",
         )
 
 
@@ -49,7 +49,7 @@ class ServerMisconfiguredError(AppError):
         super().__init__(
             500,
             "SERVER_MISCONFIGURED",
-            "The service configuration is incomplete.",
+            "服务配置不完整，请检查后端环境变量。",
         )
 
 
@@ -58,5 +58,5 @@ class InvalidServiceResultError(AppError):
         super().__init__(
             500,
             "SERVICE_RESULT_INVALID",
-            "The published service result failed validation.",
+            "已发布服务结果校验失败。",
         )

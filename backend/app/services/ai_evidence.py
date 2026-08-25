@@ -137,6 +137,15 @@ _SIMPLE_CONVERSATION_PHRASES = frozenset(
         "怎么使用你",
         "帮助",
         "help",
+        "who are you",
+        "what are you",
+        "what can you do",
+        "what do you do",
+        "how can you help",
+        "how do i use you",
+        "how to use you",
+        "what can i ask",
+        "what can you analyze",
     }
 )
 _CONVERSATION_EDGE_PUNCTUATION = " \t\r\n.,!?！？。，、；;：:~～…"

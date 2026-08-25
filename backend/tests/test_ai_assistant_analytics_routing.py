@@ -5,12 +5,16 @@ from pathlib import Path
 
 from app import create_app
 from app.services.ai_assistant import AIAssistantService, is_new_analytics_question
+from app.services.analytics_agent import AnalyticsAgentOrchestrator
 from app.services.analytics_snapshot import AnalyticsSnapshotService
+from app.services.deepseek_planner import DeepSeekPlannerAdapter
 from app.services.evidence_answer_generator import (
     AnswerResult,
+    EvidenceAnswerGenerator,
     EvidenceAnswerOutputError,
 )
 from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotRepository
+from shared.query_result_contract import QueryResultContract
 
 
 PROVENANCE = {
@@ -116,6 +120,71 @@ class FailingAnswerGenerator(FakeAnswerGenerator):
             answer_text="根据已核验的汇总数据：Hospital A: 50。",
             used_evidence_ids=("query-routing-1",),
             provenance=PROVENANCE,
+        )
+
+
+class CrossFilterPlannerClient:
+    def complete_structured(self, messages, response_format):
+        return {
+            "parsed": {
+                "version": "query_analytics-v1",
+                "dimensions": ["diagnosis"],
+                "measures": ["case_count"],
+                "filters": [],
+                "sort": [{"by": "case_count", "direction": "desc"}],
+                "limit": 10,
+            }
+        }
+
+
+class UnavailableStructuredAnswerClient:
+    def complete_structured(self, messages, response_format):
+        raise RuntimeError("provider unavailable")
+
+
+class ScopeOmittingStructuredAnswerClient:
+    def complete_structured(self, messages, response_format):
+        return {
+            "answer_text": "D1 has 20 cases.",
+            "used_evidence_ids": ["query-cross-filter"],
+        }
+
+
+class CrossFilterAggregateRepository:
+    def execute(self, query):
+        def filter_value(value):
+            return list(value) if isinstance(value, tuple) else value
+
+        query_plan = {
+            "version": "query_analytics-v1",
+            "dimensions": list(query.dimensions),
+            "measures": list(query.measures),
+            "filters": [
+                {
+                    "dimension": item.dimension,
+                    "operator": item.operator,
+                    "value": filter_value(item.requested),
+                }
+                for item in query.filters
+            ],
+            "sort": [item.to_document() for item in query.order_by],
+            "limit": query.limit,
+        }
+        return QueryResultContract(
+            query_id="query-cross-filter",
+            query_plan=query_plan,
+            dimensions=query.dimensions,
+            measures=query.measures,
+            filters=query.filters,
+            rows=({"diagnosis": "D1", "case_count": 20},),
+            row_count=1,
+            truncated=False,
+            provenance=PROVENANCE,
+            metadata={
+                "source": "analytics_aggregate_fact",
+                "generated_at": "2026-08-26T00:00:00Z",
+                "privacy_boundary": "aggregate_only",
+            },
         )
 
 
@@ -279,6 +348,92 @@ def test_new_analytics_sse_keeps_stage_delta_done_shape_and_hides_internal_detai
     assert "query_plan" not in done["sources"][0]
     assert "planner" not in response.get_data(as_text=True).lower()
     assert "sql" not in response.get_data(as_text=True).lower()
+
+
+def test_cross_filter_sse_discloses_gender_and_single_age_precision_limit():
+    planner = DeepSeekPlannerAdapter(CrossFilterPlannerClient())
+    agent = AnalyticsAgentOrchestrator(planner, CrossFilterAggregateRepository())
+    answer_generator = EvidenceAnswerGenerator(UnavailableStructuredAnswerClient())
+    app = create_app(
+        {"TESTING": True, "ANALYTICS_DATA_SOURCE": "fixture"},
+        ai_client=LegacyClient(),
+        analytics_agent=agent,
+        answer_generator=answer_generator,
+    )
+
+    response = app.test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "50岁男性最常见的疾病是什么？"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    answer = "".join(
+        data["text"] for event_type, data in events if event_type == "delta"
+    )
+    assert "男性" in answer
+    assert "无法提供精确到50岁" in answer
+    assert "50 to 69" in answer
+    assert events[-1][0] == "done"
+    assert events[-1][1]["tool_trace"][0]["tool"] == "query_analytics"
+
+
+def test_cross_filter_sse_keeps_scope_when_model_answer_omits_it():
+    planner = DeepSeekPlannerAdapter(CrossFilterPlannerClient())
+    agent = AnalyticsAgentOrchestrator(planner, CrossFilterAggregateRepository())
+    answer_generator = EvidenceAnswerGenerator(ScopeOmittingStructuredAnswerClient())
+    app = create_app(
+        {"TESTING": True, "ANALYTICS_DATA_SOURCE": "fixture"},
+        ai_client=LegacyClient(),
+        analytics_agent=agent,
+        answer_generator=answer_generator,
+    )
+
+    response = app.test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "50岁男性最常见的疾病是什么？"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    answer = "".join(
+        data["text"] for event_type, data in events if event_type == "delta"
+    )
+    assert "D1 has 20 cases." in answer
+    assert "男性" in answer
+    assert "无法提供精确到50岁" in answer
+    assert "50 to 69" in answer
+    assert events[-1][0] == "done"
+
+
+def test_english_cross_filter_sse_keeps_scope_notes_in_english():
+    planner = DeepSeekPlannerAdapter(CrossFilterPlannerClient())
+    agent = AnalyticsAgentOrchestrator(planner, CrossFilterAggregateRepository())
+    answer_generator = EvidenceAnswerGenerator(UnavailableStructuredAnswerClient())
+    app = create_app(
+        {"TESTING": True, "ANALYTICS_DATA_SOURCE": "fixture"},
+        ai_client=LegacyClient(),
+        analytics_agent=agent,
+        answer_generator=answer_generator,
+    )
+
+    response = app.test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "What diseases are most common among men aged 50?"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    answer = "".join(
+        data["text"] for event_type, data in events if event_type == "delta"
+    )
+    assert "Applied filters:" in answer
+    assert "age 50 is mapped to the published age group 50 to 69" in answer
+    assert "gender is filtered to male (M)" in answer
+    assert "exact single-age statistics for age 50 are unavailable" in answer
+    assert "50 to 69" in answer
+    assert not any("\u4e00" <= character <= "\u9fff" for character in answer)
+    assert events[-1][0] == "done"
 
 
 def test_unsupported_agent_result_is_safe_and_does_not_expose_reason():

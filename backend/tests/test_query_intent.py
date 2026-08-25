@@ -33,6 +33,41 @@ def test_range_and_female_phrasing_uses_published_age_bucket():
     )
 
 
+def test_english_age_phrasing_uses_published_buckets_and_gender_filter():
+    intent = infer_natural_language_intent(
+        "What are the top diseases among male patients aged 50+?"
+    )
+
+    assert intent.disease_case_ranking is True
+    assert intent.dimensions == ("diagnosis",)
+    assert intent.measures == ("case_count",)
+    assert intent.filters == (
+        {
+            "dimension": "age_group",
+            "operator": "in",
+            "value": ["50 to 69", "70 or Older"],
+        },
+        {"dimension": "gender", "operator": "eq", "value": "M"},
+    )
+
+
+def test_english_age_range_and_measure_are_deterministic():
+    intent = infer_natural_language_intent(
+        "Compare average length of stay for women between 50 and 69 years"
+    )
+
+    assert intent.dimensions == ()
+    assert intent.measures == ("avg_los",)
+    assert intent.filters == (
+        {
+            "dimension": "age_group",
+            "operator": "eq",
+            "value": "50 to 69",
+        },
+        {"dimension": "gender", "operator": "eq", "value": "F"},
+    )
+
+
 def test_age_upper_bound_keeps_all_matching_published_buckets():
     intent = infer_natural_language_intent("50岁以上男性病例最多的疾病")
 

@@ -3,20 +3,20 @@ export const TOP10_API_PATH = '/api/v1/diseases/top10'
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '')
 
 const errorMessages = {
-  INVALID_QUERY_PARAMETER: 'The API does not accept query parameters.',
-  INVALID_REQUEST_FORMAT: 'The request format is invalid.',
-  METHOD_NOT_ALLOWED: 'The HTTP method is not allowed for this endpoint.',
-  RESOURCE_NOT_FOUND: 'The requested resource does not exist.',
-  DATABASE_UNAVAILABLE: 'The data service is temporarily unavailable.',
-  RESULT_NOT_READY: 'The disease TOP10 result has not been published yet.',
-  SERVER_MISCONFIGURED: 'The service configuration is incomplete.',
-  SERVICE_RESULT_INVALID: 'The published service result failed validation.',
-  INTERNAL_ERROR: 'An internal error occurred.',
+  INVALID_QUERY_PARAMETER: '接口不接受查询参数。',
+  INVALID_REQUEST_FORMAT: '请求格式无效。',
+  METHOD_NOT_ALLOWED: '当前接口不支持该请求方式。',
+  RESOURCE_NOT_FOUND: '请求的资源不存在。',
+  DATABASE_UNAVAILABLE: '数据服务暂时不可用，请检查数据库连接。',
+  RESULT_NOT_READY: '疾病 TOP10 结果尚未发布。',
+  SERVER_MISCONFIGURED: '服务配置不完整，请检查后端环境变量。',
+  SERVICE_RESULT_INVALID: '已发布服务结果校验失败。',
+  INTERNAL_ERROR: '服务内部出现异常，请稍后重试。',
 }
 
 export class DiseaseTop10ApiError extends Error {
   constructor({ code = 'INTERNAL_ERROR', status = 0, message, traceId = '', cause } = {}) {
-    super(message || errorMessages[code] || 'The data request failed.')
+    super(message || errorMessages[code] || '数据请求失败，请稍后重试。')
     this.name = 'DiseaseTop10ApiError'
     this.code = code
     this.status = status

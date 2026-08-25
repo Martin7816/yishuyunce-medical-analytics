@@ -21,18 +21,32 @@ _AGE_RANGE_PATTERN = re.compile(
     r"(?P<end>\d{1,3})\s*(?:岁|周岁)?",
     re.IGNORECASE,
 )
+_ENGLISH_AGE_RANGE_PATTERN = re.compile(
+    r"(?:between\s+)?(?P<start>\d{1,3})\s*(?:and|to|-)\s*"
+    r"(?P<end>\d{1,3})\s*(?:years?\s*(?:old|of age)?)?",
+    re.IGNORECASE,
+)
 _AGE_UPPER_PATTERN = re.compile(
     r"(?P<age>\d{1,3})\s*(?:岁|周岁)?\s*(?:以上|及以上|或以上|\+)",
     re.IGNORECASE,
 )
+_ENGLISH_AGE_UPPER_PATTERN = re.compile(
+    r"(?:over|above|at least|older than)\s*(?P<age>\d{1,3})\s*"
+    r"(?:years?\s*(?:old|of age)?)?|"
+    r"(?P<age_suffix>\d{1,3})\s*\+\s*(?:years?)?",
+    re.IGNORECASE,
+)
 _AGE_SINGLE_PATTERN = re.compile(r"(?P<age>\d{1,3})\s*(?:岁|周岁)", re.IGNORECASE)
 _ENGLISH_AGE_PATTERN = re.compile(
-    r"(?P<age>\d{1,3})\s*[- ]?year[- ]?old", re.IGNORECASE
+    r"(?:aged?\s+|age\s*(?:group|of)?\s*)(?P<age>\d{1,3})"
+    r"(?:\s*(?:years?\s*(?:old|of\s*age)?))?|"
+    r"(?P<plain>\d{1,3})\s*[- ]?year[- ]?old",
+    re.IGNORECASE,
 )
 
 _DISEASE_PATTERN = re.compile(
     r"(?:疾病|病种|诊断|什么病|哪种病|哪些病|得病|患病|常见病|"
-    r"disease|diagnosis|illness|condition)",
+    r"disease|diseases|diagnosis|diagnoses|illness|illnesses|condition|conditions)",
     re.IGNORECASE,
 )
 _CASE_COUNT_PATTERN = re.compile(
@@ -63,7 +77,7 @@ _DIMENSION_PATTERNS = {
     ),
     "diagnosis": re.compile(
         r"(?:疾病|病种|诊断|什么病|哪种病|哪些病|得病|患病|"
-        r"disease|diagnosis|illness|condition)",
+        r"disease|diseases|diagnosis|diagnoses|illness|illnesses|condition|conditions)",
         re.IGNORECASE,
     ),
     "age_group": re.compile(
@@ -195,7 +209,25 @@ def _extract_age(
             values = tuple(bucket_labels[start_index:])
             return values, f"{age}岁以上已按发布年龄组映射为{'、'.join(values)}"
 
+    english_upper = _ENGLISH_AGE_UPPER_PATTERN.search(question)
+    if english_upper:
+        try:
+            age = int(english_upper.group("age") or english_upper.group("age_suffix"))
+        except (TypeError, ValueError):
+            age = -1
+        if age >= 70:
+            return "70 or Older", None
+        if 0 <= age < 70:
+            age_start = _age_bucket(age)
+            bucket_labels = [label for _, _, label in _AGE_BUCKETS]
+            bucket_labels.append("70 or Older")
+            start_index = bucket_labels.index(age_start)
+            values = tuple(bucket_labels[start_index:])
+            return values, f"ages over {age} are mapped to published age groups"
+
     range_match = _AGE_RANGE_PATTERN.search(question)
+    if not range_match:
+        range_match = _ENGLISH_AGE_RANGE_PATTERN.search(question)
     if range_match:
         try:
             start = int(range_match.group("start"))
@@ -215,7 +247,7 @@ def _extract_age(
     if not single:
         return None, None
     try:
-        age = int(single.group("age"))
+        age = int(single.group("age") or single.group("plain"))
     except (TypeError, ValueError):
         return None, None
     if not 0 <= age <= 120:
@@ -496,7 +528,70 @@ def merge_query_plan_with_intent(
 def query_scope_notes(question: object) -> tuple[str, ...]:
     """Return user-visible caveats for deterministic filters and measures."""
 
-    return infer_natural_language_intent(question).notes
+    intent = infer_natural_language_intent(question)
+    if not isinstance(question, str) or not question.strip() or not intent.filters:
+        return intent.notes
+
+    normalized = question.strip()
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in normalized)
+    age_value, age_note = _extract_age(normalized)
+    gender_value = _extract_gender(normalized)
+
+    exact_age: int | None = None
+    if not (
+        _AGE_RANGE_PATTERN.search(normalized)
+        or _ENGLISH_AGE_RANGE_PATTERN.search(normalized)
+        or _AGE_UPPER_PATTERN.search(normalized)
+        or _ENGLISH_AGE_UPPER_PATTERN.search(normalized)
+    ):
+        single_age = _AGE_SINGLE_PATTERN.search(normalized) or _ENGLISH_AGE_PATTERN.search(
+            normalized
+        )
+        if single_age:
+            try:
+                exact_age = int(single_age.group("age") or single_age.group("plain"))
+            except (TypeError, ValueError):
+                exact_age = None
+
+    filter_parts: list[str] = []
+    if age_value is not None:
+        values = age_value if isinstance(age_value, tuple) else (age_value,)
+        value_label = ", ".join(values)
+        if is_chinese:
+            age_part = age_note or f"年龄筛选为发布年龄组{value_label}"
+        elif exact_age is not None:
+            age_part = (
+                f"age {exact_age} is mapped to the published age group {value_label}"
+            )
+        else:
+            group_label = "groups" if len(values) > 1 else "group"
+            age_part = f"age is filtered to published age {group_label} {value_label}"
+        if exact_age is not None:
+            if is_chinese:
+                age_part += f"，无法提供精确到{exact_age}岁的单岁统计"
+            else:
+                age_part += f"; exact single-age statistics for age {exact_age} are unavailable"
+        filter_parts.append(age_part)
+    if gender_value is not None:
+        if is_chinese:
+            gender_label = "男性" if gender_value == "M" else "女性"
+            filter_parts.append(f"性别筛选为{gender_label}（{gender_value}）")
+        else:
+            gender_label = "male" if gender_value == "M" else "female"
+            filter_parts.append(f"gender is filtered to {gender_label} ({gender_value})")
+
+    notes: list[str] = []
+    if filter_parts:
+        prefix = "筛选口径：" if is_chinese else "Applied filters: "
+        separator = "；" if is_chinese else "; "
+        notes.append(prefix + separator.join(filter_parts))
+    if is_chinese:
+        notes.extend(note for note in intent.notes if note != age_note)
+    elif intent.disease_case_ranking or "case_count" in intent.measures:
+        notes.append(
+            "Case count means inpatient discharge records, not population prevalence or individual risk."
+        )
+    return tuple(dict.fromkeys(notes))
 
 
 __all__ = [

@@ -642,6 +642,43 @@ def _deterministic_fallback_result(
     )
 
 
+def _append_required_scope_notes(
+    answer: str,
+    question: str,
+    cited_evidence: Sequence[Mapping[str, Any]],
+) -> str:
+    """Attach server-owned query scope even when the model omits it."""
+
+    notes: list[str] = []
+    for item in cited_evidence:
+        raw = item.get("evidence", item)
+        if not isinstance(raw, Mapping):
+            continue
+        values = raw.get("query_scope_notes")
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            continue
+        for value in values:
+            if (
+                isinstance(value, str)
+                and value.strip()
+                and len(value.strip()) <= 500
+                and not _CONTROL_CHARACTER_PATTERN.search(value)
+                and value.strip() not in notes
+            ):
+                notes.append(value.strip())
+
+    missing = [note for note in notes if note not in answer]
+    if not missing:
+        return answer
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    prefix = "口径说明：" if is_chinese else "Scope notes: "
+    separator = "；" if is_chinese else "; "
+    scoped_answer = f"{answer.rstrip()}\n\n{prefix}{separator.join(missing)}"
+    if len(scoped_answer) > 4000:
+        raise AnswerGroundingError("answer and required scope notes are too long")
+    return scoped_answer
+
+
 class EvidenceAnswerGenerator:
     """Generate one grounded answer from one or more Safe Evidence blocks."""
 
@@ -855,6 +892,11 @@ class EvidenceAnswerGenerator:
         )
         if not used_ids and _INSUFFICIENT_PATTERN.search(answer):
             return _insufficient_result(provenance)
+        answer = _append_required_scope_notes(
+            answer,
+            normalized_question,
+            cited_evidence,
+        )
         return AnswerResult(
             status=ANSWER_STATUS_OK,
             answer_text=answer,

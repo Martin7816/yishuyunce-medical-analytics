@@ -1009,11 +1009,11 @@ class AIAssistantService:
             return
 
         if self._should_route_to_analytics_agent(question):
-            yield self._stage("querying", "Querying aggregate evidence")
+            yield self._stage("querying", "正在查询聚合数据")
             result = self._run_analytics_agent(question)
-            yield self._stage("analyzing", "Analyzing grounded evidence")
+            yield self._stage("analyzing", "正在校验证据并生成结论")
             yield self._delta(result["answer"])
-            yield self._stage("completed", "Completed")
+            yield self._stage("completed", "分析完成")
             yield "done", self._stream_done_payload(result)
             return
 

@@ -477,11 +477,19 @@ async function consumeStream(text, controller) {
       result.value = normalizePayload({ ...event.data, answer: finalAnswer })
       streamStage.value = { stage: 'complete', label: '分析完成' }
       receivedDone = true
-      continue
+      // `done` is the terminal application event. Keep-alive connections may
+      // remain open after it, so do not wait for the HTTP stream to close.
+      break
     }
     throw createResultError('流式事件类型无效，未展示回答。请重试。')
   }
 
+  if (receivedDone) {
+    // Release the reader after the terminal event so a keep-alive response
+    // cannot linger in the browser or keep the request looking active.
+    await reader.cancel().catch(() => {})
+    return
+  }
   if (!receivedDone) throw createResultError('流式回答未正常完成，请重试。')
 }
 
@@ -536,6 +544,12 @@ function stopGeneration() {
 function submitForm() {
   if (loading.value) stopGeneration()
   else ask()
+}
+
+function handleQuestionKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey) return
+  event.preventDefault()
+  submitForm()
 }
 
 function choose(value) {
@@ -659,8 +673,7 @@ function errorMessage(caught) {
             aria-describedby="assistant-question-help assistant-question-error"
             :aria-invalid="Boolean(questionError)"
             placeholder="向 AI 询问医院、疾病、费用、风险或运营问题…"
-            @keydown.ctrl.enter.prevent="submitForm"
-            @keydown.meta.enter.prevent="submitForm"
+            @keydown="handleQuestionKeydown"
           ></textarea>
           <div class="assistant-composer-footer">
             <div class="assistant-scope-control" aria-label="数据分析范围：可筛选已发布群体汇总">
