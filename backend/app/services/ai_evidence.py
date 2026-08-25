@@ -60,6 +60,22 @@ _UNSAFE_TERMS = (
     "sql",
 )
 
+# ``患者``/``病人`` alone is not a patient-level request: cohort questions
+# commonly use those words (for example, "Medicare患者平均费用").  Keep the
+# privacy boundary focused on individual records, identifiers, and explicit
+# single-person wording instead of rejecting every cohort aggregate.
+_PATIENT_LEVEL_QUESTION_PATTERN = re.compile(
+    r"(?:"
+    r"\b(?:a|an|one|single|specific|individual|particular)\s+patient(?:'s)?\b"
+    r"|\bpatient(?:[- ]level|[- ]data|[- ]records?|[- ]details?|[_ ]id)\b"
+    r"|\b(?:mrn|ssn)\b"
+    r"|(?:\u67d0|\u5355\u4e2a|\u5355\u4e00|\u5177\u4f53|\u8fd9\u540d|\u8fd9\u4e2a|\u8be5)\s*(?:\u60a3\u8005|\u75c5\u4eba)"
+    r"|(?:\u60a3\u8005|\u75c5\u4eba)\s*(?:\u672c\u4eba|\u7ea7|\u660e\u7ec6|\u8be6\u60c5|\u8d26\u5355|\u8d39\u7528\u660e\u7ec6|\u8bb0\u5f55|\u7f16\u53f7|\u8eab\u4efd|ID|id)"
+    r"|(?:\u4e2a\u4eba|\u4e2a\u4f53)\s*(?:\u60a3\u8005|\u75c5\u4eba|\u8d39\u7528|\u8d26\u5355|\u8bb0\u5f55)"
+    r")",
+    re.IGNORECASE,
+)
+
 _TREND_TERMS = (
     "同比",
     "环比",
@@ -90,6 +106,40 @@ _RANKING_TERMS = ("最高", "最多", "最少", "排名", "排行", "top", "第�
 _STRUCTURE_TERMS = ("结构", "分布", "构成", "占比", "比例", "集中")
 _RELATION_TERMS = ("关系", "关联", "相关", "正相关", "负相关")
 _FOCUS_TERMS = ("重点", "关注", "优先", "值得注意", "值得关注")
+
+_SIMPLE_CONVERSATION_PHRASES = frozenset(
+    {
+        "你好",
+        "您好",
+        "你好呀",
+        "您好呀",
+        "你好啊",
+        "您好啊",
+        "hello",
+        "hi",
+        "hey",
+        "谢谢",
+        "多谢",
+        "谢谢你",
+        "谢谢你的帮助",
+        "谢谢您的帮助",
+        "再见",
+        "拜拜",
+        "你是谁",
+        "你是谁呀",
+        "你是谁呢",
+        "你是什么",
+        "你是什么助手",
+        "你是什么系统",
+        "你能做什么",
+        "你可以分析什么",
+        "怎么用你",
+        "怎么使用你",
+        "帮助",
+        "help",
+    }
+)
+_CONVERSATION_EDGE_PUNCTUATION = " \t\r\n.,!?！？。，、；;：:~～…"
 
 _TOOL_TOPIC = {
     "get_dashboard_overview": "overall",
@@ -347,7 +397,7 @@ def _safe_section(section: Mapping[str, Any]) -> dict[str, Any]:
         "items": safe_items,
     }
     visual = section.get("visual")
-    if section_type in _COMPLEX_SECTION_TYPES and isinstance(visual, Mapping):
+    if isinstance(visual, Mapping):
         safe_visual = _safe_visual(visual)
         if safe_visual:
             result["visual"] = safe_visual
@@ -617,8 +667,16 @@ def _has_term(question: str, terms: Sequence[str]) -> bool:
     return any(term.lower() in lowered for term in terms)
 
 
+def is_patient_level_question(question: str) -> bool:
+    """Return true only for an individual-patient or identifier request."""
+
+    if not isinstance(question, str):
+        return False
+    return _PATIENT_LEVEL_QUESTION_PATTERN.search(question.strip()) is not None
+
+
 def _unsafe_question(question: str) -> bool:
-    return _has_term(question, _UNSAFE_TERMS) or (
+    return is_patient_level_question(question) or _has_term(question, _UNSAFE_TERMS) or (
         "预测" in question and _has_term(question, ("患者", "病人", "个人", "张三", "某人"))
     )
 
@@ -642,6 +700,17 @@ def _topic_from_question(question: str) -> set[str]:
     if _has_term(question, ("模型", "准确率", "精确率", "召回率", "AUC", "F1")):
         topics.add("model")
     return topics
+
+
+def is_simple_conversation(question: str) -> bool:
+    """Return true only for explicit, non-analytic conversational intents."""
+
+    if not isinstance(question, str):
+        return False
+    if _topic_from_question(question):
+        return False
+    normalized = question.strip().lower().strip(_CONVERSATION_EDGE_PUNCTUATION)
+    return normalized in _SIMPLE_CONVERSATION_PHRASES
 
 
 def assess_question_scope(question: str) -> dict[str, Any] | None:
@@ -936,5 +1005,7 @@ __all__ = [
     "assess_question_scope",
     "build_safe_evidence",
     "derive_facts",
+    "is_simple_conversation",
+    "is_patient_level_question",
     "validate_answer_grounding",
 ]

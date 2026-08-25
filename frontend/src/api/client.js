@@ -56,6 +56,35 @@ export async function apiRequest(path, options = {}) {
   return body.data
 }
 
+export async function apiStreamRequest(path, options = {}) {
+  let response
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers: {
+        Accept: 'text/event-stream',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    })
+  } catch (cause) {
+    if (isAbortError(cause)) throw cause
+    throw new ApiError({}, 0, cause)
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new ApiError(body || {}, response.status)
+  }
+  if (!response.body) {
+    throw new ApiError(
+      { code: 'UPSTREAM_SERVICE_ERROR', message: '流式服务暂时不可用。' },
+      response.status,
+    )
+  }
+  return response
+}
+
 export function withQuery(path, values) {
   const query = new URLSearchParams(Object.entries(values).filter(([, value]) => value !== '' && value != null))
   return `${path}${query.size ? `?${query}` : ''}`

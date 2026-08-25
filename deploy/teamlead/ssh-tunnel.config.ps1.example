@@ -1,0 +1,12 @@
+# Copy to ssh-tunnel.config.ps1 and fill the SSH account/key path locally.
+# This file is ignored by Git after it is copied.
+
+$SshUser = '<SSH_USER>'
+$SshHost = '<SSH_HOST>'
+$IdentityFile = '<ABSOLUTE_PATH_TO_SSH_PRIVATE_KEY>'
+
+$LocalPort = 3307
+# Use 192.168.57.242 when the database is reachable from the SSH server's
+# network. Use 127.0.0.1 only when MySQL runs on the SSH server itself.
+$RemoteHost = '192.168.57.242'
+$RemotePort = 3306

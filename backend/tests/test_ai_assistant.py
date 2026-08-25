@@ -11,6 +11,7 @@ from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotReposito
 from app.services.ai_assistant import (
     ANALYSIS_SYSTEM_PROMPT,
     AIAssistantService,
+    CONVERSATION_SYSTEM_PROMPT,
     ROUTING_SYSTEM_PROMPT,
     TOOL_TO_SNAPSHOT,
     DeepSeekChatClient,
@@ -20,6 +21,7 @@ from app.services.ai_evidence import (
     assess_answerability,
     assess_question_scope,
     build_safe_evidence,
+    is_simple_conversation,
 )
 from app.services.analytics_snapshot import AnalyticsSnapshotService
 
@@ -133,6 +135,132 @@ class NoToolCallAIClient:
         if self.calls == 1:
             return {"role": "assistant", "content": "我无法确定工具。"}
         return {"role": "assistant", "content": "当前数据不能支持该判断。"}
+
+
+class ConversationAIClient:
+    def __init__(self):
+        self.calls = 0
+        self.messages: list[list[dict]] = []
+        self.tools: list[list[dict] | None] = []
+
+    def complete(self, messages, tools=None):
+        self.calls += 1
+        self.messages.append(messages)
+        self.tools.append(tools)
+        return {
+            "role": "assistant",
+            "content": "你好！我是医数云策的 AI 医疗运营分析助手。",
+        }
+
+
+class StreamConversationAIClient(ConversationAIClient):
+    def stream_complete(self, messages, tools=None):
+        self.messages.append(messages)
+        self.tools.append(tools)
+        yield "你好！我是医数云策的 "
+        yield "AI 医疗运营分析助手。"
+
+
+class StreamAnalyticsAIClient(FakeAIClient):
+    def stream_complete(self, messages, tools=None):
+        self.messages.append(messages)
+        self.tools.append(tools)
+        yield "基于 "
+        yield "get_dashboard_overview 的已验证汇总，已完成回答。"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "你好",
+        "hello",
+        "谢谢",
+        "再见",
+        "你是谁",
+        "你能做什么",
+        "帮助",
+    ],
+)
+def test_simple_conversation_uses_text_completion_without_tools(question):
+    client = ConversationAIClient()
+    result = build_service(client).chat({"message": question})
+
+    assert is_simple_conversation(question)
+    assert client.calls == 1
+    assert client.tools == [None]
+    assert client.messages[0] == [
+        {"role": "system", "content": CONVERSATION_SYSTEM_PROMPT},
+        {"role": "user", "content": question},
+    ]
+    assert result["answer"]
+    assert result["tool_trace"] == []
+    assert result["sources"] == []
+    assert result["data_versions"] == []
+    assert result["chart"] is None
+    assert result["boundary"]
+
+
+def test_business_analysis_takes_priority_over_greeting():
+    client = QuestionAwareRoutingClient()
+    result = build_service(client).chat({"message": "你好，哪些医院病例量最高？"})
+
+    assert not is_simple_conversation("你好，哪些医院病例量最高？")
+    assert client.calls == 2
+    assert client.messages[0][0]["content"] == ROUTING_SYSTEM_PROMPT
+    assert result["tool_trace"][0]["tool"] == "get_hospital_overview"
+
+
+def test_conversation_stream_emits_stages_deltas_done_without_sources():
+    events = list(build_service(StreamConversationAIClient()).stream_chat({"message": "你好"}))
+
+    assert [event_type for event_type, _ in events] == [
+        "stage",
+        "stage",
+        "stage",
+        "delta",
+        "delta",
+        "done",
+    ]
+    assert [data["stage"] for event_type, data in events if event_type == "stage"] == [
+        "preparing",
+        "understanding",
+        "generation",
+    ]
+    assert "routing" not in [data["stage"] for event_type, data in events if event_type == "stage"]
+    assert "".join(data["text"] for event_type, data in events if event_type == "delta") == (
+        "你好！我是医数云策的 AI 医疗运营分析助手。"
+    )
+    done = events[-1][1]
+    assert "answer" not in done
+    assert done["tool_trace"] == []
+    assert done["sources"] == []
+    assert done["data_versions"] == []
+    assert done["chart"] is None
+
+
+def test_analytics_stream_emits_routing_evidence_analysis_and_safe_done():
+    events = list(
+        build_service(StreamAnalyticsAIClient()).stream_chat({"message": "概括当前运营情况"})
+    )
+
+    stages = [data["stage"] for event_type, data in events if event_type == "stage"]
+    assert stages == ["preparing", "understanding", "routing", "evidence", "analysis", "generation"]
+    assert "基于 get_dashboard_overview 的已验证汇总，已完成回答。" in "".join(
+        data["text"] for event_type, data in events if event_type == "delta"
+    )
+    done = events[-1][1]
+    assert "answer" not in done
+    assert done["tool_trace"][0]["tool"] == "get_dashboard_overview"
+    assert done["sources"][0]["data_version"] == "fixture:sparcs_full_analytics:v1"
+    assert done["data_versions"] == ["fixture:sparcs_full_analytics:v1"]
+    assert done["chart"]
+
+
+def test_analytics_stream_without_tool_call_fails_closed():
+    stream = build_service(NoToolCallAIClient()).stream_chat({"message": "当前整体运营怎么样？"})
+
+    with pytest.raises(UpstreamServiceError, match="did not use a verified analytics tool"):
+        list(stream)
 
 
 @pytest.mark.parametrize(
@@ -380,6 +508,17 @@ def test_answerability_classifies_unsafe_unsupported_and_partial_questions():
     assert assess_question_scope("今年费用比去年上涨了吗？")["status"] == "unsupported"
 
 
+def test_patient_cohort_scope_is_allowed_but_individual_patient_scope_is_unsafe():
+    assert assess_question_scope(
+        "Medicare\u60a3\u8005\u5e73\u5747\u8d39\u7528\u662f\u591a\u5c11\uff1f"
+    ) is None
+
+    result = assess_question_scope("\u67d0\u60a3\u8005\u8d39\u7528\u662f\u591a\u5c11\uff1f")
+
+    assert result is not None
+    assert result["status"] == "unsafe"
+
+
 def test_cross_cost_and_risk_question_is_partial_without_joint_grain():
     analytics = AnalyticsSnapshotService(FixtureAnalyticsSnapshotRepository(FIXTURE_PATH))
     cost = build_safe_evidence(
@@ -411,6 +550,56 @@ def test_deepseek_client_without_api_key_fails_closed():
     )
     with pytest.raises(ServerMisconfiguredError):
         client.complete([{"role": "user", "content": "hello"}])
+
+
+class FakeStreamingResponse:
+    def __init__(self, body: bytes):
+        self.lines = iter(body.splitlines(keepends=True))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def readline(self):
+        return next(self.lines, b"")
+
+
+def test_deepseek_stream_client_extracts_content_and_ignores_empty_deltas(monkeypatch):
+    body = (
+        'data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"！"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        'data: [DONE]\n\n'
+    ).encode("utf-8")
+    monkeypatch.setattr(ai_assistant_module, "urlopen", lambda *args, **kwargs: FakeStreamingResponse(body))
+    client = DeepSeekChatClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+        timeout=20,
+    )
+
+    assert list(client.stream_complete([{"role": "user", "content": "hello"}])) == ["你好", "！"]
+
+
+def test_deepseek_stream_client_rejects_malformed_chunk(monkeypatch):
+    monkeypatch.setattr(
+        ai_assistant_module,
+        "urlopen",
+        lambda *args, **kwargs: FakeStreamingResponse(b"data: {not-json}\n\n"),
+    )
+    client = DeepSeekChatClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+        timeout=20,
+    )
+
+    with pytest.raises(UpstreamServiceError):
+        list(client.stream_complete([{"role": "user", "content": "hello"}]))
 
 
 @pytest.mark.parametrize(

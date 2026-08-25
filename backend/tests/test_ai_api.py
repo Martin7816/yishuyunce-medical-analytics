@@ -60,6 +60,39 @@ class NoToolCallAIClient:
         return {"role": "assistant", "content": "router returned no tool call"}
 
 
+class ConversationAIClient:
+    def __init__(self):
+        self.calls = 0
+        self.messages = []
+        self.tools = []
+
+    def complete(self, messages, tools=None):
+        self.calls += 1
+        self.messages.append(messages)
+        self.tools.append(tools)
+        return {
+            "role": "assistant",
+            "content": "你好！我是医数云策的 AI 医疗运营分析助手。",
+        }
+
+
+class StreamConversationAIClient(ConversationAIClient):
+    def stream_complete(self, messages, tools=None):
+        yield "你好！我是医数云策的 "
+        yield "AI 医疗运营分析助手。"
+
+
+class StreamAnalyticsAIClient(ScriptedAIClient):
+    def stream_complete(self, messages, tools=None):
+        yield "基于 "
+        yield "get_dashboard_overview 的已验证汇总，已完成回答。"
+
+
+class StreamFailureAIClient:
+    def stream_complete(self, messages, tools=None):
+        raise TimeoutError("secret upstream response and API key")
+
+
 class BrokenAnalyticsRepository:
     def fetch(self, module_key, entity_key):
         raise RuntimeError("database password and prompt must stay private")
@@ -96,6 +129,16 @@ def assert_safe_error(response, status_code, code, *markers):
     for marker in markers:
         assert marker not in text
     return body
+
+
+def parse_sse(response):
+    events = []
+    for block in response.get_data(as_text=True).strip().split("\n\n"):
+        lines = block.splitlines()
+        event_type = next(line.split(":", 1)[1].strip() for line in lines if line.startswith("event:"))
+        data_line = next(line.split(":", 1)[1].strip() for line in lines if line.startswith("data:"))
+        events.append((event_type, json.loads(data_line)))
+    return events
 
 
 def test_chat_success_has_stable_traceable_contract_and_analysis_evidence():
@@ -265,6 +308,121 @@ def test_unsupported_question_without_tool_call_returns_controlled_api_response(
     assert data["chart"] is None
     assert data["boundary"]
     assert ai_client.calls == 0
+
+
+def test_simple_conversation_returns_empty_evidence_contract():
+    ai_client = ConversationAIClient()
+    response = build_app(ai_client=ai_client).test_client().post(
+        "/api/v1/ai/chat",
+        json={"message": "你好"},
+    )
+
+    assert response.status_code == 200
+    data = assert_trace(response)["data"]
+    assert set(data) == {
+        "answer",
+        "tool_trace",
+        "sources",
+        "data_versions",
+        "chart",
+        "report",
+        "boundary",
+    }
+    assert data["answer"]
+    assert data["tool_trace"] == []
+    assert data["sources"] == []
+    assert data["data_versions"] == []
+    assert data["chart"] is None
+    assert data["boundary"]
+    assert ai_client.calls == 1
+    assert ai_client.tools == [None]
+
+
+def test_stream_conversation_returns_sse_stages_deltas_and_empty_evidence():
+    response = build_app(ai_client=StreamConversationAIClient()).test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "你好"},
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert response.headers["Cache-Control"] == "no-cache"
+    assert response.headers["X-Accel-Buffering"] == "no"
+    events = parse_sse(response)
+    assert [event_type for event_type, _ in events] == [
+        "stage",
+        "stage",
+        "stage",
+        "delta",
+        "delta",
+        "done",
+    ]
+    assert [data["stage"] for event_type, data in events if event_type == "stage"] == [
+        "preparing",
+        "understanding",
+        "generation",
+    ]
+    assert "".join(data["text"] for event_type, data in events if event_type == "delta") == (
+        "你好！我是医数云策的 AI 医疗运营分析助手。"
+    )
+    done = events[-1][1]
+    assert "answer" not in done
+    assert done["sources"] == []
+    assert done["data_versions"] == []
+    assert done["chart"] is None
+
+
+def test_stream_analytics_returns_provenance_metadata_after_analysis_deltas():
+    response = build_app(ai_client=StreamAnalyticsAIClient()).test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "概括当前运营情况"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    assert [data["stage"] for event_type, data in events if event_type == "stage"] == [
+        "preparing",
+        "understanding",
+        "routing",
+        "evidence",
+        "analysis",
+        "generation",
+    ]
+    done = events[-1][1]
+    assert events[-1][0] == "done"
+    assert "answer" not in done
+    assert done["tool_trace"][0]["tool"] == "get_dashboard_overview"
+    assert done["sources"][0]["data_version"] == FIXTURE_VERSION
+    assert done["data_versions"] == [FIXTURE_VERSION]
+    assert done["chart"]
+
+
+def test_stream_upstream_failure_is_sanitized():
+    response = build_app(ai_client=StreamFailureAIClient()).test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "你好"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    assert events[-1][0] == "error"
+    assert events[-1][1]["code"] == "UPSTREAM_SERVICE_ERROR"
+    text = response.get_data(as_text=True)
+    assert "secret upstream response" not in text
+    assert "API key" not in text
+
+
+def test_stream_analytics_without_tool_call_returns_sanitized_error():
+    response = build_app(ai_client=NoToolCallAIClient()).test_client().post(
+        "/api/v1/ai/chat/stream",
+        json={"message": "当前整体运营怎么样？"},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    assert events[-1][0] == "error"
+    assert events[-1][1]["code"] == "UPSTREAM_SERVICE_ERROR"
+    assert events[-1][1]["message"] == "The AI answer did not use a verified analytics tool."
 
 
 def test_tool_dependency_failure_is_not_exposed():

@@ -19,13 +19,19 @@ from .config import Config
 from .errors import AppError
 from .repositories.disease_top10 import build_repository
 from .repositories.analytics_snapshot import build_analytics_repository
+from .repositories.aggregate import build_aggregate_repository
+from .repositories.aggregate_query import build_aggregate_query_repository
 from .routes.analytics import analytics_bp
 from .routes.diseases import diseases_bp
 from .routes.health import health_bp
 from .routes.intelligence import intelligence_bp
 from .services.ai_assistant import AIAssistantService, DeepSeekChatClient
+from .services.analytics_agent import AnalyticsAgentOrchestrator
+from .services.deepseek_planner import DeepSeekPlannerAdapter
+from .services.evidence_answer_generator import EvidenceAnswerGenerator
 from .services.disease_top10 import DiseaseTop10Service
 from .services.analytics_snapshot import AnalyticsSnapshotService
+from .services.diagnosis_label_catalog import SnapshotDiagnosisLabelCatalog
 from .services.high_cost_model import HighCostModelService
 
 
@@ -45,8 +51,12 @@ def create_app(
     config_override: dict | None = None,
     repository=None,
     analytics_repository=None,
+    aggregate_repository=None,
+    aggregate_query_repository=None,
     high_cost_model_service=None,
     ai_client=None,
+    analytics_agent=None,
+    answer_generator=None,
 ) -> Flask:
     """Create an application. Tests may inject a repository explicitly."""
 
@@ -54,6 +64,12 @@ def create_app(
     app.config.from_object(Config)
     if config_override:
         app.config.update(config_override)
+    # Tests must not accidentally inherit a real local dotenv key.  An
+    # explicitly supplied value (including an empty value) still wins.
+    if app.config.get("TESTING") and (
+        not config_override or "DEEPSEEK_API_KEY" not in config_override
+    ):
+        app.config["DEEPSEEK_API_KEY"] = None
 
     selected_repository = (
         repository if repository is not None else build_repository(app.config)
@@ -68,6 +84,22 @@ def create_app(
     )
     app.extensions["analytics_snapshot_service"] = AnalyticsSnapshotService(
         selected_analytics_repository
+    )
+    app.extensions["diagnosis_label_catalog"] = SnapshotDiagnosisLabelCatalog(
+        app.extensions["analytics_snapshot_service"]
+    )
+    app.extensions["aggregate_fact_repository"] = (
+        aggregate_repository
+        if aggregate_repository is not None
+        else build_aggregate_repository(app.config)
+    )
+    app.extensions["aggregate_query_repository"] = (
+        aggregate_query_repository
+        if aggregate_query_repository is not None
+        else build_aggregate_query_repository(
+            app.config,
+            active_batch_repository=app.extensions["aggregate_fact_repository"],
+        )
     )
     model_path = app.config.get("HIGH_COST_MODEL_PATH")
     if not model_path and app.config.get("ANALYTICS_DATA_SOURCE") == "fixture":
@@ -87,8 +119,25 @@ def create_app(
             app.config["DEEPSEEK_TIMEOUT_SECONDS"],
         )
     )
+    selected_analytics_agent = (
+        analytics_agent
+        if analytics_agent is not None
+        else AnalyticsAgentOrchestrator(
+            DeepSeekPlannerAdapter(selected_ai_client),
+            app.extensions["aggregate_query_repository"],
+            diagnosis_label_resolver=app.extensions["diagnosis_label_catalog"],
+        )
+    )
+    selected_answer_generator = (
+        answer_generator
+        if answer_generator is not None
+        else EvidenceAnswerGenerator(selected_ai_client)
+    )
     app.extensions["ai_assistant_service"] = AIAssistantService(
-        app.extensions["analytics_snapshot_service"], selected_ai_client
+        app.extensions["analytics_snapshot_service"],
+        selected_ai_client,
+        analytics_agent=selected_analytics_agent,
+        answer_generator=selected_answer_generator,
     )
 
     app.register_blueprint(health_bp)

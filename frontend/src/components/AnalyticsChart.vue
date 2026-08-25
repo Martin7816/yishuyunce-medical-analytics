@@ -54,7 +54,7 @@ function compactFormat(value, unit) { return typeof value === 'number' && unit !
 function isChartType(type) { return chartTypes.has(type) }
 function isListType(type) { return listTypes.has(type) }
 function colors(index) { return ['#1E40AF', '#3B82F6', '#D97706', '#15803D', '#7C3AED'][index % 5] }
-function groupLabel(value) { return typeof value === 'number' ? numberFormat.format(value) : value }
+function groupLabel(value) { return value == null ? '' : (typeof value === 'number' ? numberFormat.format(value) : value) }
 function commonGrid() { return { left: 28, right: 32, top: 28, bottom: 42, containLabel: true } }
 
 function simpleBarOption(items) {
@@ -83,17 +83,24 @@ function groupedBarOption(items) {
 }
 
 function scatterOption(items) {
-  const groups = [...new Map(items.map(item => [String(item.group), item.group])).values()]
-  const maxSize = Math.max(...items.map(item => item.size), 1)
+  const hasGroups = items.some(item => item.group != null)
+  const groups = hasGroups
+    ? [...new Map(items.map(item => [String(item.group), item.group])).values()]
+    : [null]
+  const sizes = items
+    .map(item => item.size)
+    .filter(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
+  const hasSizes = sizes.length > 0
+  const maxSize = Math.max(...sizes, 1)
   const shapes = ['circle', 'diamond', 'triangle', 'rect', 'pin']
   return {
     ...motionOptions(),
     grid: commonGrid(),
-    legend: { data: groups.map(groupLabel), top: 0, type: 'scroll' },
-    tooltip: { trigger: 'item', formatter: params => { const item = params.data.itemData; if (!item) return ''; return [`<strong>${item.name}</strong>`, `${props.section.visual?.x_label || 'X'}：${format(item.x, '天')}`, `${props.section.visual?.y_label || 'Y'}：${format(item.y, sectionUnit())}`, `记录数：${format(item.size, '条')}`, item.cost == null ? '' : `平均成本：${format(item.cost, '美元')}`, item.high_cost_rate == null ? '' : `高费用率：${format(item.high_cost_rate, '%')}`, `分组：${groupLabel(item.group)}`].filter(Boolean).join('<br/>') } },
+    legend: hasGroups ? { data: groups.map(groupLabel), top: 0, type: 'scroll' } : { show: false },
+    tooltip: { trigger: 'item', formatter: params => { const item = params.data.itemData; if (!item) return ''; return [`<strong>${item.name}</strong>`, `${props.section.visual?.x_label || 'X'}：${format(item.x, '天')}`, `${props.section.visual?.y_label || 'Y'}：${format(item.y, sectionUnit())}`, item.size == null ? '' : `记录数：${format(item.size, '条')}`, item.cost == null ? '' : `平均成本：${format(item.cost, '美元')}`, item.high_cost_rate == null ? '' : `高费用率：${format(item.high_cost_rate, '%')}`, item.group == null ? '' : `分组：${groupLabel(item.group)}`].filter(Boolean).join('<br/>') } },
     xAxis: { type: 'value', name: props.section.visual?.x_label || '', axisLabel: { formatter: value => format(value, '天') }, splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
     yAxis: { type: 'value', name: props.section.visual?.y_label || sectionUnit(), axisLabel: { formatter: value => compactFormat(value, sectionUnit()) }, splitLine: { lineStyle: { color: '#e8eef5', type: 'dashed' } } },
-    series: groups.map((group, groupIndex) => ({ name: groupLabel(group), type: 'scatter', symbol: shapes[groupIndex % shapes.length], itemStyle: { color: colors(groupIndex), opacity: 0.86 }, symbolSize: value => Math.max(10, Math.min(34, 8 + Math.sqrt((value?.[2] || 0) / maxSize) * 28)), data: items.filter(item => String(item.group) === String(group)).map(item => ({ value: [item.x, item.y, item.size], itemData: item })) })),
+    series: groups.map((group, groupIndex) => ({ name: groupLabel(group), type: 'scatter', symbol: shapes[groupIndex % shapes.length], itemStyle: { color: colors(groupIndex), opacity: 0.86 }, symbolSize: value => { if (!hasSizes) return 14; const size = value?.[2]; return typeof size === 'number' && size > 0 ? Math.max(10, Math.min(34, 8 + Math.sqrt(size / maxSize) * 28)) : 14 }, data: items.filter(item => (hasGroups ? String(item.group) === String(group) : true)).map(item => ({ value: item.size == null ? [item.x, item.y] : [item.x, item.y, item.size], itemData: item })) })),
   }
 }
 

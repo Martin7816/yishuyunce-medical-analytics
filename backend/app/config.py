@@ -26,6 +26,10 @@ class Config:
     # Fixture use must be explicit so an incomplete production environment
     # cannot silently present demo aggregates as real analytics.
     ANALYTICS_DATA_SOURCE = os.getenv("ANALYTICS_DATA_SOURCE")
+    # The aggregate fact is internal-only and has no fixture fallback.
+    AGGREGATE_DATA_SOURCE = os.getenv("AGGREGATE_DATA_SOURCE")
+    # Deliberately unset until the privacy policy owner chooses a threshold.
+    ANALYTICS_MIN_COHORT_SIZE = os.getenv("ANALYTICS_MIN_COHORT_SIZE") or None
     HIGH_COST_MODEL_PATH = os.getenv("HIGH_COST_MODEL_PATH")
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -38,5 +42,9 @@ class Config:
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE = os.getenv("MYSQL_DATABASE")
     MYSQL_CONNECT_TIMEOUT = int(os.getenv("MYSQL_CONNECT_TIMEOUT", "3"))
+    # Aggregate reads can scan the active fact through an SSH tunnel.  Keep
+    # connection failure detection short without aborting a valid grouped
+    # read after the connection has already been established.
+    MYSQL_READ_TIMEOUT = int(os.getenv("MYSQL_READ_TIMEOUT", "30"))
 
     JSON_SORT_KEYS = False
