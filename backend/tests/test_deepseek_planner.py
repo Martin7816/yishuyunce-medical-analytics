@@ -8,6 +8,7 @@ from app.services.deepseek_planner import (
     DEEPSEEK_PLANNER_RESPONSE_FORMAT,
     DeepSeekPlannerAdapter,
     PlannerOutputValidationError,
+    PlannerProviderError,
     StructuredOutputError,
     UnsupportedPlannerIntent,
 )
@@ -43,6 +44,16 @@ class FakeStructuredClient:
     ) -> object:
         self.calls.append((messages, response_format))
         return self.response
+
+
+class FailingStructuredClient:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error or RuntimeError("provider unavailable")
+        self.calls = 0
+
+    def complete_structured(self, messages, response_format):
+        self.calls += 1
+        raise self.error
 
 
 def make_planner(response: object) -> tuple[DeepSeekPlannerAdapter, FakeStructuredClient]:
@@ -150,3 +161,24 @@ def test_unsupported_question_is_fail_closed_before_provider_call():
         planner.generate_plan("What is the weather today?")
 
     assert client.calls == []
+
+
+def test_provider_failure_recovers_with_bounded_deterministic_plan():
+    client = FailingStructuredClient()
+    planner = DeepSeekPlannerAdapter(client)
+
+    result = planner.generate_plan("哪些医院病例量最高？")
+
+    assert result.to_document() == {
+        "version": QUERY_ANALYTICS_VERSION,
+        "dimensions": ["hospital"],
+        "measures": ["case_count"],
+        "filters": [],
+        "sort": [{"by": "case_count", "direction": "desc"}],
+        "limit": 10,
+    }
+    assert client.calls == 1
+
+
+def test_provider_error_type_remains_a_structured_output_error():
+    assert issubclass(PlannerProviderError, StructuredOutputError)

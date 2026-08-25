@@ -55,6 +55,7 @@ _COMPARISON_PATTERN = re.compile(
     r"(?:比较|对比|差异|哪个更|相比|compare|comparison|difference|versus|vs\.)",
     re.IGNORECASE,
 )
+_LIMIT_PATTERN = re.compile(r"(?:\btop\s*|前\s*)(?P<limit>\d{1,2})", re.IGNORECASE)
 _DIMENSION_PATTERNS = {
     "hospital": re.compile(
         r"(?:医院|机构|院区|hospital|hospitals|facility|facilities)",
@@ -139,6 +140,7 @@ class NaturalLanguageIntent:
     ranking_requested: bool = False
     distribution_requested: bool = False
     comparison_requested: bool = False
+    requested_limit: int | None = None
 
     @property
     def has_explicit_filter(self) -> bool:
@@ -245,6 +247,16 @@ def infer_natural_language_intent(question: object) -> NaturalLanguageIntent:
     ranking_requested = _RANKING_PATTERN.search(normalized) is not None
     distribution_requested = _DISTRIBUTION_PATTERN.search(normalized) is not None
     comparison_requested = _COMPARISON_PATTERN.search(normalized) is not None
+    limit_match = _LIMIT_PATTERN.search(normalized)
+    requested_limit: int | None = None
+    if limit_match:
+        try:
+            parsed_limit = int(limit_match.group("limit"))
+        except (TypeError, ValueError):
+            parsed_limit = 0
+        if parsed_limit > 0:
+            # The shared query contract deliberately caps result size at 10.
+            requested_limit = min(parsed_limit, 10)
     explicit_measures = tuple(
         measure_id
         for measure_id, pattern in _MEASURE_PATTERNS.items()
@@ -350,7 +362,58 @@ def infer_natural_language_intent(question: object) -> NaturalLanguageIntent:
         ranking_requested=ranking_requested,
         distribution_requested=distribution_requested,
         comparison_requested=comparison_requested,
+        requested_limit=requested_limit,
     )
+
+
+# Keep this allowlist aligned with the server-owned capability compiler.  The
+# deterministic planner is only a recovery path for high-confidence wording;
+# it must never manufacture a new aggregate shape.
+_DETERMINISTIC_DIMENSION_SHAPES = {
+    frozenset(),
+    frozenset({"hospital"}),
+    frozenset({"diagnosis"}),
+    frozenset({"age_group"}),
+    frozenset({"gender"}),
+    frozenset({"severity"}),
+    frozenset({"payment"}),
+    frozenset({"admission_type"}),
+    frozenset({"age_group", "diagnosis"}),
+    frozenset({"gender", "diagnosis"}),
+    frozenset({"hospital", "severity"}),
+    frozenset({"payment", "age_group"}),
+}
+
+
+def build_deterministic_query_plan(
+    question: object,
+) -> dict[str, Any] | None:
+    """Build a safe plan for a small, auditable high-confidence intent subset.
+
+    This function never reads data and never creates SQL.  It is deliberately
+    narrower than the LLM planner and is used only when the provider is
+    unavailable or transiently fails.  The returned document still has to pass
+    ``QueryPlanValidator`` and ``SafeQueryCompiler`` downstream.
+    """
+
+    intent = infer_natural_language_intent(question)
+    if not intent.has_structured_intent:
+        return None
+    if frozenset(intent.dimensions) not in _DETERMINISTIC_DIMENSION_SHAPES:
+        return None
+
+    sort = []
+    if intent.ranking_requested:
+        sort = [{"by": intent.measures[0], "direction": "desc"}]
+
+    return {
+        "version": "query_analytics-v1",
+        "dimensions": list(intent.dimensions),
+        "measures": list(intent.measures),
+        "filters": [dict(item) for item in intent.filters],
+        "sort": sort,
+        "limit": intent.requested_limit or 10,
+    }
 
 
 def merge_query_plan_with_intent(
@@ -366,7 +429,15 @@ def merge_query_plan_with_intent(
     if not isinstance(document, Mapping):
         return document
     intent = infer_natural_language_intent(question)
-    if not intent.has_structured_intent or not intent.filters:
+    if not intent.has_structured_intent:
+        return document
+    if not (
+        intent.filters
+        or intent.requested_limit is not None
+        or intent.ranking_requested
+        or intent.distribution_requested
+        or intent.comparison_requested
+    ):
         return document
 
     normalized = deepcopy(dict(document))
@@ -411,7 +482,7 @@ def merge_query_plan_with_intent(
             if isinstance(item, Mapping)
             and item.get("by") in selected
         ]
-    limit = normalized.get("limit", 10)
+    limit = intent.requested_limit or normalized.get("limit", 10)
     normalized["limit"] = (
         limit
         if isinstance(limit, int)
@@ -430,6 +501,7 @@ def query_scope_notes(question: object) -> tuple[str, ...]:
 
 __all__ = [
     "NaturalLanguageIntent",
+    "build_deterministic_query_plan",
     "infer_natural_language_intent",
     "merge_query_plan_with_intent",
     "query_scope_notes",

@@ -23,6 +23,7 @@ from .safe_query_compiler import (
     SafeQueryCompilerError,
 )
 from .semantic_registry import SemanticRegistry
+from .query_intent import infer_natural_language_intent
 
 
 MAX_AGENT_TOOL_CALLS = 4
@@ -183,6 +184,28 @@ class AnalyticsAgentOrchestrator:
             )
         return result, next_tool_calls
 
+    def _evidence_type_for_question(
+        self,
+        question: str,
+        plan: QueryPlan,
+    ) -> str:
+        """Choose the presentation shape from intent, without asking the LLM.
+
+        The query plan remains the authority for data access.  This small
+        routing decision only selects the already-supported evidence/chart
+        projection, so a distribution or comparison question is not forced
+        through the default ranking renderer.
+        """
+
+        intent = infer_natural_language_intent(question)
+        if intent.distribution_requested:
+            return "distribution"
+        if intent.comparison_requested:
+            return "comparison"
+        if len(plan.measures) > 1:
+            return "relationship"
+        return self.evidence_type
+
     def run(self, question: str) -> dict[str, Any]:
         """Run one isolated analytics request; conversation never reaches planner."""
 
@@ -222,9 +245,13 @@ class AnalyticsAgentOrchestrator:
                 "status": "tool_limit",
             }
 
+        evidence_type = self._evidence_type_for_question(
+            normalized_question,
+            validated_plan,
+        )
         evidence = self.evidence_adapter.adapt(
             query_result,
-            self.evidence_type,
+            evidence_type,
             question=normalized_question,
         )
         status = "empty" if query_result.row_count == 0 else "ok"
@@ -238,6 +265,7 @@ class AnalyticsAgentOrchestrator:
             "compiled_query": compiled_query,
             "query_result": query_result,
             "evidence": evidence,
+            "evidence_type": evidence_type,
             "provenance": dict(query_result.provenance),
         }
 

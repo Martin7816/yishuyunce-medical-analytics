@@ -178,6 +178,23 @@ def test_missing_evidence_returns_insufficient_without_provider_call():
     assert client.calls == []
 
 
+def test_deterministic_fallback_summarizes_only_validated_evidence():
+    generator, client = make_generator(grounded_response())
+
+    result = generator.deterministic_fallback(
+        "哪个医院病例量最高？",
+        ranking_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.status == ANSWER_STATUS_OK
+    assert "Hospital A" in result.answer_text
+    assert "50" in result.answer_text
+    assert "Hospital B" in result.answer_text
+    assert result.used_evidence_ids == ("query-evidence-1",)
+    assert client.calls == []
+
+
 def test_causal_wording_is_rejected():
     generator, _ = make_generator(
         grounded_response("Hospital A has 50 cases because it receives sicker patients.")

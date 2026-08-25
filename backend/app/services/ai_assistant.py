@@ -218,8 +218,8 @@ _NEW_ANALYTICS_DIMENSIONS = frozenset(
 _COHORT_PATIENT_HINTS = ("患者", "病人", "patient", "patients")
 
 _ANALYTICS_AGENT_PUBLIC_ANSWER = (
-    "The aggregate analytics agent cannot safely answer this question "
-    "from the available evidence."
+    "当前问题暂时没有可用的已发布汇总证据。请检查聚合数据源和 ACTIVE 批次；"
+    "系统不会在没有证据时猜测医疗统计结果。"
 )
 _ANALYTICS_AGENT_PUBLIC_BOUNDARY = (
     "Aggregated inpatient discharge records; no patient-level diagnosis or "
@@ -722,7 +722,20 @@ class AIAssistantService:
         except AppError:
             raise
         except EvidenceAnswerGeneratorError:
-            return self._new_analytics_control_result()
+            # Keep the analytics route useful during a provider timeout or a
+            # malformed model answer.  The fallback reads only the already
+            # validated evidence; it cannot invent a number or access SQL.
+            fallback = getattr(
+                self.answer_generator,
+                "deterministic_fallback",
+                None,
+            )
+            if not callable(fallback):
+                return self._new_analytics_control_result()
+            try:
+                answer_result = fallback(question, evidence)
+            except Exception:
+                return self._new_analytics_control_result()
         except Exception:
             return self._new_analytics_control_result()
         if not isinstance(answer_result, AnswerResult):

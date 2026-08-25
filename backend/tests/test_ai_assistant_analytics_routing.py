@@ -6,7 +6,10 @@ from pathlib import Path
 from app import create_app
 from app.services.ai_assistant import AIAssistantService, is_new_analytics_question
 from app.services.analytics_snapshot import AnalyticsSnapshotService
-from app.services.evidence_answer_generator import AnswerResult
+from app.services.evidence_answer_generator import (
+    AnswerResult,
+    EvidenceAnswerOutputError,
+)
 from app.repositories.analytics_snapshot import FixtureAnalyticsSnapshotRepository
 
 
@@ -98,6 +101,19 @@ class FakeAnswerGenerator:
         return AnswerResult(
             status="ok",
             answer_text="Hospital A has 50 cases.",
+            used_evidence_ids=("query-routing-1",),
+            provenance=PROVENANCE,
+        )
+
+
+class FailingAnswerGenerator(FakeAnswerGenerator):
+    def generate(self, question, evidence):
+        raise EvidenceAnswerOutputError("provider unavailable")
+
+    def deterministic_fallback(self, question, evidence):
+        return AnswerResult(
+            status="ok",
+            answer_text="根据已核验的汇总数据：Hospital A: 50。",
             used_evidence_ids=("query-routing-1",),
             provenance=PROVENANCE,
         )
@@ -201,6 +217,20 @@ def test_new_analytics_question_uses_agent_and_answer_generator():
     ]
     assert result["sources"][0]["provenance"] == PROVENANCE
     assert "query_plan" not in result["sources"][0]
+
+
+def test_model_answer_failure_uses_evidence_only_fallback():
+    client = LegacyClient()
+    agent = FakeAnalyticsAgent()
+    answer_generator = FailingAnswerGenerator()
+
+    result = make_service(client, agent, answer_generator).chat(
+        {"message": "Show case_count by hospital and severity"}
+    )
+
+    assert result["answer"] == "根据已核验的汇总数据：Hospital A: 50。"
+    assert result["data_versions"] == [PROVENANCE["data_version"]]
+    assert client.complete_calls == []
 
 
 def test_legacy_supported_question_keeps_old_tool_path():

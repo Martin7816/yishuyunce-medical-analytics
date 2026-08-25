@@ -22,7 +22,11 @@ from shared.query_plan_contract import (
 
 from .ai_evidence import assess_question_scope, is_simple_conversation
 from .query_plan_validator import QueryPlanValidationError, QueryPlanValidator
-from .query_intent import infer_natural_language_intent, merge_query_plan_with_intent
+from .query_intent import (
+    build_deterministic_query_plan,
+    infer_natural_language_intent,
+    merge_query_plan_with_intent,
+)
 from .semantic_registry import SemanticRegistry, semantic_registry
 
 
@@ -189,6 +193,10 @@ class StructuredOutputError(DeepSeekPlannerError):
     """The provider did not return a native structured object."""
 
 
+class PlannerProviderError(StructuredOutputError):
+    """The provider transport failed before a structured result was usable."""
+
+
 class PlannerOutputValidationError(DeepSeekPlannerError):
     """The structured object is not a valid query_analytics-v1 plan."""
 
@@ -334,7 +342,7 @@ class DeepSeekPlannerAdapter:
             except DeepSeekPlannerError:
                 raise
             except Exception as error:
-                raise StructuredOutputError(
+                raise PlannerProviderError(
                     "structured DeepSeek request failed"
                 ) from error
 
@@ -345,17 +353,17 @@ class DeepSeekPlannerAdapter:
             try:
                 return complete(messages, response_format=response_format)
             except TypeError as error:
-                raise StructuredOutputError(
+                raise PlannerProviderError(
                     "DeepSeek client does not expose strict structured output"
                 ) from error
             except DeepSeekPlannerError:
                 raise
             except Exception as error:
-                raise StructuredOutputError(
+                raise PlannerProviderError(
                     "structured DeepSeek request failed"
                 ) from error
 
-        raise StructuredOutputError(
+        raise PlannerProviderError(
             "DeepSeek client must expose complete_structured(messages, response_format)"
         )
 
@@ -364,10 +372,24 @@ class DeepSeekPlannerAdapter:
 
         normalized_question = _validate_question(question, self.registry)
         response_format = deepcopy(DEEPSEEK_PLANNER_RESPONSE_FORMAT)
-        response = self._complete_structured(
-            self._messages(normalized_question),
-            response_format,
-        )
+        try:
+            response = self._complete_structured(
+                self._messages(normalized_question),
+                response_format,
+            )
+        except PlannerProviderError:
+            # A short deterministic recovery path keeps obvious aggregate
+            # questions usable during a provider outage.  It remains bounded
+            # by the same validator and capability compiler as model output.
+            fallback_document = build_deterministic_query_plan(normalized_question)
+            if fallback_document is not None:
+                try:
+                    return self.validator.validate(fallback_document)
+                except (QueryPlanValidationError, TypeError, ValueError):
+                    # Do not turn a failed recovery attempt into an unsafe
+                    # query.  Re-raise the provider error below.
+                    pass
+            raise
         document = _extract_structured_document(response)
         # Provider output remains the source of semantic interpretation, but
         # deterministic published-value filters must not be lost because the
@@ -402,6 +424,7 @@ __all__ = [
     "DeepSeekPlannerError",
     "DeepSeekQueryPlanner",
     "PlannerOutputValidationError",
+    "PlannerProviderError",
     "QUERY_PLAN_RESPONSE_FORMAT",
     "STRUCTURED_QUERY_PLAN_RESPONSE_FORMAT",
     "StructuredDeepSeekClientProtocol",

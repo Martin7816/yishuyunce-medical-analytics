@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.query_intent import (
+    build_deterministic_query_plan,
     infer_natural_language_intent,
     merge_query_plan_with_intent,
 )
@@ -93,3 +94,21 @@ def test_cross_dimension_distribution_is_inferred_as_a_supported_query_shape():
     assert intent.dimensions == ("diagnosis", "gender")
     assert intent.measures == ("case_count",)
     assert intent.distribution_requested is True
+
+
+def test_top_limit_is_bounded_and_deterministic_plan_is_server_safe():
+    intent = infer_natural_language_intent("前20个医院病例量最高")
+
+    assert intent.requested_limit == 10
+    assert build_deterministic_query_plan("前20个医院病例量最高") == {
+        "version": "query_analytics-v1",
+        "dimensions": ["hospital"],
+        "measures": ["case_count"],
+        "filters": [],
+        "sort": [{"by": "case_count", "direction": "desc"}],
+        "limit": 10,
+    }
+
+
+def test_deterministic_planner_does_not_invent_unsupported_dimension_shape():
+    assert build_deterministic_query_plan("医院和年龄段病例量") is None
