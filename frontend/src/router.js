@@ -23,13 +23,13 @@ const configs = {
     endpoint: '/hospitals', eyebrow: '医院运营对比', clientTitle: '医院运营', clientDescription: '对比各医疗机构的病例量、住院时长与费用结构。', duplicateFilters: ['facility_a', 'facility_b'],
     duplicateMessage: '医院 A 和医院 B 不能选择同一家医院。', highlightMetricKey: 'metric',
     filters: [
-      { key: 'facility_a', option: 'facilities', label: '医院 A' }, { key: 'facility_b', option: 'facilities', label: '医院 B' },
+      { key: 'facility_a', option: 'facilities', label: '医院 A', sort: 'zh-pinyin' }, { key: 'facility_b', option: 'facilities', label: '医院 B', sort: 'zh-pinyin' },
       { key: 'metric', label: '比较指标', values: comparisonMetricOptions },
     ],
   },
   diseases: {
     endpoint: '/diseases', eyebrow: '疾病结构概览', clientTitle: '疾病分析', clientDescription: '默认查看全部疾病的病例量 TOP10；选择疾病后查看单病种住院记录结构。', clientSectionTitles: { top10: '全部疾病病例量排行（TOP10）' }, profile: { key: 'diagnosis_code', path: '/diseases/' },
-    filters: [{ key: 'diagnosis_code', option: 'diagnoses', label: '疾病', allLabel: '全部疾病（展示病例量 TOP10）', quickSection: 'top10', quickLabel: '病例量 TOP10 快捷筛选', help: '点击下方疾病标签可直接筛选；下拉框保留完整疾病列表。' }],
+    filters: [{ key: 'diagnosis_code', option: 'diagnoses', label: '疾病', sort: 'zh-pinyin', allLabel: '全部疾病（展示病例量 TOP10）', quickSection: 'top10', quickLabel: '病例量 TOP10 快捷筛选', help: '点击下方疾病标签可直接筛选；下拉框保留完整疾病列表。' }],
   },
   cohorts: {
     endpoint: '/cohorts/summary', eyebrow: '住院记录群体结构', clientTitle: '群体结构', clientDescription: '按已发布的年龄、性别与入院方式筛选住院记录群体。', layout: 'cohort', alwaysShowClear: true,
@@ -47,14 +47,14 @@ const configs = {
       charge_cost_gap: '平均收费成本差', daily_charges: '日均收费', daily_costs: '日均成本',
     },
     filters: [
-      { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病' }, { key: 'facility_id', remote: '/hospitals', option: 'facilities', label: '医院' },
+      { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病', sort: 'zh-pinyin' }, { key: 'facility_id', remote: '/hospitals', option: 'facilities', label: '医院', sort: 'zh-pinyin' },
       { key: 'severity', option: 'severity', label: '严重程度', values: severityOptions },
     ], mutuallyExclusive: ['diagnosis_code', 'facility_id'],
   },
   risks: {
     endpoint: '/risks/overview', eyebrow: '严重程度结构', clientTitle: '严重程度', clientDescription: '查看不同住院记录群体的病情严重程度分布。', layout: 'risk', alwaysShowClear: true,
     filters: [
-      { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病' },
+      { key: 'age_group', option: 'age_group', label: '年龄组' }, { key: 'diagnosis_code', remote: '/diseases', option: 'diagnoses', label: '疾病', sort: 'zh-pinyin' },
     ],
   },
   payments: {
