@@ -119,9 +119,9 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 支付模块发布未筛选键和支付方式×年龄组组合。`payment_type` 来自 `Payment Typology 1`，金额指标只使用可解析且非负的收费。支付方式、年龄和疾病排行排除空分组；疾病排行严格取十项。
 
-### 5.7 数据质量
+### 5.7 数据质量校验
 
-数据质量页集中发布基础记录总体、严重程度有效/缺失数，以及现有业务使用字段的有效记录数和非零缺失数。`Birth Weight`、`Payment Typology 2/3` 等未进入当前业务的字段不改变基础记录总体，也不进入业务页面。
+数据质量接口集中发布基础记录总体、严重程度有效/缺失数，以及现有业务使用字段的有效记录数和非零缺失数，供后端审计、指标口径校验和必要的运维检查使用；当前不提供独立前端页面。`Birth Weight`、`Payment Typology 2/3` 等未进入当前业务的字段不改变基础记录总体，也不进入业务页面。
 
 ### 5.8 高费用模型
 
@@ -179,6 +179,6 @@ MySQL 表 `analysis_snapshot_result` 使用 `(module_key, entity_key)` 定位一
 
 ## 8. 前端与 AI
 
-前端固定提供 `/overview`、`/hospitals`、`/diseases`、`/cohorts`、`/costs`、`/risks`、`/payments`、`/data-quality`、`/model` 和 `/assistant`。八个分析页复用公共渲染器，模型和 AI 使用各自必要的交互。
+前端固定提供 `/overview`、`/hospitals`、`/diseases`、`/cohorts`、`/costs`、`/risks`、`/payments` 和 `/assistant`。六个专题分析页复用公共渲染器，AI 使用必要的交互；数据质量和高费用模型只保留后端接口，不作为前端页面提供。旧 `/model` 地址重定向到 `/overview`。
 
 AI 使用 DeepSeek 的 OpenAI 兼容 Chat Completions 接口，超时 20 秒，单次问题最多调用两次白名单工具，不保存历史。回答必须包含工具轨迹、来源指标、数据版本和统计边界；依赖失败时返回错误，不生成无来源内容。

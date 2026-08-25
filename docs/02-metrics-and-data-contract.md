@@ -4,7 +4,7 @@
 
 ## 1. 指标定义
 
-指标标识为 `disease_case_count_top10`。在约定的数据版本内，对 2021 年 SPARCS 住院出院记录按 `CCSR Diagnosis Description` 分组，清洗后每条有效住院出院记录计数一次，按病例量降序、同量时按疾病名称升序排列，取前 10 项。
+指标标识为 `disease_case_count_top10`。在约定的数据版本内，对 2021 年 SPARCS 住院出院记录按 `CCSR Diagnosis Description` 分组，清洗后排除 `LIVEBORN`/`活产儿` 等非疾病标签，再对每条有效疾病住院出院记录计数一次，按病例量降序、同量时按疾病名称升序排列，取前 10 项。
 
 这里的“病例量”严格表示**有效住院出院记录数**，不是患者人数、唯一患者数或患病人数。数据没有患者唯一 ID，不能据此做跨次住院追踪。
 
@@ -12,9 +12,10 @@
 |---|---|
 | 数据范围 | 老师提供的 2021 年 SPARCS 住院出院 CSV；正式统计条件为 `Discharge Year` 去除首尾空白后等于整数 `2021` |
 | 分组字段 | 原始字段 `CCSR Diagnosis Description`；`CCSR Diagnosis Code` 只用于追溯，不参与分组和合并 |
-| 一行的含义 | 一条住院出院记录；每条符合条件且有非空诊断描述的记录计数一次 |
-| 有效诊断 | 诊断描述清洗后为非空字符串的记录 |
+| 一行的含义 | 一条住院出院记录；每条符合条件且有非空、非疾病标签诊断描述的记录计数一次 |
+| 有效诊断 | 诊断描述清洗后为非空字符串，且不属于 `LIVEBORN`/`活产儿` 非疾病标签的记录 |
 | 缺失/空白诊断 | 缺失值、空字符串和只含首尾空白的字符串清洗为空，不进入排行；原始行仍计入输入质量统计 |
+| 非疾病诊断标签 | `LIVEBORN`（中文展示名“活产儿”）不进入疾病排行、疾病选项、疾病画像或服务结果；原始行仍保留在输入质量统计和其他非疾病口径中 |
 | 其他字段异常 | `Length of Stay`、`Zip Code - 3 digits`、`Birth Weight` 等不参与本指标；其特殊值不导致该记录因本指标被删除 |
 | 结构异常行 | CSV 行无法按表头解析时，数据任务应失败且不发布部分结果；当前固定样本和正式数据基线均为 0 行 |
 | 重复处理 | 不去重。相同诊断描述自然合并计数；即使整行重复，也按两条住院出院记录计数 |
@@ -47,9 +48,9 @@
 | 层级 | 原始字段 | 内部字段 | 类型/空值 | 处理和用途 |
 |---|---|---|---|---|
 | 原始输入 | `Discharge Year` | `discharge_year` | 原始文本；清洗后 `INT`，有效记录不可空 | 去首尾空白后必须等于 `2021`；缺失或其他年份计入质量统计，不进入本指标 |
-| 原始输入 | `CCSR Diagnosis Description` | `diagnosis_name` | 原始文本可空；清洗后非空字符串 | 只清理首尾 Unicode 空白；作为唯一分组来源；空值/空白记录排除 |
+| 原始输入 | `CCSR Diagnosis Description` | `diagnosis_name` | 原始文本可空；清洗后为有效疾病名称 | 只清理首尾 Unicode 空白；`LIVEBORN`/`活产儿` 不进入疾病口径；空值/空白记录排除 |
 | 原始输入 | `CCSR Diagnosis Code` | `diagnosis_code` | 文本，可空 | 仅用于追溯和质量核对，不参与分组、合并或展示 |
-| 逻辑清洗记录 | — | `diagnosis_name` | `STRING NOT NULL` | 清洗后仍为空的记录不生成清洗记录；不做大小写折叠、同义词合并或代码映射 |
+| 逻辑清洗记录 | — | `diagnosis_name` | `STRING NOT NULL` | 清洗后为空或属于非疾病标签的记录不生成疾病清洗记录；不做大小写折叠、同义词合并或代码映射 |
 | 逻辑清洗记录 | — | `diagnosis_code` | `STRING NULL` | 原值保留；代码缺失不删除诊断记录 |
 
 “逻辑清洗记录”是 Spark 任务内部的最小数据形状，不单独创建 MySQL 明细表，也不把清洗后的住院明细提交 Git。CSV 行列数无法按表头解析时任务直接失败，不生成部分清洗结果；诊断名称超过服务表允许长度或无法编码时同样失败，不静默截断。
@@ -79,7 +80,7 @@ FROM `disease_case_count_top10_result`
 ORDER BY `rank` ASC;
 ```
 
-后端将结果视为“可用”的条件是：查询得到 1—10 行、`rank` 从 1 连续递增、所有行只有一个 `data_version` 和一个 `generated_at`，且名称唯一、单位为 `discharge_records`。服务表不发布“零个有效诊断”的空批次；若输入没有可排行记录，发布任务失败并保留已发布批次（首次发布则保持未初始化），避免后端把“尚未发布”误判为合法空结果。
+后端将结果视为“可用”的条件是：查询得到 1—10 行、`rank` 从 1 连续递增、所有行只有一个 `data_version` 和一个 `generated_at`，且名称唯一、单位为 `discharge_records`。服务表不发布“零个有效疾病诊断”的空批次；若输入没有可排行记录，发布任务失败并保留已发布批次（首次发布则保持未初始化），避免后端把“尚未发布”误判为合法空结果。服务结果校验和数据库约束都会拒绝 `LIVEBORN`/`活产儿`。
 
 ## 3. 文本标准化与边界示例
 
@@ -90,15 +91,16 @@ ORDER BY `rank` ASC;
 | 缺失值 | 空 | 排除，不计入 TOP10 |
 | `""` | 空 | 排除，不计入 TOP10 |
 | `"   "` | 空 | 排除，不计入 TOP10；这是规则样例，不宣称真实全量中存在该值 |
-| `" LIVEBORN "` | `LIVEBORN` | 与清洗后的 `LIVEBORN` 合并计数 |
-| `liveborn` | `liveborn` | 因不做大小写折叠，与 `LIVEBORN` 保持不同名称 |
+| `" LIVEBORN "` | `LIVEBORN` | 识别为非疾病标签，排除疾病聚合、选项和服务结果 |
+| `活产儿` | `活产儿` | 识别为非疾病标签，排除疾病聚合、选项和服务结果 |
+| `liveborn` | `liveborn` | 按大小写不变规则识别为 `LIVEBORN` 非疾病标签，同样排除 |
 | `CORONAVIRUS DISEASE 2019 (COVID-19)` | 原样保留 | 不改写括号、连字符或疾病描述 |
 
 首尾空白清理必须在本机 PySpark 正式任务、独立核对和后续服务结果生成中使用同一语义；不能由 API 或前端重新猜测。
 
 ## 4. 重复、并列与 TOP10 边界
 
-重复行不删除的业务依据是：一行只代表一次住院出院记录，当前没有患者唯一 ID，也没有经过确认的业务规则可以判断两行是同一次事件。相同诊断描述的多行应累计为病例量。固定样本中两行 `COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER` 得到 `case_count=2`，两行 `LIVEBORN` 也得到 `case_count=2`，不是重复删除后的 1。
+重复行不删除的业务依据是：一行只代表一次住院出院记录，当前没有患者唯一 ID，也没有经过确认的业务规则可以判断两行是同一次事件。相同疾病诊断描述的多行应累计为病例量；非疾病标签即使出现多行，也只保留在原始质量统计中，不进入疾病病例量。固定样本中两行 `COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER` 得到 `case_count=2`，不是重复删除后的 1。
 
 先对所有非空分组完成计数，再按以下复合键排序：
 
@@ -106,22 +108,22 @@ ORDER BY `rank` ASC;
 (-case_count, diagnosis_name)
 ```
 
-因此并列时按名称升序确定名次，名次在截断前生成。固定样本有 12 个非空诊断值，3 个值的病例量为 2；前 10 项中的病例量为 1 的名称继续按名称升序排列，`PREVIOUS C-SECTION` 和 `URINARY TRACT INFECTIONS` 因位于第 10 项之后被截断。这个边界是“严格前 10”，不是“并列全部返回”。
+因此并列时按名称升序确定名次，名次在截断前生成。固定样本有 11 个疾病统计可用诊断值，2 个值的病例量为 2；前 10 项中的病例量为 1 的名称继续按名称升序排列，`PREVIOUS C-SECTION` 位于第 10 项，`URINARY TRACT INFECTIONS` 位于第 11 项后被截断。这个边界是“严格前 10”，不是“并列全部返回”。
 
 固定样本的独立期望结果保存在 [`data/fixtures/sparcs_mvp_expected_top10.json`](../data/fixtures/sparcs_mvp_expected_top10.json)，当前结果为：
 
 | 排名 | `diagnosis_name` | `case_count` |
 |---:|---|---:|
 | 1 | COMPLICATION OF OTHER SURGICAL OR MEDICAL CARE, INJURY, INITIAL ENCOUNTER | 2 |
-| 2 | LIVEBORN | 2 |
-| 3 | TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER | 2 |
-| 4 | ACUTE MYOCARDIAL INFARCTION | 1 |
-| 5 | ASTHMA | 1 |
-| 6 | CORONAVIRUS DISEASE 2019 (COVID-19) | 1 |
-| 7 | DIABETES MELLITUS WITH COMPLICATION | 1 |
-| 8 | MULTIPLE SCLEROSIS | 1 |
-| 9 | NONINFECTIOUS GASTROENTERITIS | 1 |
-| 10 | PARALYSIS (OTHER THAN CEREBRAL PALSY) | 1 |
+| 2 | TRAUMATIC BRAIN INJURY (TBI); CONCUSSION, INITIAL ENCOUNTER | 2 |
+| 3 | ACUTE MYOCARDIAL INFARCTION | 1 |
+| 4 | ASTHMA | 1 |
+| 5 | CORONAVIRUS DISEASE 2019 (COVID-19) | 1 |
+| 6 | DIABETES MELLITUS WITH COMPLICATION | 1 |
+| 7 | MULTIPLE SCLEROSIS | 1 |
+| 8 | NONINFECTIOUS GASTROENTERITIS | 1 |
+| 9 | PARALYSIS (OTHER THAN CEREBRAL PALSY) | 1 |
+| 10 | PREVIOUS C-SECTION | 1 |
 
 ## 5. 固定样例映射与刷新约定
 
@@ -131,7 +133,8 @@ ORDER BY `rank` ASC;
 
 | 输入或情况 | 清洗结果 | 聚合结果 | 服务结果处理 |
 |---|---|---|---|
-| `CCSR Diagnosis Description = " LIVEBORN "` | `diagnosis_name = "LIVEBORN"` | 与其他 `LIVEBORN` 记录合并计数 | 按稳定排序生成一个名称和一个 `rank` |
+| `CCSR Diagnosis Description = " LIVEBORN "` | `diagnosis_name = "LIVEBORN"` | 识别为非疾病标签，不进入疾病聚合 | 不生成疾病服务结果行 |
+| `CCSR Diagnosis Description = "活产儿"` | `diagnosis_name = "活产儿"` | 识别为非疾病标签，不进入疾病聚合 | 不生成疾病服务结果行 |
 | 诊断值为空、空字符串或全是空白 | 不生成清洗记录 | 不进入分组；原始行计入质量统计 | 不出现在服务表 |
 | 两行名称相同（包括样例中的重复记录） | 两条有效清洗记录 | 合并为 `case_count = 2`，不去重 | 只保留一个疾病名称行，数量为 2 |
 | 诊断名称超过 `VARCHAR(255)` 或含无法编码内容 | 不截断、不替换 | 发布任务失败 | 不刷新服务表，保留已发布批次 |
@@ -153,7 +156,7 @@ InnoDB 的事务可见性保证 API 不会读到删除后、插入前的半批�
 
 ## 6. 可复查证据
 
-固定样本来自同一份真实 CSV 的脱敏字段子集，包含 16 行、1 条缺失诊断、15 条非空诊断、12 个非空诊断值，以及重复分组、并列和其他字段特殊值。它不含完整原始数据，也不能替代全量结果。
+固定样本来自同一份真实 CSV 的脱敏字段子集，包含 16 行、1 条缺失诊断、2 条非疾病标签记录、13 条疾病统计可用非空诊断、11 个疾病统计可用诊断值，以及重复分组、并列和其他字段特殊值。它不含完整原始数据，也不能替代全量结果。
 
 在仓库根目录执行：
 
@@ -175,7 +178,7 @@ python data/src/verify_service_result_contract.py
 python data/src/verify_sparcs_mvp.py --full-source "<本地 SPARCS CSV 路径>"
 ```
 
-全量核对基线是 2,101,588 行、0 条解析异常、2,099,954 条非空诊断记录、477 个非空诊断值，TOP10 与 `docs/01-data-and-feasibility.md` 第 4 节一致。核对脚本只读本地文件，不把完整数据写入仓库。
+全量核对基线是 2,101,588 行、0 条解析异常；原始非空诊断为 2,099,954 条/477 个值，排除 `LIVEBORN`/`活产儿` 后疾病统计可用值为 1,900,940 条/476 个值，TOP10 与 `docs/01-data-and-feasibility.md` 第 4 节一致。核对脚本只读本地文件，不把完整数据写入仓库。
 
 ## 7. 各层使用方式
 

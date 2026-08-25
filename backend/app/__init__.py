@@ -19,6 +19,7 @@ from .config import Config
 from .errors import AppError
 from .repositories.disease_top10 import build_repository
 from .repositories.analytics_snapshot import build_analytics_repository
+from .repositories.aggregate import build_aggregate_repository
 from .routes.analytics import analytics_bp
 from .routes.diseases import diseases_bp
 from .routes.health import health_bp
@@ -45,6 +46,7 @@ def create_app(
     config_override: dict | None = None,
     repository=None,
     analytics_repository=None,
+    aggregate_repository=None,
     high_cost_model_service=None,
     ai_client=None,
 ) -> Flask:
@@ -54,6 +56,12 @@ def create_app(
     app.config.from_object(Config)
     if config_override:
         app.config.update(config_override)
+    # Tests must not accidentally inherit a real local dotenv key.  An
+    # explicitly supplied value (including an empty value) still wins.
+    if app.config.get("TESTING") and (
+        not config_override or "DEEPSEEK_API_KEY" not in config_override
+    ):
+        app.config["DEEPSEEK_API_KEY"] = None
 
     selected_repository = (
         repository if repository is not None else build_repository(app.config)
@@ -68,6 +76,11 @@ def create_app(
     )
     app.extensions["analytics_snapshot_service"] = AnalyticsSnapshotService(
         selected_analytics_repository
+    )
+    app.extensions["aggregate_fact_repository"] = (
+        aggregate_repository
+        if aggregate_repository is not None
+        else build_aggregate_repository(app.config)
     )
     model_path = app.config.get("HIGH_COST_MODEL_PATH")
     if not model_path and app.config.get("ANALYTICS_DATA_SOURCE") == "fixture":

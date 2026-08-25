@@ -1,3 +1,5 @@
+import { withoutNonDiseaseItems } from './displayLabels.js'
+
 const panelKeys = [
   'age',
   'payment',
@@ -40,7 +42,10 @@ const sectionQuestions = Object.freeze({
 
 export function dashboardSections(payload = {}) {
   const byKey = new Map((payload.sections || []).map(section => [section.key, section]))
-  const panels = panelKeys.map(key => byKey.get(key)).filter(Boolean)
+  const panels = panelKeys.map(key => {
+    const preferredKey = key === 'cost_los_relation' ? 'cost_los_overview' : key
+    return withoutNonDiseaseItems(byKey.get(preferredKey) || byKey.get(key))
+  }).filter(Boolean)
   return {
     panels,
     correlations: byKey.get('continuous_correlations') || null,
@@ -64,9 +69,9 @@ export function screenSections(payload = {}) {
   return {
     age: byKey.get('age') || null,
     payment: byKey.get('payment') || null,
-    disease: byKey.get('disease_top10') || null,
+    disease: withoutNonDiseaseItems(byKey.get('disease_top10')),
     hospital: byKey.get('hospital_top10') || null,
-    relation: byKey.get('cost_los_relation') || null,
+    relation: byKey.get('cost_los_overview') || byKey.get('cost_los_relation') || null,
     risk: byKey.get('age_severity_matrix') || null,
   }
 }
@@ -96,8 +101,9 @@ export function drilldownTarget(sectionKey, item = {}, options = {}) {
     const value = publishedValue(options.facilities, item.name)
     return value ? { path: '/hospitals', query: { facility_a: value } } : { path: '/hospitals' }
   }
+  if (sectionKey === 'cost_los_overview') return { path: '/costs' }
   if (sectionKey === 'cost_los_relation') {
-    return item.group ? { path: '/costs', query: { severity: item.group } } : { path: '/costs' }
+    return item.group && item.group !== '总体' ? { path: '/costs', query: { severity: item.group } } : { path: '/costs' }
   }
   return { path: '/overview' }
 }

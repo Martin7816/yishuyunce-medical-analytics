@@ -2,10 +2,11 @@
 import { nextTick, ref } from 'vue'
 import { apiRequest, getApiErrorMessage } from '../api/client.js'
 import AnalyticsChart from '../components/AnalyticsChart.vue'
+import { displayText } from '../domain/displayLabels.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status'])
-const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2, useGrouping: false })
 
 const presets = Object.freeze([
   '概括当前运营情况',
@@ -37,7 +38,7 @@ function normalizeText(value) {
 
 function normalizeMetric(item) {
   if (!item || typeof item !== 'object') return null
-  const label = normalizeText(item.label)
+  const label = displayText(normalizeText(item.label))
   const value = item.value
   if (!label) return null
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
@@ -47,7 +48,7 @@ function normalizeMetric(item) {
 function normalizeSource(source) {
   if (!source || typeof source !== 'object') return null
   const tool = normalizeText(source.tool)
-  const title = normalizeText(source.title)
+  const title = displayText(normalizeText(source.title))
   const dataVersion = normalizeText(source.data_version)
   const metrics = Array.isArray(source.metrics)
     ? source.metrics.map(normalizeMetric).filter(Boolean)
@@ -127,12 +128,12 @@ function normalizePayload(payload) {
     [...sourceVersions].some(version => !dataVersions.includes(version))
     || [...traceVersions].some(version => !dataVersions.includes(version))
   ) {
-    throw createResultError('当前回答的来源版本无法核对，未展示回答。请重试。')
+    throw createResultError('当前回答的来源数据无法核对，未展示回答。请重试。')
   }
 
   const safeChart = normalizeChart(payload.chart) || buildSafeChart(sources[0])
   return {
-    answer,
+    answer: displayText(answer),
     tool_trace: toolTrace,
     sources,
     data_versions: [...new Set(dataVersions)],
@@ -310,7 +311,7 @@ function errorMessage(caught) {
             <h3 id="assistant-answer-title">分析结论</h3>
           </div>
         </div>
-        <p class="answer-text">{{ result.answer }}</p>
+        <p class="answer-text">{{ displayText(result.answer) }}</p>
       </section>
 
       <section class="assistant-report-section assistant-chart-section" aria-labelledby="assistant-chart-title">
@@ -337,13 +338,13 @@ function errorMessage(caught) {
           <article v-for="source in result.sources" :key="`${source.tool}-${source.data_version}`" class="source-block assistant-source-block">
             <header class="assistant-source-header">
               <div>
-                <h4>{{ source.title }}</h4>
+                <h4>{{ displayText(source.title) }}</h4>
                 <p>汇总指标</p>
               </div>
             </header>
             <ul class="assistant-metric-list">
               <li v-for="metric in source.metrics" :key="metric.label">
-                <span>{{ metric.label }}</span>
+                <span>{{ displayText(metric.label) }}</span>
                 <strong>{{ formatMetric(metric) }}</strong>
               </li>
             </ul>
@@ -352,10 +353,6 @@ function errorMessage(caught) {
       </section>
 
       <footer class="data-footer assistant-report-footer">
-        <div class="assistant-boundary">
-          <strong>数据范围</strong>
-          <span>{{ result.boundary }}</span>
-        </div>
         <div class="assistant-versions">
           <strong>使用说明</strong>
           <span>仅用于住院出院记录群体运营分析，不提供个人诊断或治疗建议。</span>

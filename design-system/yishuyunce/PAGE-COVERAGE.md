@@ -1,6 +1,6 @@
 # 页面覆盖说明
 
-本文件把十个现有路由映射到 Master 设计系统。页面仍由现有 Vue 路由、`AnalysisPage`、`AnalyticsChart`、`MetricCard` 和 `PageState` 承载；表中的 `grouped_bar`、`scatter`、`heatmap` 是供 #106/#107 使用的可视化候选，不表示本 Issue 已经修改 renderer。
+本文件把八个现有前端路由映射到 Master 设计系统。页面仍由现有 Vue 路由、`AnalysisPage`、`AnalyticsChart`、`MetricCard` 和 `PageState` 承载；表中的 `grouped_bar`、`scatter`、`heatmap` 是供 #106/#107 使用的可视化候选，不表示本 Issue 已经修改 renderer。
 
 ## 1. 统一页面模板
 
@@ -16,7 +16,7 @@
 
 标准模式保持上述完整顺序。大屏模式只改变 `overview` 的栅格、字号和卡片高度；不把其他页面拼进驾驶舱，不增加指标，不在浏览器二次聚合。
 
-## 2. 十路由覆盖矩阵
+## 2. 八路由覆盖矩阵
 
 | 路由 | 面向问题 | 主布局与 section | 筛选/深链接 | 大屏策略 | 必须保留的边界 |
 |---|---|---|---|---|---|
@@ -27,8 +27,6 @@
 | `/costs` | 收费、成本、住院时长在不同群体/机构下如何呈现 | 分位数 bar；收费/成本 KPI；`scatter`（收费 × 住院时长聚合关系）；表格 | `diagnosis_code` 与 `facility_id` 互斥，可加 `severity` | 不把 scatter 放进 stage；大屏可从 overview 下钻进入 | `Total Charges` 是账面收费，`Total Costs` 是估算成本；单日金额仅 `los>0` |
 | `/risks` | 年龄和病情严重程度的群体结构及风险指标是什么 | 风险 KPI；`heatmap`（年龄 × 严重程度）；severity bar；矩阵表 | `age_group`、`diagnosis_code`；筛选恢复到 URL | 不放入 stage；重点显示边界通知和表格 | 仅群体统计；不构成个人诊断、治疗建议或因果判断；分母是当前筛选记录 |
 | `/payments` | 支付方式、年龄结构和收费差异是什么 | 支付方式 bar；年龄 bar；收费对照 table/bar | `payment_type`、`age_group`，来源为 payload options | 不放入 stage；可从 overview 支付 section 深链 | 支付方式来自 `Payment Typology 1`；金额指标只使用可解析非负收费 |
-| `/data-quality` | 当前批次和任务依赖是否可追溯 | 状态 card/table；关键字段完整性；四态 | `data_version` 只读当前批次 | 不放入 stage；状态字样必须完整显示 | `CHECK_REQUIRED`/`FIXTURE_ONLY` 不得被视觉改写成真实 PASS |
-| `/model` | 高费用记录分类模型的指标和输入边界是什么 | 模型版本/阈值 KPI；指标表；混淆矩阵 table；预测表单 | 固定字段；预测请求拒绝泄漏字段 | 不放入 stage；单独显示模型版本和训练边界 | 运营分析用途，不表示医疗风险；收费等泄漏字段不能成为请求特征 |
 | `/assistant` | 如何基于白名单汇总指标生成带来源的回答 | 问题输入；工具轨迹；来源指标/版本/统计边界；错误/重试 | 仅 `message`；不保存历史；结果可深链到来源模块 | 不放入 stage；避免把未验证 AI 文案放入大屏 | 不执行自由 SQL，不访问原始住院明细；上游失败不生成无来源答案 |
 
 ## 3. 布局与响应式规则

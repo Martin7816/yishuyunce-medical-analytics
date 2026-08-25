@@ -1,20 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 import { apiRequest, isAbortError } from '../api/client.js'
 import AnalyticsChart from '../components/AnalyticsChart.vue'
 import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
 import {
-  dashboardSectionQuestion,
   dashboardSections,
   drilldownTarget,
-  screenInsights as getScreenInsights,
   screenMetricSelection,
   screenSections as getScreenSections,
 } from '../domain/dashboard.js'
+import { displayFieldLabel, displayText } from '../domain/displayLabels.js'
 
-const route = useRoute()
 const router = useRouter()
 const state = ref('loading')
 const payload = ref(null)
@@ -22,23 +20,24 @@ const error = ref(null)
 let activeController = null
 let requestId = 0
 
-const isScreen = computed(() => route.query.mode === 'screen')
 const screenData = computed(() => dashboardSections(payload.value || {}))
 const metrics = computed(() => payload.value?.metrics || [])
 const isFixture = computed(() => payload.value?.data_version?.startsWith('fixture:'))
 const correlations = computed(() => screenData.value.correlations?.items || [])
+const sharedCorrelationSample = computed(() => {
+  const samples = correlations.value.map(item => Number(item.sample_size)).filter(Number.isFinite)
+  return samples.length && new Set(samples).size === 1 ? samples[0] : null
+})
 const screenMetricList = computed(() => screenMetricSelection(metrics.value))
 const screenView = computed(() => getScreenSections(payload.value || {}))
-const screenInsightList = computed(() => getScreenInsights(payload.value || {}))
-
-const panelClass = {
-  age: 'panel-age',
-  payment: 'panel-payment',
-  disease_top10: 'panel-disease',
-  hospital_top10: 'panel-hospital',
-  cost_los_relation: 'panel-cost',
-  age_severity_matrix: 'panel-risk',
-}
+const topicLinks = Object.freeze([
+  { path: '/hospitals', label: '医院运营' },
+  { path: '/diseases', label: '疾病分析' },
+  { path: '/cohorts', label: '群体结构' },
+  { path: '/costs', label: '费用分析' },
+  { path: '/risks', label: '严重程度' },
+  { path: '/payments', label: '支付方式' },
+])
 
 function hasContent(data) {
   return Boolean(data?.metrics?.length && dashboardSections(data).panels.some(section => section.items?.length))
@@ -67,14 +66,6 @@ function selectPanel(section, item) {
   router.push(drilldownTarget(section.key, item, payload.value?.options || {}))
 }
 
-function switchMode() {
-  const query = { ...route.query }
-  if (isScreen.value) delete query.mode
-  else query.mode = 'screen'
-  router.push({ path: '/overview', query })
-}
-
-watch(() => route.query.mode, load)
 onMounted(load)
 onBeforeUnmount(() => {
   activeController?.abort()
@@ -82,20 +73,30 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="overview-page" :class="{ 'is-screen': isScreen }">
+  <div class="overview-page is-screen">
     <header class="overview-header">
       <div class="overview-title-block">
         <p class="overview-eyebrow">医数云策 · 医院运营全景</p>
-        <h1 data-page-title tabindex="-1">{{ isScreen ? '运营全景展示' : '运营分析工作台' }}</h1>
-        <p v-if="!isScreen" class="overview-description">从住院出院记录规模、医院、疾病、费用与风险结构理解运营现状。</p>
+        <h1 data-page-title tabindex="-1">运营总览</h1>
       </div>
       <div class="overview-actions">
+        <RouterLink to="/assistant" class="overview-insight-link" aria-label="进入运营洞察">
+          <span class="overview-insight-badge" aria-hidden="true">AI</span>
+          <span>运营洞察</span><span aria-hidden="true">→</span>
+        </RouterLink>
         <button type="button" class="secondary-button" @click="load">刷新数据</button>
-        <button type="button" class="secondary-button" @click="switchMode">{{ isScreen ? '返回工作台' : '进入展示模式' }}</button>
       </div>
     </header>
 
-    <p v-if="isScreen" class="display-note" role="note">运营观察台展示模式：聚焦本批次的结构、集中度与关系摘要；建议浏览器缩放保持 100%。</p>
+    <nav class="overview-topic-nav" aria-label="专题分析导航">
+      <span class="overview-topic-nav-label">专题分析</span>
+      <div class="overview-topic-links">
+        <RouterLink v-for="topic in topicLinks" :key="topic.path" :to="topic.path" class="overview-topic-link">
+          <span>{{ topic.label }}</span><span aria-hidden="true">→</span>
+        </RouterLink>
+      </div>
+    </nav>
+
     <p v-if="isFixture" class="fixture-warning" role="note"><strong>演示数据</strong> 当前指标用于展示分析功能，不作为实际运营结论。</p>
 
     <div v-if="state === 'loading'" class="overview-loading" aria-busy="true" aria-live="polite">
@@ -106,119 +107,77 @@ onBeforeUnmount(() => {
     <PageState v-else-if="state !== 'success'" :state="state" :error="error" @retry="load" />
 
     <template v-else>
-      <template v-if="isScreen">
-        <section class="screen-insight-rail" aria-label="本批次运营摘要">
-          <div class="screen-rail-heading">
-            <span class="screen-kicker">EXECUTIVE READOUT</span>
-            <strong>本批次运营摘要</strong>
-            <small>只读快照 · 先看结构，再进入专题</small>
-          </div>
-          <div v-if="screenInsightList.length" class="screen-insight-list">
-            <article v-for="insight in screenInsightList.slice(0, 3)" :key="insight.key" class="screen-insight-item">
-              <strong>{{ insight.title }}</strong>
-              <p>{{ insight.summary }}</p>
-              <small>{{ insight.related_not_causal ? '关系描述，不作因果判断' : '来源：已发布分析快照' }}</small>
-            </article>
-          </div>
-          <p v-else class="screen-insight-empty">当前批次没有可展示的摘要，请进入专题页查看数据状态。</p>
+        <section class="overview-metrics screen-metrics" aria-label="核心运营指标">
+          <MetricCard v-for="metric in screenMetricList" :key="metric.key" :metric="metric" plain-number />
         </section>
 
-        <section class="overview-metrics screen-metrics" aria-label="展示模式核心指标">
-          <MetricCard v-for="metric in screenMetricList" :key="metric.key" :metric="metric" />
-        </section>
-
-        <section class="screen-visual-grid" aria-label="运营全景结构扫描">
+        <section class="screen-visual-grid" aria-label="运营总览分析">
           <article class="screen-card screen-structure-card">
             <header class="screen-card-header">
-              <div><span class="screen-card-code">STRUCTURE</span><h2>人群与支付结构</h2></div>
-              <span class="screen-card-index">01</span>
+              <div><span class="screen-card-code">结构分析</span><h2>人群与支付结构</h2></div>
             </header>
             <div class="screen-dual-chart">
               <div v-if="screenView.age">
-                <h3>{{ screenView.age.title }}</h3>
-                <AnalyticsChart :section="screenView.age" compact :show-question="false" business-mode @select="item => selectPanel(screenView.age, item)" />
+                <h3>{{ displayText(screenView.age.title) }}</h3>
+                <AnalyticsChart :section="screenView.age" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.age, item)" />
               </div>
               <div v-if="screenView.payment">
-                <h3>{{ screenView.payment.title }}</h3>
-                <AnalyticsChart :section="screenView.payment" compact :show-question="false" business-mode @select="item => selectPanel(screenView.payment, item)" />
+                <h3>{{ displayText(screenView.payment.title) }}</h3>
+                <AnalyticsChart :section="screenView.payment" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.payment, item)" />
               </div>
             </div>
           </article>
 
           <article v-if="screenView.disease" class="screen-card screen-ranking-card screen-disease-card">
             <header class="screen-card-header">
-              <div><span class="screen-card-code">DISEASE MIX</span><h2>疾病病例量集中度</h2></div>
-              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.disease, {})">查看专题 <span aria-hidden="true">→</span></button>
+              <div><span class="screen-card-code">疾病排行</span><h2>主要疾病病例量排行</h2></div>
+              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.disease, {})">进入专题 <span aria-hidden="true">→</span></button>
             </header>
-            <AnalyticsChart :section="screenView.disease" compact :show-question="false" business-mode @select="item => selectPanel(screenView.disease, item)" />
+            <AnalyticsChart :section="screenView.disease" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.disease, item)" />
           </article>
 
           <article v-if="screenView.hospital" class="screen-card screen-ranking-card screen-hospital-card">
             <header class="screen-card-header">
-              <div><span class="screen-card-code">FACILITY MIX</span><h2>机构病例量分布</h2></div>
-              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.hospital, {})">查看专题 <span aria-hidden="true">→</span></button>
+              <div><span class="screen-card-code">机构排行</span><h2>主要机构病例量 Top 10</h2></div>
+              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.hospital, {})">进入专题 <span aria-hidden="true">→</span></button>
             </header>
-            <AnalyticsChart :section="screenView.hospital" compact :show-question="false" business-mode @select="item => selectPanel(screenView.hospital, item)" />
+            <AnalyticsChart :section="screenView.hospital" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.hospital, item)" />
           </article>
 
           <article v-if="screenView.relation" class="screen-card screen-relation-card">
             <header class="screen-card-header">
-              <div><span class="screen-card-code">COST RELATION</span><h2>费用与住院时长关系</h2></div>
-              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.relation, {})">查看专题 <span aria-hidden="true">→</span></button>
+              <div><span class="screen-card-code">费用关系</span><h2>{{ screenView.relation.key === 'cost_los_overview' ? '收费与住院时长总览' : '收费与住院时长关系' }}</h2></div>
+              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.relation, {})">进入专题 <span aria-hidden="true">→</span></button>
             </header>
-            <AnalyticsChart :section="screenView.relation" compact :show-question="false" business-mode @select="item => selectPanel(screenView.relation, item)" />
+            <AnalyticsChart :section="screenView.relation" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.relation, item)" />
             <div class="correlation-strip" aria-label="费用相关性证据">
-              <div v-for="item in correlations" :key="`${item.x_key}-${item.y_key}`">
-                <span>{{ item.x_label }} × {{ item.y_label }}</span>
-                <strong>r = {{ Number(item.coefficient).toFixed(4) }}</strong>
-                <small>n = {{ Number(item.sample_size).toLocaleString('zh-CN') }}</small>
+              <div class="correlation-strip-heading">
+                <span>相关性摘要</span>
+                <small v-if="sharedCorrelationSample">成对有效记录 n = {{ Number(sharedCorrelationSample).toLocaleString('zh-CN', { useGrouping: false }) }}</small>
               </div>
-              <p>Pearson · 相关不等于因果</p>
+              <div class="correlation-strip-items">
+                <div v-for="item in correlations" :key="`${item.x_key}-${item.y_key}`" class="correlation-item">
+                  <span>{{ displayText(displayFieldLabel(item.x_label)) }} × {{ displayText(displayFieldLabel(item.y_label)) }}</span>
+                  <strong>r = {{ Number(item.coefficient).toFixed(4) }}</strong>
+                  <small v-if="!sharedCorrelationSample">n = {{ Number(item.sample_size).toLocaleString('zh-CN', { useGrouping: false }) }}</small>
+                </div>
+              </div>
+              <p>皮尔逊 · 相关不等于因果</p>
             </div>
           </article>
 
           <article v-if="screenView.risk" class="screen-card screen-risk-card">
             <header class="screen-card-header">
-              <div><span class="screen-card-code">RISK STRUCTURE</span><h2>年龄与严重程度结构</h2></div>
-              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.risk, {})">查看专题 <span aria-hidden="true">→</span></button>
+              <div><span class="screen-card-code">风险结构</span><h2>年龄与重症程度结构</h2></div>
+              <button type="button" class="card-link screen-card-link" @click="selectPanel(screenView.risk, {})">进入专题 <span aria-hidden="true">→</span></button>
             </header>
-            <AnalyticsChart :section="screenView.risk" compact :show-question="false" business-mode @select="item => selectPanel(screenView.risk, item)" />
-          </article>
-        </section>
-      </template>
+            <AnalyticsChart :section="screenView.risk" compact :show-question="false" business-mode screen-mode @select="item => selectPanel(screenView.risk, item)" />
+           </article>
 
-      <template v-else>
-        <section class="overview-metrics" aria-label="核心运营指标">
-          <MetricCard v-for="metric in metrics" :key="metric.key" :metric="metric" />
         </section>
-
-        <section class="dashboard-grid" aria-label="运营分析图表">
-          <article
-            v-for="section in screenData.panels"
-            :key="section.key"
-            class="dashboard-card"
-            :class="panelClass[section.key]"
-          >
-            <header class="dashboard-card-header">
-              <div><p>{{ dashboardSectionQuestion(section) }}</p><h2>{{ section.title }}</h2></div>
-              <button type="button" class="card-link" @click="selectPanel(section, {})">专题分析 <span aria-hidden="true">→</span></button>
-            </header>
-            <AnalyticsChart :section="section" :compact="false" :show-question="false" business-mode @select="item => selectPanel(section, item)" />
-            <div v-if="section.key === 'cost_los_relation'" class="correlation-strip" aria-label="费用相关性证据">
-              <div v-for="item in correlations" :key="`${item.x_key}-${item.y_key}`">
-                <span>{{ item.x_label }} × {{ item.y_label }}</span>
-                <strong>r = {{ Number(item.coefficient).toFixed(4) }}</strong>
-                <small>n = {{ Number(item.sample_size).toLocaleString('zh-CN') }}</small>
-              </div>
-              <p>Pearson · 相关不等于因果</p>
-            </div>
-          </article>
-        </section>
-      </template>
-
       <footer class="overview-footnote">
         <span>统计对象为住院出院记录；页面不关联同一人的多次住院。</span>
-        <span>{{ isScreen ? '点击图表标记或“查看专题”进入详细分析。' : '点击图表或“专题分析”查看对应的详细分析。' }}</span>
+        <span>点击图表标记或“进入专题”查看详细分析。</span>
       </footer>
     </template>
   </div>

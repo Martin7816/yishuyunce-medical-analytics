@@ -32,6 +32,7 @@ from shared.analytics_snapshot_contract import (  # noqa: E402
     normalize_utc_timestamp,
     validate_snapshot_document,
 )
+from shared.disease_rules import NON_DISEASE_DIAGNOSIS_NAMES  # noqa: E402
 from storage_input import (  # noqa: E402
     DataSource,
     add_source_arguments,
@@ -130,6 +131,20 @@ RELATION_GROUP_MISSING = "未分类"
 FACILITY_RELATION_LIMIT = 50
 
 
+def _nonempty_disease_label(column: str = "diagnosis"):
+    """Return the shared disease-only predicate for a cleaned Spark column."""
+
+    return (
+        F.col(column).isNotNull()
+        & (F.length(F.col(column)) > 0)
+        & ~F.upper(F.col(column)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
+    )
+
+
+def _disease_frame(frame: DataFrame) -> DataFrame:
+    return frame.where(_nonempty_disease_label())
+
+
 def clean_frame(raw: DataFrame) -> DataFrame:
     """Select the frozen columns and apply the shared cleaning rules."""
 
@@ -210,6 +225,8 @@ def rows(
     """Collect only a small, stable aggregate result; never raw records."""
 
     nonempty = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        nonempty = nonempty & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     grouped = frame.where(nonempty).groupBy(group)
     if value == "count":
         result = grouped.count().withColumnRenamed("count", "value")
@@ -241,6 +258,8 @@ def grouped_rows(
     """Aggregate all profile sections for a pair of dimensions in one job."""
 
     nonempty = (F.length(F.col(parent)) > 0) & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        nonempty = nonempty & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     grouped = frame.where(nonempty).groupBy(parent, group)
     result = (
         grouped.count().withColumnRenamed("count", "value")
@@ -870,10 +889,13 @@ def _cohort_section_rows(
 ) -> dict[tuple[str | None, str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one chart dimension for every legal cohort filter."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _cohort_dimension_frame(frame).withColumn(
         "_cohort_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -1065,10 +1087,13 @@ def _payment_section_rows(
 ) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one payment page section for every legal filter pair."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _payment_dimension_frame(frame).withColumn(
         "_payment_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -1895,10 +1920,13 @@ def _risk_section_rows(
 ) -> dict[tuple[str | None, str | None], list[dict[str, Any]]]:
     """Aggregate one risk section for every legal wildcard/finite filter."""
 
+    item_valid = F.col(group).isNotNull() & (F.length(F.col(group)) > 0)
+    if group == "diagnosis":
+        item_valid = item_valid & ~F.upper(F.col(group)).isin(*NON_DISEASE_DIAGNOSIS_NAMES)
     decorated = _risk_dimension_frame(frame).withColumn(
         "_risk_item",
         F.when(
-            F.col(group).isNotNull() & (F.length(F.col(group)) > 0),
+            item_valid,
             F.col(group),
         ),
     )
@@ -2547,7 +2575,7 @@ def _legacy_build_records(
         )
 
     diagnoses = (
-        valid.where(F.length("diagnosis_code") > 0)
+        _disease_frame(valid).where(F.length("diagnosis_code") > 0)
         .select("diagnosis_code", "diagnosis")
         .dropDuplicates(["diagnosis_code"])
     )
@@ -2815,9 +2843,8 @@ def build_records(
         & F.col("los").isNotNull()
     )
     cost_frame = scoped.where(F.col("valid_money"))
-    valid_diagnosis = scoped.where(
-        (F.length(F.col("diagnosis_code")) > 0)
-        & (F.length(F.col("diagnosis")) > 0)
+    valid_diagnosis = _disease_frame(scoped).where(
+        F.length(F.col("diagnosis_code")) > 0
     )
     overall = {
         "age": rows(scoped, "age", limit=None),

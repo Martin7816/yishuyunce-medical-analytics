@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from analytics_metadata import build_data_version, sha256_file
+from shared.disease_rules import is_non_disease_diagnosis
 from shared.analytics_snapshot_contract import (
     normalize_utc_timestamp,
     validate_snapshot_document,
@@ -167,7 +168,7 @@ def summarize_stream(
         scoped_rows += 1
         diagnosis = text(row, "diagnosis")
         diagnosis_code = text(row, "diagnosis_code")
-        if not diagnosis_code or not diagnosis:
+        if not diagnosis_code or not diagnosis or is_non_disease_diagnosis(diagnosis):
             continue
         diagnosis_counts[diagnosis] += 1
         profile = profiles[diagnosis_code]

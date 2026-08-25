@@ -63,10 +63,24 @@ def test_dashboard_screen_composes_one_versioned_operating_story():
     sections = {section["key"]: section for section in data["sections"]}
     assert set(sections) == {
         "age", "payment", "disease_top10", "hospital_top10",
-        "cost_los_relation", "age_severity_matrix", "continuous_correlations",
+        "cost_los_overview", "cost_los_relation", "age_severity_matrix", "continuous_correlations",
         "storage",
     }
     assert sections["payment"]["type"] == "pie"
+    assert sections["cost_los_overview"]["type"] == "scatter"
+    assert len(sections["cost_los_overview"]["items"]) <= 8
+    assert {item["group"] for item in sections["cost_los_overview"]["items"]} == {"总体"}
+    assert sections["cost_los_overview"]["visual"]["legend"] == [
+        {"key": "charge_cost_gap", "label": "收费成本差（冷→暖）", "style": "numeric-gradient"}
+    ]
+    full_relation = sections["cost_los_relation"]["items"]
+    overall_relation = {item["name"]: item for item in sections["cost_los_overview"]["items"]}
+    for bin_label in {item["name"].split(" · ", 1)[0] for item in full_relation}:
+        cells = [item for item in full_relation if item["name"].startswith(f"{bin_label} · ")]
+        total = sum(item["size"] for item in cells)
+        expected_x = round(sum(item["x"] * item["size"] for item in cells) / total, 2)
+        assert overall_relation[bin_label]["size"] == total
+        assert overall_relation[bin_label]["x"] == expected_x
     assert sections["continuous_correlations"]["type"] == "correlation"
     assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
     assert data["options"]["quality_status"] == "FIXTURE_ONLY"
@@ -76,6 +90,9 @@ def test_dashboard_screen_composes_one_versioned_operating_story():
     assert data["options"]["diagnoses"][0] == {
         "value": "NVS005", "label": "HEART FAILURE"
     }
+    assert data["insights"][0]["source_section"] == "cost_los_overview"
+    assert data["insights"][0]["title"] == "收费与住院时长总览摘要"
+    assert "颜色表示收费成本差" in data["insights"][0]["summary"]
     assert all(insight["related_not_causal"] for insight in data["insights"])
 
 
@@ -140,7 +157,7 @@ def test_risk_snapshot_exposes_frozen_metrics_and_sections():
         'age_severity_matrix',
     ]
     assert len(data['sections'][4]['items']) == 10
-    assert data['sections'][4]['title'] == '高风险疾病 TOP10'
+    assert data['sections'][4]['title'] == '高风险疾病排行'
     assert len(data['sections'][-1]['items']) == 20
     assert data['sections'][-1]['type'] == 'heatmap'
     assert data['insights'][0]['source_section'] == 'age_severity_matrix'
@@ -780,6 +797,14 @@ def test_cost_overview_unfiltered_preserves_published_snapshot():
     relation = next(section for section in data["sections"] if section["key"] == "cost_los_relation")
     assert relation["type"] == "scatter"
     assert relation["visual"]["summary"]["data_version"] == data["data_version"]
+    correlations = next(
+        section for section in data["sections"] if section["key"] == "continuous_correlations"
+    )
+    assert [(item["x_key"], item["y_key"]) for item in correlations["items"]] == [
+        ("los", "charges"),
+        ("los", "costs"),
+    ]
+    assert correlations["visual"]["question"] == "住院时长与收费、成本之间的线性关系如何？"
     assert data["insights"][0]["source_section"] == "cost_los_relation"
     assert data["data_version"] == "fixture:sparcs_full_analytics:v1"
 

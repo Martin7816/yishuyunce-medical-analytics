@@ -26,6 +26,10 @@ class Config:
     # Fixture use must be explicit so an incomplete production environment
     # cannot silently present demo aggregates as real analytics.
     ANALYTICS_DATA_SOURCE = os.getenv("ANALYTICS_DATA_SOURCE")
+    # The aggregate fact is internal-only and has no fixture fallback.
+    AGGREGATE_DATA_SOURCE = os.getenv("AGGREGATE_DATA_SOURCE")
+    # Deliberately unset until the privacy policy owner chooses a threshold.
+    ANALYTICS_MIN_COHORT_SIZE = os.getenv("ANALYTICS_MIN_COHORT_SIZE") or None
     HIGH_COST_MODEL_PATH = os.getenv("HIGH_COST_MODEL_PATH")
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
