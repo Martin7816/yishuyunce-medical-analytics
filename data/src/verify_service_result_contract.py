@@ -11,12 +11,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.disease_rules import is_non_disease_diagnosis
+
+
 DEFAULT_SAMPLE = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv"
 DEFAULT_EXPECTED = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_expected_top10.json"
 DIAGNOSIS_FIELD = "CCSR Diagnosis Description"
@@ -56,7 +62,7 @@ def summarize_sample(csv_path: Path) -> list[dict[str, Any]]:
             if row[year_index].strip() != "2021":
                 continue
             diagnosis_name = row[diagnosis_index].strip()
-            if diagnosis_name:
+            if diagnosis_name and not is_non_disease_diagnosis(diagnosis_name):
                 counts[diagnosis_name] += 1
 
     return [
@@ -114,6 +120,8 @@ def validate_service_rows(service: dict[str, Any], expected_top10: list[dict[str
             fail("rank 必须是整数")
         if not isinstance(row["diagnosis_name"], str) or not row["diagnosis_name"]:
             fail("diagnosis_name 必须是非空字符串")
+        if is_non_disease_diagnosis(row["diagnosis_name"]):
+            fail("diagnosis_name 不能是非疾病标签")
         if (
             not isinstance(row["case_count"], int)
             or isinstance(row["case_count"], bool)
@@ -172,6 +180,8 @@ def validate_generated_service_result(
             fail("rank 必须是整数")
         if not isinstance(item.get("diagnosis_name"), str) or not item["diagnosis_name"]:
             fail("diagnosis_name 必须是非空字符串")
+        if is_non_disease_diagnosis(item["diagnosis_name"]):
+            fail("diagnosis_name 不能是非疾病标签")
         if (
             not isinstance(item.get("case_count"), int)
             or isinstance(item.get("case_count"), bool)

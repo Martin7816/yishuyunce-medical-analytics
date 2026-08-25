@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,10 @@ from storage_input import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from shared.disease_rules import NON_DISEASE_DIAGNOSIS_NAMES
+
 DEFAULT_SAMPLE = REPO_ROOT / "data" / "fixtures" / "sparcs_mvp_sample.csv"
 DIAGNOSIS_FIELD = "CCSR Diagnosis Description"
 YEAR_FIELD = "Discharge Year"
@@ -56,6 +61,7 @@ def calculate_top10(
         frame.where(year == F.lit("2021"))
         .select(diagnosis)
         .where(F.length(F.col("diagnosis")) > 0)
+        .where(~F.upper(F.col("diagnosis")).isin(*NON_DISEASE_DIAGNOSIS_NAMES))
     )
     ranked: DataFrame = (
         valid.groupBy("diagnosis")

@@ -8,15 +8,15 @@
 
 | 能力 | 入口 | 项目状态 |
 |---|---|---|
-| 运营工作台与指挥中心 | `/overview`、`/overview?mode=screen` | 双模式页面、聚合 API 与 fixture 截图证据齐备；真实结论以真实模式验收为准 |
+| 运营总览与专题分析 | `/overview` | 默认进入运营总览大屏；总览顶部提供医院、疾病、群体、费用、严重程度和支付方式专题入口 |
 | 医院运营分析 | `/hospitals` | 真实数据、MySQL、API 与页面证据齐备 |
 | 疾病画像分析 | `/diseases` | 真实数据、MySQL、API 与页面证据齐备 |
 | 住院记录群体分析 | `/cohorts` | 真实数据、MySQL、API 与页面证据齐备 |
 | 费用与成本分析 | `/costs` | 真实数据、MySQL、API 与页面证据齐备 |
 | 病情严重程度与风险分析 | `/risks` | 真实数据、MySQL、API 与页面证据齐备 |
 | 支付方式分析 | `/payments` | 真实数据、MySQL、API 与页面证据齐备 |
-| 数据质量 | `/data-quality` | 代码、接口和页面可运行，纳入整体验收 |
-| 高费用记录分类 | `/model` | 训练、指标、预测接口和页面可运行，纳入真实模型验收 |
+| 数据质量校验 | 后端接口 `/api/v1/data-quality/summary` | 保留批次、缺失和口径校验能力；无独立前端页面 |
+| 高费用记录分类 | 后端接口 `/api/v1/models/high-cost/*` | 保留训练、指标和预测能力；无独立前端页面 |
 | AI 问答与洞察报告 | `/assistant` | 接口和页面可运行，真实调用依赖 DeepSeek 密钥与网络验收 |
 
 联调快照用于验证接口、页面和错误状态，版本以 `fixture:` 开头；它不表示真实数据结论。各模块的执行记录位于 `evidence/`，最终状态以对应验收证据为准。
@@ -51,69 +51,18 @@ HDFS 保存原始数据，Hive 外部表提供结构化访问；PySpark 的清�
 
 ### 1. 配置真实数据源并启动后端
 
-真实模式要求 MySQL 中已经发布 `analysis_snapshot_result` 和 `disease_case_count_top10_result`。当前工作区已经生成可供发布和加载的真实工件：
-
-```text
-D:\HuaDi\analytics-output\analytics-snapshot.json
-D:\HuaDi\analytics-output\high-cost-model.json
-```
-
-如果 MySQL 尚未发布这批结果，先按[重新生成或发布真实数据](#重新生成或发布真实数据需要时)执行发布；如果数据库中已有同一真实版本，可以直接配置后端。
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
-Copy-Item backend\.env.example backend\.env
-notepad backend\.env
-```
-
-将 `backend/.env` 中的数据源和数据库项改为真实值。数据库地址、只读账号和密码使用本机实际配置，不要把密码提交到 Git：
-
-```dotenv
-TOP10_DATA_SOURCE=mysql
-ANALYTICS_DATA_SOURCE=mysql
-HIGH_COST_MODEL_PATH=D:\HuaDi\analytics-output\high-cost-model.json
-
-MYSQL_HOST=<真实 MySQL 地址>
-MYSQL_PORT=3306
-MYSQL_USER=<只读账号>
-MYSQL_PASSWORD=<本机密码>
-MYSQL_DATABASE=medical_analytics
-```
-
-确认没有把 `TOP10_DATA_SOURCE` 或 `ANALYTICS_DATA_SOURCE` 留成 `fixture` 后，启动 Flask：
+启动 Flask：
 
 ```powershell
 .\.venv\Scripts\python.exe backend\run.py
 ```
 
-看到 Flask 监听 `http://127.0.0.1:5000` 后，可在另一个终端检查：
 
-```powershell
-curl.exe http://127.0.0.1:5000/api/v1/health
-curl.exe http://127.0.0.1:5000/api/v1/dashboard/overview
-curl.exe http://127.0.0.1:5000/api/v1/dashboard/screen
-```
-
-检查返回的 `data.data_version`。当前真实批次应为：
-
-```text
-sparcs_2021_20231012_sha256_185808e20900c0499f7974d5ac9c05f0909df506bc088a244443bff895ca2219
-```
-
-也可以用 PowerShell 自动阻止误启动到演示数据：
-
-```powershell
-$payload = Invoke-RestMethod http://127.0.0.1:5000/api/v1/dashboard/overview
-if ($payload.data.data_version -like 'fixture:*') { throw '当前仍是 fixture 演示数据，请检查 backend/.env 后重启 Flask。' }
-$payload.data.data_version
-```
 
 ### 2. 启动前端
 
 ```powershell
-cd frontend
-# 首次安装或更新依赖时执行；如果 Vite 已在运行，先在其终端按 Ctrl+C
+cd D:\HuaDi\project\yishuyunce-medical-analytics\frontend
 npm ci --cache D:\HuaDi\.npm-cache-medical-analytics
 npm run dev
 ```

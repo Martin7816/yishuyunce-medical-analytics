@@ -7,7 +7,7 @@ const mainContent = ref(null)
 const menuOpen = ref(false)
 const menuButton = ref(null)
 const sidebarClose = ref(null)
-const screenShell = computed(() => route.path === '/overview' && route.query.mode === 'screen')
+const screenShell = computed(() => route.path === '/overview')
 const navigationGroups = [
   {
     label: '运营总览',
@@ -29,14 +29,7 @@ const navigationGroups = [
   {
     label: '智能能力',
     items: [
-      ['/model', '高费用识别', 'M4 5h16v14H4V5Zm4 4h8m-8 4h5m-5 4h3'],
       ['/assistant', '运营洞察', 'M4 5h16v12H8l-4 4V5Zm4 5h.01M12 10h.01M16 10h.01'],
-    ],
-  },
-  {
-    label: '系统管理',
-    items: [
-      ['/data-quality', '数据状态', 'M5 3h14v18H5V3Zm3 4h8M8 11h8M8 15h5'],
     ],
   },
 ]

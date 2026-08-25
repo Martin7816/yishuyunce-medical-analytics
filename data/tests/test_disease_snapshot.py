@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,23 @@ from verify_disease_snapshot import empty_profile, profile_metrics, summarize_st
 
 
 EDGE_SAMPLE = DATA_ROOT / "fixtures" / "dashboard_edge_sample.csv"
+
+
+def test_non_disease_diagnosis_is_excluded_from_every_disease_result():
+    content = """Discharge Year,Length of Stay,CCSR Diagnosis Description,CCSR Diagnosis Code
+2021,1,LIVEBORN,BIRTH001
+2021,2,ASTHMA,RSP009
+"""
+
+    expected, raw_rows, scoped_rows = summarize_stream(
+        csv.DictReader(StringIO(content))
+    )
+
+    assert raw_rows == 2
+    assert scoped_rows == 2
+    assert expected["diagnosis_count"] == 1
+    assert expected["options"] == [{"value": "RSP009", "label": "ASTHMA"}]
+    assert expected["ranking"] == [{"name": "ASTHMA", "value": 1}]
 
 
 def test_disease_independent_formula_on_edge_fixture():

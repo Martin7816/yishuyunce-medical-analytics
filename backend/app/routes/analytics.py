@@ -81,6 +81,124 @@ def _required_section(payload: dict, key: str) -> dict:
     return deepcopy(section)
 
 
+def _without_charge_cost_correlation(payload: dict) -> dict:
+    """Keep only correlations that can explain an operational driver.
+
+    Charges and costs are two measures of the same encounter-level billing
+    outcome, so their high correlation does not add a useful management
+    signal on this page.  The source snapshot remains unchanged; this is a
+    presentation-level composition of the public response.
+    """
+
+    result = deepcopy(payload)
+    for section in result.get("sections", []):
+        if section.get("key") != "continuous_correlations":
+            continue
+        section["items"] = [
+            item
+            for item in section.get("items", [])
+            if {item.get("x_key"), item.get("y_key")} != {"charges", "costs"}
+        ]
+        visual = section.get("visual")
+        if not isinstance(visual, dict):
+            continue
+        visual["question"] = "住院时长与收费、成本之间的线性关系如何？"
+        summary = visual.get("summary")
+        if isinstance(summary, dict):
+            summary["text"] = (
+                "皮尔逊 r 用于比较住院时长与收费、成本之间的线性相关程度；"
+                "相关不等于因果。"
+            )
+    return result
+
+
+def _cost_los_overview_section(relation: dict) -> dict:
+    """Compose one overall point per published length-of-stay bin.
+
+    The source relation is already aggregated by the data task.  Recombine
+    those cells on the server with record-count weights so the screen never
+    averages averages in the browser.  The original severity-granular
+    relation remains available to the costs page and its table fallback.
+    """
+
+    buckets: dict[str, dict[str, float]] = {}
+    for item in relation.get("items", []):
+        name = str(item.get("name") or "")
+        bin_label = name.split(" · ", 1)[0]
+        size = item.get("size")
+        if (
+            not isinstance(size, (int, float))
+            or isinstance(size, bool)
+            or size <= 0
+            or not math.isfinite(float(size))
+        ):
+            continue
+        bucket = buckets.setdefault(
+            bin_label,
+            {"size": 0.0, "los": 0.0, "charges": 0.0, "costs": 0.0, "cost_size": 0.0},
+        )
+        weight = float(size)
+        bucket["size"] += weight
+        for source, target in (("x", "los"), ("y", "charges")):
+            value = item.get(source)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                bucket[target] += float(value) * weight
+        cost = item.get("cost")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(float(cost)):
+            bucket["costs"] += float(cost) * weight
+            bucket["cost_size"] += weight
+
+    order = {
+        label: index
+        for index, label in enumerate(
+            ("0-1天", "2-3天", "4-6天", "7-13天", "14-29天", "30-59天", "60-119天", "120天及以上")
+        )
+    }
+    items = []
+    for bin_label, bucket in sorted(buckets.items(), key=lambda entry: (order.get(entry[0], 999), entry[0])):
+        size = bucket["size"]
+        if size <= 0:
+            continue
+        item = {
+            "name": bin_label,
+            "x": round(bucket["los"] / size, 2),
+            "y": round(bucket["charges"] / size, 2),
+            "size": int(round(size)),
+            "group": "总体",
+        }
+        if math.isclose(bucket["cost_size"], size):
+            item["cost"] = round(bucket["costs"] / size, 2)
+        items.append(item)
+
+    visual = deepcopy(relation.get("visual") or {})
+    visual.update(
+        {
+            "question": "不同住院时长分箱的总体收费与成本差异如何呈现？",
+            "legend": [
+                {"key": "charge_cost_gap", "label": "收费成本差（冷→暖）", "style": "numeric-gradient"}
+            ],
+            "tooltip_fields": ["name", "x", "y", "cost", "size", "group"],
+            "summary": {
+                **(visual.get("summary") or {}),
+                "text": "按住院时长分箱汇总总体收费与成本；点大小为记录数，颜色表示收费成本差。相关不等于因果。",
+                "source_section": "cost_los_overview",
+            },
+            "fallback": {
+                "type": "table",
+                "columns": ["name", "x", "y", "cost", "size", "group"],
+            },
+            "empty": {"title": "当前条件暂无费用关系数据", "text": "请调整或清空已发布筛选。"},
+        }
+    )
+    return {
+        "key": "cost_los_overview",
+        "title": "收费与住院时长总览",
+        "type": "scatter",
+        "visual": visual,
+        "items": items,
+    }
+
+
 def _require_one_snapshot_version(payloads: list[dict]) -> tuple[str, str]:
     versions = {payload.get("data_version") for payload in payloads}
     timestamps = {payload.get("generated_at") for payload in payloads}
@@ -227,7 +345,9 @@ def dashboard_screen():
     overview = _get("dashboard", "overview")
     hospitals = _get("hospitals", "index")
     diseases = _get("diseases", "index")
-    costs = _get("costs", "diagnosis=*|facility=*|severity=*")
+    costs = _without_charge_cost_correlation(
+        _get("costs", "diagnosis=*|facility=*|severity=*")
+    )
     risks = _get("risks", RISK_BASE_ENTITY)
     quality = _get("data_quality", "summary")
     data_version, generated_at = _require_one_snapshot_version(
@@ -248,23 +368,39 @@ def dashboard_screen():
     if not isinstance(facilities, list) or not isinstance(diagnoses, list):
         raise InvalidServiceResultError()
 
+    cost_relation = _required_section(costs, "cost_los_relation")
+    cost_overview = _cost_los_overview_section(cost_relation)
     sections = [
         _required_section(overview, "age"),
         payment,
         _required_section(overview, "disease_top10"),
         _required_section(overview, "hospital_top10"),
-        _required_section(costs, "cost_los_relation"),
+        cost_overview,
+        cost_relation,
         _required_section(risks, "age_severity_matrix"),
         _required_section(costs, "continuous_correlations"),
         storage,
     ]
     included_keys = {section["key"] for section in sections}
-    insights = [
-        deepcopy(insight)
-        for payload in (costs, risks)
-        for insight in payload.get("insights", [])
-        if insight.get("source_section") in included_keys
-    ]
+    insights = []
+    for payload in (costs, risks):
+        for insight in payload.get("insights", []):
+            if insight.get("source_section") == "cost_los_relation":
+                # The screen uses the overall relation as its primary story;
+                # keep the detailed severity relation available below without
+                # letting its older summary compete with the screen title.
+                overview_insight = deepcopy(insight)
+                overview_insight.update(
+                    {
+                        "key": "cost_los_overview",
+                        "title": "收费与住院时长总览摘要",
+                        "summary": cost_overview["visual"]["summary"]["text"],
+                        "source_section": "cost_los_overview",
+                    }
+                )
+                insights.append(overview_insight)
+            elif insight.get("source_section") in included_keys:
+                insights.append(deepcopy(insight))
     return _ok(
         {
             "title": "医疗运营指挥中心",
@@ -461,7 +597,9 @@ def cost_overview():
             _get("hospitals", "index"),
             option_name="facilities",
         )
-    base = _get("costs", "diagnosis=*|facility=*|severity=*")
+    base = _without_charge_cost_correlation(
+        _get("costs", "diagnosis=*|facility=*|severity=*")
+    )
     _validate_option("severity", severity, base)
     selected = {
         parameter: value
@@ -477,7 +615,11 @@ def cost_overview():
         f"{entity_name}={selected.get(parameter, '*')}"
         for parameter, entity_name in COST_ENTITY_DIMENSIONS
     )
-    return _ok(_get_or_empty("costs", entity, base, selected))
+    return _ok(
+        _without_charge_cost_correlation(
+            _get_or_empty("costs", entity, base, selected)
+        )
+    )
 
 
 @analytics_bp.get("/api/v1/risks/overview")

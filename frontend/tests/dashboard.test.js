@@ -39,6 +39,22 @@ test('dashboardSections exposes the six fixed operating panels and correlation e
   assert.equal(result.correlations.key, 'continuous_correlations')
 })
 
+test('workbench prefers the overall cost relation when the screen payload provides it', () => {
+  const payload = {
+    sections: [
+      { key: 'age' }, { key: 'payment' }, { key: 'disease_top10' },
+      { key: 'hospital_top10' }, { key: 'cost_los_relation', items: Array(40) },
+      { key: 'cost_los_overview', items: Array(8) },
+      { key: 'age_severity_matrix' },
+    ],
+  }
+
+  const result = dashboardSections(payload)
+
+  assert.equal(result.panels.find(section => section.key === 'cost_los_overview')?.items.length, 8)
+  assert.equal(result.panels.some(section => section.key === 'cost_los_relation'), false)
+})
+
 test('dashboardSectionQuestion exposes a business question for every overview panel', () => {
   assert.equal(
     dashboardSectionQuestion({ key: 'age', title: '年龄结构' }),
@@ -79,6 +95,18 @@ test('screen view model selects a concise readout instead of the full workbench 
   assert.equal(screenInsights(payload)[0].title, '费用摘要')
 })
 
+test('screen view prefers the server-composed overall cost relation', () => {
+  const payload = {
+    sections: [
+      { key: 'cost_los_relation', items: Array(40) },
+      { key: 'cost_los_overview', items: Array(8) },
+    ],
+  }
+
+  assert.equal(screenSections(payload).relation.key, 'cost_los_overview')
+  assert.equal(screenSections({ sections: [{ key: 'cost_los_relation' }] }).relation.key, 'cost_los_relation')
+})
+
 test('drilldownTarget only produces published filter values', () => {
   assert.deepEqual(
     drilldownTarget('disease_top10', { name: 'HEART FAILURE' }, options),
@@ -100,6 +128,10 @@ test('drilldownTarget only produces published filter values', () => {
     drilldownTarget('cost_los_relation', { group: 'Major' }, options),
     { path: '/costs', query: { severity: 'Major' } },
   )
+  assert.deepEqual(
+    drilldownTarget('cost_los_overview', { group: '总体' }, options),
+    { path: '/costs' },
+  )
 })
 
 test('formatGeneratedAt returns a stable Chinese display value and preserves invalid input', () => {
@@ -110,6 +142,7 @@ test('formatGeneratedAt returns a stable Chinese display value and preserves inv
 
 test('resolveChartPresentation maps the API contract to controlled D3 SVG charts', () => {
   assert.equal(resolveChartPresentation({ type: 'bar', key: 'payment', items: Array(4) }), 'pie')
+  assert.equal(resolveChartPresentation({ type: 'pie', key: 'payment', items: Array(9) }), 'bar')
   assert.equal(resolveChartPresentation({ type: 'bar', key: 'severity', title: '病情严重程度' }), 'stacked_bar')
   assert.equal(resolveChartPresentation({ type: 'bar', key: 'severity', title: '各严重程度平均成本' }), 'bar')
   assert.equal(resolveChartPresentation({ type: 'bar', key: 'quantiles' }), 'quantile')

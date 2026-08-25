@@ -8,6 +8,7 @@ from shared.analytics_snapshot_contract import (
     SnapshotContractError,
     normalize_utc_timestamp,
     validate_data_version,
+    validate_disease_semantics,
     validate_payload,
     validate_payload_metadata,
 )
@@ -27,6 +28,7 @@ class AnalyticsSnapshotService:
         try:
             record = self.repository.fetch(module_key, entity_key)
             payload = deepcopy(validate_payload(record["payload"]))
+            validate_disease_semantics(payload, module_key, entity_key)
             version = validate_data_version(record["data_version"])
             validate_payload_metadata(payload, version, record["generated_at"])
             result = dict(payload)

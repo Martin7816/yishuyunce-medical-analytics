@@ -7,15 +7,18 @@ export const d3ChartTypes = new Set([
 ])
 
 export function resolveChartPresentation(section = {}) {
-  if (section.type !== 'bar') return section.type
-
   const key = section.key
   const title = section.title || ''
   const itemCount = section.items?.length || 0
 
+  // Payment is often published as a pie by the API, but a long legend is
+  // difficult to compare in the overview. Keep a pie only for small sets;
+  // otherwise use the same ordered bars as the other rankings.
+  if (key === 'payment') return itemCount <= 5 ? 'pie' : 'bar'
+  if (section.type !== 'bar') return section.type
+
   if (key === 'quantiles') return 'quantile'
   if (STRUCTURE_KEYS.has(key)) return 'pie'
-  if (key === 'payment' && itemCount <= 5) return 'pie'
   if (STACKED_KEYS.has(key) && !COST_TITLE_PATTERN.test(title)) return 'stacked_bar'
   return 'bar'
 }

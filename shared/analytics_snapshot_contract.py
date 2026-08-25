@@ -12,6 +12,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
+from .disease_rules import is_non_disease_diagnosis
+
 
 PAYLOAD_KEYS = frozenset(
     {
@@ -541,6 +543,49 @@ def validate_payload(payload: Any) -> dict:
     return payload
 
 
+def validate_disease_semantics(
+    payload: dict, module_key: str = "", entity_key: str = ""
+) -> dict:
+    """Reject non-disease diagnosis labels from every disease-facing section."""
+
+    options = payload.get("options") or {}
+    for option in options.get("diagnoses", []):
+        values = option.values() if isinstance(option, dict) else (option,)
+        if any(is_non_disease_diagnosis(value) for value in values):
+            _fail("疾病选项不能包含非疾病标签")
+
+    if module_key == "diseases" and entity_key.startswith("profile:"):
+        if is_non_disease_diagnosis(payload.get("title")):
+            _fail("疾病画像不能使用非疾病标签")
+
+    for section in payload.get("sections", []):
+        key = str(section.get("key") or "").lower()
+        title = str(section.get("title") or "")
+        is_disease_section = (
+            "disease" in key
+            or "diagnos" in key
+            or key in {"diseases", "top10"}
+            or "疾病" in title
+            or "诊断" in title
+        )
+        if not is_disease_section:
+            continue
+        for item in section.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            candidates = [item.get("name"), item.get("category")]
+            series = item.get("series")
+            if isinstance(series, list):
+                candidates.extend(
+                    entry.get("label")
+                    for entry in series
+                    if isinstance(entry, dict)
+                )
+            if any(is_non_disease_diagnosis(value) for value in candidates):
+                _fail("疾病分析结果不能包含非疾病标签")
+    return payload
+
+
 def validate_payload_metadata(payload: dict, data_version: Any, generated_at: Any) -> None:
     """Ensure nested insight metadata cannot drift from the snapshot envelope."""
 
@@ -587,6 +632,7 @@ def validate_snapshot_document(document: Any) -> dict:
         if key in seen:
             _fail(f"快照主键重复: {key}")
         payload = validate_payload(record.get("payload"))
+        validate_disease_semantics(payload, module_key, entity_key)
         validate_payload_metadata(payload, document["data_version"], document["generated_at"])
         seen.add(key)
 

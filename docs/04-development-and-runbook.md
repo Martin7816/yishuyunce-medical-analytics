@@ -254,7 +254,7 @@ Windows 找不到 `hdfs`、`hive` 或 `mysql` 命令不表示集群故障；存�
 - `git status` 中没有密钥、`.env`、完整 CSV、快照或模型工件；
 - 后端与数据测试通过；
 - 前端构建通过；
-- 十个页面均可打开，loading、success、empty、error 和 retry 行为明确；
+- 八个页面均可打开，loading、success、empty、error 和 retry 行为明确；
 - 真实模块的 MySQL、API 和页面使用同一数据版本；
 - 模型输入不含收费、成本、住院时长或出院后字段；
 - AI 回答包含工具轨迹、来源指标、数据版本和统计边界；
