@@ -16,7 +16,7 @@ import {
   withoutNonDiseaseItems,
 } from '../domain/displayLabels.js'
 import { prepareFilterNavigation, queryForFilters } from '../domain/filterNavigation.js'
-import { optionsForSection } from '../domain/filterOptions.js'
+import { optionsForSection, sortOptionsByChineseInitial } from '../domain/filterOptions.js'
 import { filterSectionsByActiveFilters } from '../domain/sectionVisibility.js'
 import {
   COST_COMPARISON_DIMENSIONS,
@@ -261,8 +261,8 @@ function distributionSection(section) {
   return { ...section, title: distributionTitle(section) }
 }
 
-function normalizeOptions(values = [], context = '') {
-  return values.filter(value => value != null).filter(item => {
+function normalizeOptions(values = [], context = '', sort = '') {
+  const options = values.filter(value => value != null).filter(item => {
     if (context !== 'diagnosis_code') return true
     const option = typeof item === 'object' ? item : { value: item, label: item }
     return !isNonDiseaseLabel(option.value) && !isNonDiseaseLabel(option.label)
@@ -273,6 +273,8 @@ function normalizeOptions(values = [], context = '') {
     const label = displayOptionLabel(context, rawLabel, value)
     return { ...option, value, rawLabel, label }
   })
+
+  return sort === 'zh-pinyin' ? sortOptionsByChineseInitial(options) : options
 }
 
 const quickFilterGroups = computed(() => (props.config.filters || [])
@@ -329,7 +331,7 @@ function setLocalOptions(payload) {
     if (filter.valuesFrom === 'data_version' && (payload?.data_version || payload?.filters?.data_version)) values = [payload.filters?.data_version || payload.data_version]
     if (!filter.remote && !values) values = payload?.options?.[filter.option]
     if (values) {
-      optionSets[filter.key] = normalizeOptions(values, filter.key)
+      optionSets[filter.key] = normalizeOptions(values, filter.key, filter.sort)
     }
   }
 }

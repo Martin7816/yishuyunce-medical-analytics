@@ -12,6 +12,31 @@ function sectionItemLabel(item) {
   return item.name ?? item.diagnosis_name ?? item.label
 }
 
+const chineseDictionaryCollator = new Intl.Collator('zh-CN', {
+  usage: 'sort',
+  sensitivity: 'base',
+  numeric: true,
+})
+
+/**
+ * Sort visible filter labels by Chinese dictionary order while retaining the
+ * original option objects and using the value as a deterministic tie-breaker.
+ */
+export function sortOptionsByChineseInitial(options = []) {
+  return [...options].sort((left, right) => {
+    const labelOrder = chineseDictionaryCollator.compare(
+      String(left?.label ?? '').trim(),
+      String(right?.label ?? '').trim(),
+    )
+    if (labelOrder !== 0) return labelOrder
+
+    return chineseDictionaryCollator.compare(
+      String(left?.value ?? '').trim(),
+      String(right?.value ?? '').trim(),
+    )
+  })
+}
+
 /**
  * Resolve published section items to existing filter options without inventing
  * values. The section order is retained so the result can be rendered as a
