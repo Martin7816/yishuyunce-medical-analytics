@@ -4,6 +4,7 @@ import { apiStreamRequest, getApiErrorMessage, isAbortError } from '../api/clien
 import AnalyticsChart from '../components/AnalyticsChart.vue'
 import { renderSafeMarkdown } from '../utils/markdown.js'
 import { displayText } from '../domain/displayLabels.js'
+import { consumeAssistantStream } from '../domain/assistantStream.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status', 'grouped_bar', 'scatter', 'heatmap'])
@@ -444,7 +445,7 @@ function updateStreamStage(data) {
   }
 }
 
-async function consumeStream(text, controller) {
+async function legacyConsumeStream(text, controller) {
   const response = await apiStreamRequest('/ai/chat/stream', {
     method: 'POST',
     body: JSON.stringify({ message: text }),
@@ -491,6 +492,31 @@ async function consumeStream(text, controller) {
     return
   }
   if (!receivedDone) throw createResultError('流式回答未正常完成，请重试。')
+}
+
+async function consumeStream(text, controller) {
+  const response = await apiStreamRequest('/ai/chat/stream', {
+    method: 'POST',
+    body: JSON.stringify({ message: text }),
+    signal: controller.signal,
+  })
+  let answer = ''
+
+  await consumeAssistantStream(response, {
+    onStage: updateStreamStage,
+    onDelta: delta => {
+      answer += delta
+      if (result.value) result.value = { ...result.value, answer }
+    },
+    onDone: (data, finalAnswer) => {
+      const completedAnswer = answer || finalAnswer
+      result.value = normalizePayload({ ...data, answer: completedAnswer })
+      streamStage.value = { stage: 'complete', label: '分析完成' }
+      // The terminal application event owns the UI state. Reader cleanup is
+      // best-effort and must not keep the button in the loading state.
+      loading.value = false
+    },
+  })
 }
 
 async function ask(value = question.value) {
