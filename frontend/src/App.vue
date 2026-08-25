@@ -10,12 +10,6 @@ const sidebarClose = ref(null)
 const screenShell = computed(() => route.path === '/overview')
 const navigationGroups = [
   {
-    label: '运营总览',
-    items: [
-      ['/overview', '运营总览', 'M3 3h7v7H3V3Zm11 0h7v7h-7V3ZM3 14h7v7H3v-7Zm11 0h7v7h-7v-7Z'],
-    ],
-  },
-  {
     label: '专题分析',
     items: [
       ['/hospitals', '医院运营', 'M4 21V4h16v17M8 8h2m4 0h2M8 12h2m4 0h2M8 16h2m4 0h2M10 21v-4h4v4'],
@@ -104,7 +98,22 @@ onMounted(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      <nav aria-label="产品模块">
+      <RouterLink
+        to="/overview"
+        class="overview-entry"
+        :aria-current="isActive('/overview') ? 'page' : undefined"
+        @click="closeMenu"
+      >
+        <span class="overview-entry-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v11H4V5Zm5 15h6m-3-4v4" /></svg>
+        </span>
+        <span class="overview-entry-copy">
+          <strong>运营总览</strong>
+          <small>全局运营大屏</small>
+        </span>
+        <span class="overview-entry-arrow" aria-hidden="true">↗</span>
+      </RouterLink>
+      <nav aria-label="分析模块与工具">
         <section v-for="group in navigationGroups" :key="group.label" class="nav-group">
           <details v-if="group.collapsed" class="nav-disclosure" :open="isGroupActive(group)">
             <summary class="nav-section-title">{{ group.label }}</summary>
