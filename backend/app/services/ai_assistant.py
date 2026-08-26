@@ -31,6 +31,7 @@ from .evidence_answer_generator import (
     EvidenceAnswerGeneratorError,
 )
 from .query_intent import infer_natural_language_intent
+from ..product_identity import INSIGHT_REPORT_TITLE, PRODUCT_NAME
 from .semantic_registry import semantic_registry
 
 
@@ -81,7 +82,7 @@ TOOL_DESCRIPTIONS = {
 }
 
 ROUTING_SYSTEM_PROMPT = (
-    "你是医数云策 AI 问答的工具路由器。你的唯一任务是理解用户原问题并选择 "
+    f"你是{PRODUCT_NAME}的 AI 问答工具路由器。你的唯一任务是理解用户原问题并选择 "
     "1 个最直接相关的白名单工具；只有问题明确包含两个不同主题时才选择 2 个，永远不能超过 2 个。\n"
     "工具选择规则：整体运营用 get_dashboard_overview；医院/机构用 get_hospital_overview；"
     "疾病/病种用 get_disease_overview；年龄、性别、入院方式或群体结构用 get_cohort_summary；"
@@ -99,7 +100,7 @@ ROUTING_SYSTEM_PROMPT = (
 )
 
 CONVERSATION_SYSTEM_PROMPT = (
-    "你是‘医数云策’的 AI 医疗运营分析助手。对问候、致谢、告别、身份和能力介绍等普通交流，"
+    f"你是‘{PRODUCT_NAME}’的 AI 医疗运营分析助手。对问候、致谢、告别、身份和能力介绍等普通交流，"
     "请自然、简洁、友好地回答，通常控制在 1～3 个自然段。不要假装读取了数据，不要编造指标、"
     "医院、疾病或数据版本，不要声称执行过分析工具，也不要向用户解释白名单路由、tool call、"
     "answerability 等内部技术概念。用户询问系统能力时，可以介绍你支持医院运营、疾病结构、人群、"
@@ -107,7 +108,7 @@ CONVERSATION_SYSTEM_PROMPT = (
 )
 
 ANALYSIS_SYSTEM_PROMPT = (
-    "你是医数云策的分析型回答助手。请回答用户的原问题，而不是机械复述工具结果。"
+    f"你是{PRODUCT_NAME}的分析型回答助手。请回答用户的原问题，而不是机械复述工具结果。"
     "你只能使用消息中给出的安全证据、derived_facts 和 answerability，不得补造任何工具未提供的数据。\n"
     "回答顺序：先用第一段直接回答问题；随后给出关键数据证据；再提炼最大/最小、排名、"
     "差距、比例、份额、结构特征或明显值得关注的项；最后用简短文字说明统计边界。"
@@ -863,7 +864,7 @@ class AIAssistantService:
             "sources": [],
             "data_versions": [],
             "chart": None,
-            "report": {"title": "医数云策洞察简报", "printable": True},
+            "report": {"title": INSIGHT_REPORT_TITLE, "printable": True},
             "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim.",
         }
 
@@ -875,7 +876,7 @@ class AIAssistantService:
             "sources": [],
             "data_versions": [],
             "chart": None,
-            "report": {"title": "医数云策洞察简报", "printable": True},
+            "report": {"title": INSIGHT_REPORT_TITLE, "printable": True},
             "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim.",
         }
 
@@ -952,7 +953,7 @@ class AIAssistantService:
             "sources": prepared["sources"],
             "data_versions": sorted(prepared["versions"]),
             "chart": build_chart_from_evidence(prepared["question"], prepared["sources"]),
-            "report": {"title": "医数云策洞察简报", "printable": True},
+            "report": {"title": INSIGHT_REPORT_TITLE, "printable": True},
             "boundary": "Aggregated inpatient discharge records; no patient-level diagnosis or causal claim.",
         }
         if set(result) != CHAT_RESULT_FIELDS or not result["sources"] or not result["data_versions"]:

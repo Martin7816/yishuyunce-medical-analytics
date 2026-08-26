@@ -10,7 +10,6 @@ import RiskDistributionChart from '../components/RiskDistributionChart.vue'
 import {
   displayMetricLabel,
   displayOptionLabel,
-  displaySectionItemValue,
   displayText,
   isNonDiseaseLabel,
   withoutNonDiseaseItems,
@@ -18,6 +17,7 @@ import {
 import { prepareFilterNavigation, queryForFilters } from '../domain/filterNavigation.js'
 import { optionsForSection, sortOptionsByChineseInitial } from '../domain/filterOptions.js'
 import { filterSectionsByActiveFilters } from '../domain/sectionVisibility.js'
+import { PRODUCT_SHORT_NAME } from '../domain/productIdentity.js'
 import {
   COST_COMPARISON_DIMENSIONS,
   COST_COMPARISON_METRICS,
@@ -177,6 +177,7 @@ function isCostRedundantSection(section) {
     || key === 'charges_quantiles'
     || key === 'costs_quantiles'
     || key === 'charge_cost_distribution'
+    || key === 'continuous_correlations'
     || String(section.title || '').includes('分位数')
     || String(section.title || '').includes('收费与成本分布')
 }
@@ -203,9 +204,6 @@ const riskDistributionSections = computed(() => props.config.layout === 'risk'
   : [])
 const riskDetailSections = computed(() => props.config.layout === 'risk'
   ? orderedRiskSections(riskDetailSectionKeys)
-  : [])
-const riskContextSections = computed(() => props.config.layout === 'risk'
-  ? orderedRiskSections(riskContextSectionKeys)
   : [])
 const activeCostComparisonSection = computed(() => {
   const requestedKey = `${activeCostComparisonDimension.value}_${costComparisonMetric.value}`
@@ -517,7 +515,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
     <header class="page-heading">
       <div>
         <p class="eyebrow">{{ config.eyebrow }}</p>
-         <h1 id="page-title" data-page-title tabindex="-1">{{ config.clientTitle || data?.title || config.title || '医数云策分析模块' }}</h1>
+         <h1 id="page-title" data-page-title tabindex="-1">{{ config.clientTitle || data?.title || config.title || `${PRODUCT_SHORT_NAME}分析模块` }}</h1>
           <p id="page-description">{{ displayText(config.clientDescription || data?.description || '正在读取分析数据。') }}</p>
        </div>
        <div class="heading-actions">
@@ -737,28 +735,6 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearActiveRequest(); docum
                 <span>{{ section.key === 'age_severity_matrix' ? '交叉结构' : '记录去向' }}</span>
               </div>
               <AnalyticsChart :section="section" :compact="true" :selectable="false" :show-details="section.key !== 'disposition'" />
-            </article>
-          </div>
-        </section>
-        <section v-if="riskContextSections.length" class="risk-context-card content-card" aria-labelledby="risk-context-title">
-          <header class="risk-block-heading">
-            <div>
-              <p class="eyebrow">筛选背景</p>
-              <h2 id="risk-context-title">当前群体结构</h2>
-              <p>年龄和疾病仅作为当前筛选范围的背景信息展示。</p>
-            </div>
-          </header>
-          <div class="risk-context-grid">
-            <article v-for="section in riskContextSections" :key="`risk-context-${section.key}`" class="risk-context-panel">
-              <div class="risk-panel-heading">
-                <h3>{{ displayText(section.title) }}</h3>
-                <span>筛选背景</span>
-              </div>
-              <div v-if="section.items?.length === 1" class="risk-context-value">
-                <strong>{{ displaySectionItemValue(section.items[0].name, section) }}</strong>
-                <span>{{ section.items[0].value }}条</span>
-              </div>
-              <AnalyticsChart v-else :section="section" :compact="true" :selectable="false" />
             </article>
           </div>
         </section>

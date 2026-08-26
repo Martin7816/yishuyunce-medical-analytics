@@ -12,6 +12,7 @@ import {
   screenSections as getScreenSections,
 } from '../domain/dashboard.js'
 import { displayFieldLabel, displayText } from '../domain/displayLabels.js'
+import { PRODUCT_SHORT_NAME } from '../domain/productIdentity.js'
 
 const router = useRouter()
 const state = ref('loading')
@@ -76,7 +77,7 @@ onBeforeUnmount(() => {
   <div class="overview-page is-screen">
     <header class="overview-header">
       <div class="overview-title-block">
-        <p class="overview-eyebrow">医数云策 · 医院运营全景</p>
+        <p class="overview-eyebrow">{{ PRODUCT_SHORT_NAME }} · 医院运营全景</p>
         <h1 data-page-title tabindex="-1">运营总览</h1>
       </div>
       <div class="overview-actions">

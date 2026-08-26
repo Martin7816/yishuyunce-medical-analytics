@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { PRODUCT_SHORT_NAME, PRODUCT_TAGLINE } from './domain/productIdentity.js'
 
 const route = useRoute()
 const mainContent = ref(null)
@@ -71,7 +72,7 @@ onMounted(() => {
     <header class="mobile-header">
       <RouterLink class="mobile-brand" to="/overview" aria-label="返回运营驾驶舱">
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 20 7v6c0 4.1-2.9 7.1-8 8-5.1-.9-8-3.9-8-8V7l8-4Zm0 5v7m-3.5-3.5h7" /></svg></span>
-        <span><strong>医数云策</strong><small>医疗运营分析</small></span>
+        <span><strong>{{ PRODUCT_SHORT_NAME }}</strong><small>{{ PRODUCT_TAGLINE }}</small></span>
       </RouterLink>
       <button
         type="button"
@@ -92,7 +93,7 @@ onMounted(() => {
       <div class="sidebar-header">
         <RouterLink class="brand" to="/overview" aria-label="返回运营驾驶舱" @click="closeMenu">
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 20 7v6c0 4.1-2.9 7.1-8 8-5.1-.9-8-3.9-8-8V7l8-4Zm0 5v7m-3.5-3.5h7" /></svg></span>
-          <span><strong>医数云策</strong><small>医疗运营分析平台</small></span>
+          <span><strong>{{ PRODUCT_SHORT_NAME }}</strong><small>{{ PRODUCT_TAGLINE }}</small></span>
         </RouterLink>
         <button ref="sidebarClose" type="button" class="sidebar-close" aria-label="关闭产品导航" @click="closeMenu(true)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>

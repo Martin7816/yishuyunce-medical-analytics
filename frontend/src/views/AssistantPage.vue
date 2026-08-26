@@ -11,6 +11,7 @@ import {
   resolveSubmitAction,
 } from '../domain/assistantInteraction.js'
 import { ASSISTANT_QUICK_ACTIONS } from '../domain/assistantQuickActions.js'
+import { INSIGHT_REPORT_TITLE, PRODUCT_SHORT_NAME } from '../domain/productIdentity.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status', 'grouped_bar', 'scatter', 'heatmap'])
@@ -361,7 +362,7 @@ function normalizePayload(payload) {
     sources,
     data_versions: [...new Set(dataVersions)],
     chart: safeChart,
-    report: { title: normalizeText(payload?.report?.title) || '医数云策洞察简报' },
+    report: { title: normalizeText(payload?.report?.title) || INSIGHT_REPORT_TITLE },
     boundary,
     hasAnalyticsArtifacts: true,
   }
@@ -616,9 +617,9 @@ function errorMessage(caught) {
             <small>Powered by DeepSeek</small>
           </span>
         </div>
-        <p class="eyebrow assistant-hero-eyebrow">医疗运营智能分析工作台</p>
+        <p class="eyebrow assistant-hero-eyebrow">{{ PRODUCT_SHORT_NAME }}智能分析工作台</p>
         <h1 id="page-title" data-page-title tabindex="-1">AI 医疗运营洞察</h1>
-        <p class="assistant-hero-description">基于已发布的医疗运营数据，快速获得可追溯、可核验的分析结论。</p>
+        <p class="assistant-hero-description">基于已发布的{{ PRODUCT_SHORT_NAME }}运营数据，快速获得可追溯、可核验的分析结论。</p>
         <div class="assistant-capabilities" aria-label="分析能力">
           <div class="assistant-capability">
             <span class="assistant-capability-icon" aria-hidden="true">
