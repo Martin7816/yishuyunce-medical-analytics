@@ -55,6 +55,29 @@ def test_gender_diagnosis_distribution_is_an_explicit_supported_shape() -> None:
     assert compiled.source_capability == "aggregate_gender_diagnosis"
 
 
+@pytest.mark.parametrize(
+    ("dimensions", "source_capability"),
+    (
+        (
+            ["age_group", "gender", "diagnosis"],
+            "aggregate_age_group_gender_diagnosis",
+        ),
+        (
+            ["hospital", "age_group", "diagnosis"],
+            "aggregate_hospital_age_group_diagnosis",
+        ),
+    ),
+)
+def test_reviewed_three_dimension_cubes_are_supported(
+    dimensions: list[str], source_capability: str
+) -> None:
+    compiled = SafeQueryCompiler().compile(
+        make_plan(dimensions=dimensions, filters=[])
+    )
+
+    assert compiled.source_capability == source_capability
+
+
 def test_unknown_dimension_is_rejected() -> None:
     with pytest.raises(SafeQueryCompilerError, match="unknown dimension"):
         SafeQueryCompiler().compile(
@@ -65,7 +88,7 @@ def test_unknown_dimension_is_rejected() -> None:
 def test_unsupported_dimension_combination_is_rejected() -> None:
     with pytest.raises(UnsupportedCapabilityError, match="unsupported aggregate"):
         SafeQueryCompiler().compile(
-            make_plan(dimensions=["hospital", "diagnosis"])
+            make_plan(dimensions=["hospital", "payment", "diagnosis"])
         )
 
 

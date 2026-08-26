@@ -14,6 +14,7 @@ from typing import Any
 
 from shared.query_plan_contract import FilterSpec, QueryPlan, SortSpec
 
+from .aggregate_cube_catalog import aggregate_cube_shapes
 from .query_plan_validator import QueryPlanValidationError, QueryPlanValidator
 from .semantic_registry import SemanticRegistry, semantic_registry
 
@@ -42,34 +43,6 @@ class CapabilitySpec:
         ).issubset(self.measures)
 
 
-_SUPPORTED_DIMENSION_SHAPES: tuple[tuple[str, frozenset[str]], ...] = (
-    ("aggregate_overall", frozenset()),
-    ("aggregate_hospital", frozenset({"hospital"})),
-    ("aggregate_diagnosis", frozenset({"diagnosis"})),
-    ("aggregate_age_group", frozenset({"age_group"})),
-    ("aggregate_gender", frozenset({"gender"})),
-    ("aggregate_severity", frozenset({"severity"})),
-    ("aggregate_payment", frozenset({"payment"})),
-    ("aggregate_admission_type", frozenset({"admission_type"})),
-    (
-        "aggregate_age_group_diagnosis",
-        frozenset({"age_group", "diagnosis"}),
-    ),
-    (
-        "aggregate_gender_diagnosis",
-        frozenset({"gender", "diagnosis"}),
-    ),
-    (
-        "aggregate_hospital_severity",
-        frozenset({"hospital", "severity"}),
-    ),
-    (
-        "aggregate_payment_age_group",
-        frozenset({"payment", "age_group"}),
-    ),
-)
-
-
 def build_capability_specs(
     measure_ids: Iterable[str],
 ) -> tuple[CapabilitySpec, ...]:
@@ -78,11 +51,11 @@ def build_capability_specs(
     supported_measures = frozenset(measure_ids)
     return tuple(
         CapabilitySpec(
-            source_capability=source_capability,
-            dimensions=dimensions,
+            source_capability=shape.source_capability,
+            dimensions=shape.dimensions,
             measures=supported_measures,
         )
-        for source_capability, dimensions in _SUPPORTED_DIMENSION_SHAPES
+        for shape in aggregate_cube_shapes()
     )
 
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.services.ranking_analysis import analyze_evidence_ranking
+from app.services.ranking_analysis import (
+    analyze_cross_cube_ranking,
+    analyze_evidence_ranking,
+)
 
 
 def ranking_evidence(*, measure="case_count", values=(16330, 15200, 12000)):
@@ -67,3 +70,43 @@ def test_ranking_analysis_does_not_invent_gap_for_one_returned_row():
     assert analysis is not None
     assert analysis.runner_up_gap is None
     assert analysis.returned_item_count == 1
+
+
+def test_cross_cube_analysis_recovers_structured_dimension_values() -> None:
+    evidence = {
+        "query_plan": {
+            "version": "query_analytics-v1",
+            "dimensions": ["age_group", "gender", "diagnosis"],
+            "measures": ["case_count"],
+            "filters": [],
+            "sort": [{"by": "case_count", "direction": "desc"}],
+            "limit": 10,
+        },
+        "sections": [
+            {
+                "key": "age_group_ranking",
+                "type": "bar",
+                "items": [
+                    {
+                        "name": "50 to 69 / M / INF002 — SEPTICEMIA",
+                        "value": 26687,
+                    },
+                    {
+                        "name": "70 or Older / F / CIR019 — HEART FAILURE",
+                        "value": 11256,
+                    },
+                ],
+            }
+        ],
+    }
+
+    analysis = analyze_cross_cube_ranking(evidence)
+
+    assert analysis is not None
+    assert analysis.dimensions == ("age_group", "gender", "diagnosis")
+    assert analysis.items[0].dimension_values == (
+        ("age_group", "50 to 69"),
+        ("gender", "M"),
+        ("diagnosis", "INF002 — SEPTICEMIA"),
+    )
+    assert analysis.items[0].value == 26687

@@ -164,6 +164,30 @@ def test_cross_dimension_distribution_is_inferred_as_a_supported_query_shape():
     assert intent.distribution_requested is True
 
 
+def test_age_gender_disease_question_keeps_cross_cube_dimensions():
+    question = "不同年龄和性别最常见的疾病是什么？"
+
+    intent = infer_natural_language_intent(question)
+    plan = build_deterministic_query_plan(question)
+
+    assert intent.dimensions == ("age_group", "gender", "diagnosis")
+    assert intent.measures == ("case_count",)
+    assert plan is not None
+    assert plan["dimensions"] == ["age_group", "gender", "diagnosis"]
+    assert plan["sort"] == [{"by": "case_count", "direction": "desc"}]
+
+
+def test_hospital_age_disease_question_keeps_cross_cube_dimensions():
+    question = "各医院不同年龄段最常见的疾病是什么？"
+
+    intent = infer_natural_language_intent(question)
+    plan = build_deterministic_query_plan(question)
+
+    assert intent.dimensions == ("hospital", "age_group", "diagnosis")
+    assert plan is not None
+    assert plan["dimensions"] == ["hospital", "age_group", "diagnosis"]
+
+
 def test_top_limit_is_bounded_and_deterministic_plan_is_server_safe():
     intent = infer_natural_language_intent("前20个医院病例量最高")
 

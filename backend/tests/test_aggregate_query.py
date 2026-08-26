@@ -153,6 +153,36 @@ def test_diagnosis_rankings_exclude_server_owned_non_disease_codes():
     assert connection.cursor_value.params == ("agg_test", "PNL001", 10)
 
 
+def test_cross_cube_rollup_uses_only_reviewed_fact_dimensions():
+    repository, connection = _repository(
+        [
+            {
+                "age_group": "50 to 69",
+                "gender": "M",
+                "diagnosis": "INF002",
+                "case_count": 26687,
+            }
+        ]
+    )
+    query = _compiled_query(
+        dimensions=["age_group", "gender", "diagnosis"],
+        measures=["case_count"],
+        filters=[],
+        sort=[{"by": "case_count", "direction": "desc"}],
+        limit=10,
+    )
+
+    result = repository.execute(query)
+
+    assert result.rows[0]["case_count"] == 26687
+    assert "FROM `analytics_aggregate_fact` AS f" in connection.cursor_value.query
+    assert (
+        "GROUP BY `age_group`, `gender`, `diagnosis`"
+        in connection.cursor_value.query
+    )
+    assert "JOIN" not in connection.cursor_value.query.upper()
+
+
 def test_unknown_field_is_rejected():
     query = _compiled_query()
     invalid = CompiledAggregateQuery(

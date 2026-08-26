@@ -42,6 +42,22 @@ class RankingEvidenceAnalysis:
     returned_item_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class CrossCubeRankedItem:
+    dimension_values: tuple[tuple[str, str], ...]
+    value: int | float
+
+
+@dataclass(frozen=True, slots=True)
+class CrossCubeRankingAnalysis:
+    dimensions: tuple[str, ...]
+    measure: str
+    measure_label: str
+    unit: str
+    items: tuple[CrossCubeRankedItem, ...]
+    returned_item_count: int
+
+
 def _number(value: object) -> int | float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -112,8 +128,80 @@ def analyze_evidence_ranking(
     return None
 
 
+def analyze_cross_cube_ranking(
+    evidence: Mapping[str, Any],
+) -> CrossCubeRankingAnalysis | None:
+    """Return ranked combinations for one reviewed multi-dimension cube.
+
+    The evidence adapter joins dimension display values with ``" / "``.  The
+    query plan supplies the canonical dimension order, so this function can
+    recover a structured, bounded view without exposing physical fields.
+    """
+
+    if not isinstance(evidence, Mapping):
+        return None
+    query_plan = evidence.get("query_plan")
+    if not isinstance(query_plan, Mapping):
+        return None
+    raw_dimensions = query_plan.get("dimensions")
+    if not isinstance(raw_dimensions, Sequence) or isinstance(
+        raw_dimensions, (str, bytes)
+    ):
+        return None
+    dimensions = tuple(
+        dimension for dimension in raw_dimensions if isinstance(dimension, str)
+    )
+    if len(dimensions) < 2 or len(dimensions) != len(raw_dimensions):
+        return None
+
+    sections = evidence.get("sections")
+    if not isinstance(sections, Sequence) or isinstance(sections, (str, bytes)):
+        return None
+    expected_key = f"{dimensions[0]}_ranking"
+    for section in sections:
+        if not isinstance(section, Mapping) or section.get("key") != expected_key:
+            continue
+        raw_items = section.get("items")
+        if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
+            return None
+        items: list[CrossCubeRankedItem] = []
+        for raw_item in raw_items[:10]:
+            if not isinstance(raw_item, Mapping):
+                continue
+            label = raw_item.get("name")
+            value = _number(raw_item.get("value"))
+            if not isinstance(label, str) or value is None:
+                continue
+            labels = tuple(part.strip() for part in label.split(" / "))
+            if len(labels) != len(dimensions) or any(not part for part in labels):
+                continue
+            items.append(
+                CrossCubeRankedItem(
+                    dimension_values=tuple(zip(dimensions, labels)),
+                    value=value,
+                )
+            )
+        if not items:
+            return None
+        items.sort(key=lambda item: float(item.value), reverse=True)
+        measure = _measure(evidence)
+        measure_label, unit = _MEASURE_PRESENTATION[measure]
+        return CrossCubeRankingAnalysis(
+            dimensions=dimensions,
+            measure=measure,
+            measure_label=measure_label,
+            unit=unit,
+            items=tuple(items),
+            returned_item_count=len(items),
+        )
+    return None
+
+
 __all__ = [
+    "CrossCubeRankedItem",
+    "CrossCubeRankingAnalysis",
     "RankedEvidenceItem",
     "RankingEvidenceAnalysis",
+    "analyze_cross_cube_ranking",
     "analyze_evidence_ranking",
 ]

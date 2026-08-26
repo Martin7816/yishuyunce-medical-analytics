@@ -76,6 +76,12 @@ Natural-language examples:
 - “不同性别疾病分布” means dimensions=["gender","diagnosis"],
   measures=["case_count"]. Only choose a dimension combination allowed by
   the server capability contract; never invent a missing aggregate shape.
+- “不同年龄和性别最常见的疾病” means dimensions=["age_group","gender","diagnosis"],
+  measures=["case_count"], sorted by case_count descending.
+- “各医院不同年龄段最常见的疾病” means
+  dimensions=["hospital","age_group","diagnosis"], measures=["case_count"],
+  sorted by case_count descending. Returned rows are Top-K cross-dimensional
+  combinations, not a complete disease profile for every hospital.
 The published age field is grouped. A single age such as 50岁 must be mapped
 to its published bucket “50 to 69”; “50岁以上” must use the published buckets
 “50 to 69” and “70 or Older”. Do not pretend that an exact age filter exists.

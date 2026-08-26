@@ -198,7 +198,12 @@ _INTERNAL_PROCESS_MARKERS = (
     "思考过程",
     "分析计划",
 )
-from .ranking_analysis import RankingEvidenceAnalysis, analyze_evidence_ranking
+from .ranking_analysis import (
+    CrossCubeRankingAnalysis,
+    RankingEvidenceAnalysis,
+    analyze_cross_cube_ranking,
+    analyze_evidence_ranking,
+)
 
 
 def _plain_diagnosis_name(label: str) -> str:
@@ -749,6 +754,134 @@ def _ranking_analysis_for_dimension(
     return None, []
 
 
+def _cross_cube_analysis(
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[CrossCubeRankingAnalysis | None, list[str]]:
+    for item in prepared:
+        evidence_id = item.get("evidence_id")
+        raw = item.get("evidence")
+        if not isinstance(evidence_id, str) or not isinstance(raw, Mapping):
+            continue
+        analysis = analyze_cross_cube_ranking(raw)
+        if analysis is not None:
+            return analysis, [evidence_id]
+    return None, []
+
+
+_CROSS_DIMENSION_ZH = {
+    "hospital": "医院",
+    "diagnosis": "疾病",
+    "age_group": "年龄组",
+    "gender": "性别",
+    "severity": "严重程度",
+    "payment": "支付方式",
+    "admission_type": "入院方式",
+}
+
+
+def _localized_cross_dimension_value(
+    dimension: str,
+    value: str,
+    *,
+    is_chinese: bool,
+) -> str:
+    if not is_chinese:
+        return _plain_diagnosis_name(value) if dimension == "diagnosis" else value
+    if dimension == "diagnosis":
+        return _localized_diagnosis_name(value, is_chinese=True)
+    if dimension == "gender":
+        return {"M": "男性", "F": "女性"}.get(value, value)
+    if dimension == "age_group":
+        range_match = re.fullmatch(
+            r"(\d{1,3})\s*to\s*(\d{1,3})", value, re.IGNORECASE
+        )
+        if range_match:
+            return f"{range_match.group(1)}–{range_match.group(2)}岁"
+        older_match = re.fullmatch(
+            r"(\d{1,3})\s*or\s*older", value, re.IGNORECASE
+        )
+        if older_match:
+            return f"{older_match.group(1)}岁及以上"
+    return value
+
+
+def _cross_cube_item_label(
+    dimension_values: Sequence[tuple[str, str]],
+    *,
+    is_chinese: bool,
+) -> str:
+    separator = "、" if is_chinese else " / "
+    return separator.join(
+        _localized_cross_dimension_value(
+            dimension,
+            value,
+            is_chinese=is_chinese,
+        )
+        for dimension, value in dimension_values
+    )
+
+
+def _cross_cube_client_answer(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[str, list[str]] | None:
+    analysis, used_ids = _cross_cube_analysis(prepared)
+    if analysis is None or not used_ids:
+        return None
+
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    top = [
+        (
+            _cross_cube_item_label(
+                item.dimension_values,
+                is_chinese=is_chinese,
+            ),
+            _fallback_number(item.value) or str(item.value),
+        )
+        for item in analysis.items[:3]
+    ]
+    if not is_chinese:
+        first_label, first_value = top[0]
+        answer = (
+            "Conclusion: among the returned cross-dimensional aggregate combinations, "
+            f"{first_label} has the highest {analysis.measure_label} at "
+            f"{first_value} {analysis.unit}."
+        )
+        if len(top) > 1:
+            answer += " The next combinations are " + ", followed by ".join(
+                f"{label} ({value} {analysis.unit})" for label, value in top[1:]
+            ) + "."
+        answer += (
+            "\n\nStatistical boundary: this is a Top-K ranking of inpatient "
+            "discharge-record combinations, not a complete profile for every group "
+            "and not an individual's disease probability or diagnosis."
+        )
+        return answer, used_ids
+
+    dimension_label = "×".join(
+        _CROSS_DIMENSION_ZH.get(dimension, dimension)
+        for dimension in analysis.dimensions
+    )
+    first_label, first_value = top[0]
+    comparison_word = "最多" if analysis.measure == "case_count" else "最高"
+    answer = (
+        f"结论：按{dimension_label}交叉汇总，在当前返回的前列组合中，"
+        f"{first_label}的{analysis.measure_label}{comparison_word}，为"
+        f"{first_value}{analysis.unit}。"
+    )
+    if len(top) > 1:
+        answer += "\n\n关键发现：其后的组合为" + "；".join(
+            f"{label}（{value}{analysis.unit}）" for label, value in top[1:]
+        ) + "。"
+    answer += (
+        "\n\n业务提示：这些交叉组合可用于定位病例量集中的运营群体；"
+        "如需查看某一医院、年龄组或性别的完整疾病结构，应继续指定筛选条件。"
+        "\n\n统计边界：这是住院出院记录的Top-K组合排名，不能视为每个分组的"
+        "完整疾病谱，也不等同于个体患病概率或医学诊断。"
+    )
+    return answer, used_ids
+
+
 def _age_group_label(notes: Sequence[str], *, is_chinese: bool) -> str | None:
     note_text = " ".join(notes)
     range_match = re.search(
@@ -972,6 +1105,19 @@ def _is_client_ready_answer(
         return False
     if not any("\u4e00" <= character <= "\u9fff" for character in question):
         return True
+    cross_analysis, _ = _cross_cube_analysis(prepared)
+    if cross_analysis is not None:
+        if "结论" not in answer or "统计边界" not in answer:
+            return False
+        for dimension, value in cross_analysis.items[0].dimension_values:
+            localized = _localized_cross_dimension_value(
+                dimension,
+                value,
+                is_chinese=True,
+            )
+            if localized not in answer:
+                return False
+        return "住院出院记录" in answer
     hospital_analysis, _ = _ranking_analysis_for_dimension(prepared, "hospital")
     if hospital_analysis is not None:
         top_label = hospital_analysis.items[0].label
@@ -1009,6 +1155,16 @@ def _deterministic_fallback_result(
     prepared: Sequence[Mapping[str, Any]],
     provenance: dict[str, str] | None,
 ) -> AnswerResult:
+    cross_cube_answer = _cross_cube_client_answer(question, prepared)
+    if cross_cube_answer is not None:
+        answer, used_ids = cross_cube_answer
+        return AnswerResult(
+            status=ANSWER_STATUS_OK,
+            answer_text=answer,
+            used_evidence_ids=tuple(dict.fromkeys(used_ids)),
+            provenance=dict(provenance) if provenance is not None else None,
+        )
+
     diagnosis_answer = _diagnosis_client_answer(question, prepared)
     if diagnosis_answer is not None:
         answer, used_ids = diagnosis_answer

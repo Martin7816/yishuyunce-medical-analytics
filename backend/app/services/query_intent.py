@@ -15,6 +15,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from .aggregate_cube_catalog import supports_aggregate_cube_shape
+
 
 _AGE_RANGE_PATTERN = re.compile(
     r"(?P<start>\d{1,3})\s*(?:岁|周岁)?\s*(?:-|~|～|至|到)\s*"
@@ -380,7 +382,13 @@ def infer_natural_language_intent(question: object) -> NaturalLanguageIntent:
     dimensions = [item for item in dimensions if item not in filter_dimensions]
 
     if disease_case_ranking:
-        dimensions = ["diagnosis"]
+        # Keep reviewed cohort dimensions when the user asks for a cross-group
+        # disease ranking. Explicit values such as “50岁男性” were already
+        # converted to filters above, so that question still groups only by
+        # diagnosis. Phrases such as “不同年龄和性别” retain their dimensions.
+        dimensions = [item for item in dimensions if item != "diagnosis"] + [
+            "diagnosis"
+        ]
 
     measures = explicit_measures
     if not measures and has_case_measure:
@@ -398,25 +406,6 @@ def infer_natural_language_intent(question: object) -> NaturalLanguageIntent:
     )
 
 
-# Keep this allowlist aligned with the server-owned capability compiler.  The
-# deterministic planner is only a recovery path for high-confidence wording;
-# it must never manufacture a new aggregate shape.
-_DETERMINISTIC_DIMENSION_SHAPES = {
-    frozenset(),
-    frozenset({"hospital"}),
-    frozenset({"diagnosis"}),
-    frozenset({"age_group"}),
-    frozenset({"gender"}),
-    frozenset({"severity"}),
-    frozenset({"payment"}),
-    frozenset({"admission_type"}),
-    frozenset({"age_group", "diagnosis"}),
-    frozenset({"gender", "diagnosis"}),
-    frozenset({"hospital", "severity"}),
-    frozenset({"payment", "age_group"}),
-}
-
-
 def build_deterministic_query_plan(
     question: object,
 ) -> dict[str, Any] | None:
@@ -431,7 +420,7 @@ def build_deterministic_query_plan(
     intent = infer_natural_language_intent(question)
     if not intent.has_structured_intent:
         return None
-    if frozenset(intent.dimensions) not in _DETERMINISTIC_DIMENSION_SHAPES:
+    if not supports_aggregate_cube_shape(intent.dimensions):
         return None
 
     sort = []

@@ -151,6 +151,47 @@ def older_hospital_ranking_evidence() -> dict[str, object]:
     }
 
 
+def age_gender_disease_cube_evidence() -> dict[str, object]:
+    return {
+        "query_id": "query-age-gender-disease-cube",
+        "query_plan": {
+            "version": "query_analytics-v1",
+            "dimensions": ["age_group", "gender", "diagnosis"],
+            "measures": ["case_count"],
+            "filters": [],
+            "sort": [{"by": "case_count", "direction": "desc"}],
+            "limit": 10,
+        },
+        "title": "Ranking by Age group / Gender / Diagnosis",
+        "description": "Validated cross-dimensional aggregate record counts.",
+        "metrics": [],
+        "sections": [
+            {
+                "key": "age_group_ranking",
+                "title": "Ranking by Age group / Gender / Diagnosis",
+                "type": "bar",
+                "items": [
+                    {
+                        "name": "50 to 69 / M / INF002 — SEPTICEMIA",
+                        "value": 26687,
+                    },
+                    {
+                        "name": "70 or Older / F / CIR019 — HEART FAILURE",
+                        "value": 11256,
+                    },
+                    {
+                        "name": "30 to 49 / F / INF012 — COVID-19",
+                        "value": 9380,
+                    },
+                ],
+            }
+        ],
+        "facts": [],
+        "derived_facts": [],
+        "provenance": PROVENANCE,
+    }
+
+
 class FakeStructuredAnswerClient:
     def __init__(self, response: object) -> None:
         self.response = response
@@ -374,6 +415,27 @@ def test_low_quality_hospital_model_answer_is_replaced_by_client_ready_answer():
     assert "70岁及以上" in result.answer_text
     assert "不等同于独立患者人数" in result.answer_text
     assert len(client.calls) == 1
+
+
+def test_cross_cube_fallback_returns_customer_ready_combination_analysis():
+    generator, client = make_generator(grounded_response())
+
+    result = generator.deterministic_fallback(
+        "不同年龄和性别最常见的疾病是什么？",
+        age_gender_disease_cube_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.status == ANSWER_STATUS_OK
+    assert result.answer_text.startswith("结论：按年龄组×性别×疾病交叉汇总")
+    assert "50–69岁、男性、败血症" in result.answer_text
+    assert "26,687条" in result.answer_text
+    assert "70岁及以上、女性、心力衰竭" in result.answer_text
+    assert "Top-K组合排名" in result.answer_text
+    assert "个体患病概率" in result.answer_text
+    assert "query_plan" not in result.answer_text
+    assert result.used_evidence_ids == ("query-age-gender-disease-cube",)
+    assert client.calls == []
 
 
 def test_causal_wording_is_rejected():
