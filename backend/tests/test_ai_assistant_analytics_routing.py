@@ -339,7 +339,7 @@ def test_new_analytics_sse_keeps_stage_delta_done_shape_and_hides_internal_detai
     assert [event_type for event_type, _ in events].count("done") == 1
     assert [event_type for event_type, _ in events if event_type not in {"stage", "delta", "done"}] == []
     stages = [data["stage"] for event_type, data in events if event_type == "stage"]
-    assert stages == ["preparing", "understanding", "querying", "analyzing", "completed"]
+    assert stages == ["preparing", "understanding", "querying", "analyzing"]
     assert "Hospital A has 50 cases." in "".join(
         data["text"] for event_type, data in events if event_type == "delta"
     )

@@ -29,6 +29,7 @@ from shared.query_plan_contract import (
     MAX_SORT,
     SortSpec,
 )
+from shared.disease_rules import NON_DISEASE_DIAGNOSIS_CODES
 
 from ..errors import (
     AppError,
@@ -299,6 +300,15 @@ class MySQLAggregateQueryRepository:
             "WHERE f.`batch_id` = %s"
         )
         params: list[Any] = [batch_id]
+
+        if "diagnosis" in query.dimensions:
+            excluded_codes = tuple(sorted(NON_DISEASE_DIAGNOSIS_CODES))
+            if excluded_codes:
+                placeholders = ", ".join("%s" for _ in excluded_codes)
+                query_sql += (
+                    f" AND f.`diagnosis_code` NOT IN ({placeholders})"
+                )
+                params.extend(excluded_codes)
 
         for filter_spec in query.filters:
             field = self._dimension_field(filter_spec.dimension)

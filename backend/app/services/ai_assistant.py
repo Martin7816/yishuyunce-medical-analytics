@@ -1013,7 +1013,6 @@ class AIAssistantService:
             result = self._run_analytics_agent(question)
             yield self._stage("analyzing", "正在校验证据并生成结论")
             yield self._delta(result["answer"])
-            yield self._stage("completed", "分析完成")
             yield "done", self._stream_done_payload(result)
             return
 

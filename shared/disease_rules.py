@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 NON_DISEASE_DIAGNOSIS_NAMES = frozenset({"LIVEBORN", "活产儿"})
+NON_DISEASE_DIAGNOSIS_CODES = frozenset({"PNL001"})
 
 
 def is_non_disease_diagnosis(value: object) -> bool:

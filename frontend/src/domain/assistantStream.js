@@ -68,16 +68,34 @@ function streamError(data) {
 
 export async function consumeAssistantStream(
   response,
-  { onStage, onDelta, onDone } = {},
+  { onStage, onDelta, onDone, terminalGraceMs = 1500 } = {},
 ) {
   const reader = response?.body?.getReader?.()
   if (!reader) throw resultError('流式响应不可用，未展示回答。请重试。')
 
   let receivedDone = false
+  let awaitingDone = false
+  const events = readSseEvents(reader)[Symbol.asyncIterator]()
   try {
-    for await (const event of readSseEvents(reader)) {
+    while (true) {
+      let timer
+      const nextEvent = awaitingDone
+        ? Promise.race([
+            events.next(),
+            new Promise((_, reject) => {
+              timer = setTimeout(
+                () => reject(resultError('完成信号缺少结果元数据，已自动结束。请重试。')),
+                terminalGraceMs,
+              )
+            }),
+          ]).finally(() => clearTimeout(timer))
+        : events.next()
+      const iteration = await nextEvent
+      if (iteration.done) break
+      const event = iteration.value
       if (event.event === 'stage') {
         onStage?.(event.data)
+        awaitingDone = event.data?.stage === 'completed'
         continue
       }
       if (event.event === 'delta') {
@@ -100,12 +118,11 @@ export async function consumeAssistantStream(
       throw resultError('流式事件类型无效，未展示回答。请重试。')
     }
   } finally {
-    if (receivedDone) {
-      // Cleanup must never delay the terminal UI state.
-      Promise.resolve()
-        .then(() => reader.cancel?.())
-        .catch(() => {})
-    }
+    // Cleanup must never delay either a successful terminal UI state or an
+    // automatic recovery from a malformed/premature completion sequence.
+    Promise.resolve()
+      .then(() => reader.cancel?.())
+      .catch(() => {})
   }
 
   if (!receivedDone) throw resultError('流式回答未正常完成，请重试。')

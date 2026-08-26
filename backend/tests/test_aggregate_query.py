@@ -129,7 +129,28 @@ def test_valid_aggregate_query_uses_one_fact_table_and_bound_values():
     assert "JOIN" not in connection.cursor_value.query.upper()
     assert "analytics_aggregate_batch" not in connection.cursor_value.query
     assert "analytics_aggregate_active_batch" not in connection.cursor_value.query
-    assert connection.cursor_value.params == ("agg_test", "70 or Older", 2)
+    assert connection.cursor_value.params == (
+        "agg_test",
+        "PNL001",
+        "70 or Older",
+        2,
+    )
+
+
+def test_diagnosis_rankings_exclude_server_owned_non_disease_codes():
+    repository, connection = _repository([])
+    query = _compiled_query(
+        dimensions=["diagnosis"],
+        measures=["case_count"],
+        filters=[],
+        sort=[{"by": "case_count", "direction": "desc"}],
+        limit=10,
+    )
+
+    repository.execute(query)
+
+    assert "f.`diagnosis_code` NOT IN (%s)" in connection.cursor_value.query
+    assert connection.cursor_value.params == ("agg_test", "PNL001", 10)
 
 
 def test_unknown_field_is_rejected():

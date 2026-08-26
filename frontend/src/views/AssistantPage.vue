@@ -6,6 +6,11 @@ import { renderSafeMarkdown } from '../utils/markdown.js'
 import { displayText } from '../domain/displayLabels.js'
 import { consumeAssistantStream } from '../domain/assistantStream.js'
 import { hasAggregateEvidence } from '../domain/assistantEvidence.js'
+import {
+  normalizeVisibleStreamStage,
+  resolveSubmitAction,
+} from '../domain/assistantInteraction.js'
+import { ASSISTANT_QUICK_ACTIONS } from '../domain/assistantQuickActions.js'
 
 const MAX_QUESTION_LENGTH = 1000
 const ALLOWED_CHART_TYPES = new Set(['bar', 'pie', 'table', 'status', 'grouped_bar', 'scatter', 'heatmap'])
@@ -22,25 +27,14 @@ const TOOL_LABELS = Object.freeze({
   get_model_metrics: '高费用模型',
 })
 
-const presets = Object.freeze([
-  '概括当前运营情况',
-  '费用与成本有哪些主要特征？',
-  '疾病病例量排名如何？',
-  '医院运营情况如何？',
-])
-
-const quickActionMeta = Object.freeze([
-  { label: '运营概览', description: '快速总结总体运营表现' },
-  { label: '费用洞察', description: '分析收费与成本特征' },
-  { label: '疾病分析', description: '查看主要疾病病例结构' },
-  { label: '模型评估', description: '查看高费用模型表现' },
-])
+const quickActions = ASSISTANT_QUICK_ACTIONS
 
 const question = ref('')
 const result = ref(null)
 const error = ref(null)
 const questionError = ref('')
 const loading = ref(false)
+const stopping = ref(false)
 const lastQuestion = ref('')
 const questionInput = ref(null)
 const reportTitle = ref(null)
@@ -440,10 +434,10 @@ function updateStreamStage(data) {
   if (!data || typeof data !== 'object' || !normalizeText(data.stage) || !normalizeText(data.label)) {
     throw createResultError('流式阶段状态无效，未展示回答。请重试。')
   }
-  streamStage.value = {
+  streamStage.value = normalizeVisibleStreamStage({
     stage: normalizeText(data.stage),
     label: normalizeText(data.label),
-  }
+  })
 }
 
 async function legacyConsumeStream(text, controller) {
@@ -534,6 +528,7 @@ async function ask(value = question.value) {
   const controller = new AbortController()
   activeController = controller
   loading.value = true
+  stopping.value = false
   result.value = createPendingResult()
   error.value = null
   questionError.value = ''
@@ -560,17 +555,22 @@ async function ask(value = question.value) {
     }
   } finally {
     loading.value = false
+    stopping.value = false
     if (activeController === controller) activeController = null
   }
 }
 
 function stopGeneration() {
-  activeController?.abort()
+  if (stopping.value || !activeController) return
+  stopping.value = true
+  streamStage.value = { stage: 'stopping', label: '正在停止生成' }
+  activeController.abort()
 }
 
 function submitForm() {
-  if (loading.value) stopGeneration()
-  else ask()
+  const action = resolveSubmitAction({ loading: loading.value, stopping: stopping.value })
+  if (action === 'stop') stopGeneration()
+  if (action === 'send') ask()
 }
 
 function handleQuestionKeydown(event) {
@@ -676,7 +676,7 @@ function errorMessage(caught) {
       </div>
     </header>
 
-    <section class="assistant-composer-shell" :aria-busy="loading" aria-labelledby="assistant-question-title">
+    <section class="assistant-composer-shell" :aria-busy="loading || stopping" aria-labelledby="assistant-question-title">
       <div class="assistant-composer-heading">
         <div>
           <p class="assistant-section-kicker">开始一次分析</p>
@@ -717,11 +717,12 @@ function errorMessage(caught) {
             <button
               type="submit"
               class="primary-button assistant-submit"
-              :aria-label="loading ? '停止生成' : '发送问题'"
+              :disabled="stopping"
+              :aria-label="stopping ? '正在停止生成' : loading ? '停止生成' : '发送问题'"
             >
-              <span v-if="loading" class="assistant-submit-spinner" aria-hidden="true"></span>
+              <span v-if="loading || stopping" class="assistant-submit-spinner" aria-hidden="true"></span>
               <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4.5 14-3.2-5.2L5 12Zm6.3 1.8L19 5" /></svg>
-              <span>{{ loading ? '停止生成' : '发送' }}</span>
+              <span>{{ stopping ? '正在停止' : loading ? '停止生成' : '发送' }}</span>
             </button>
           </div>
         </div>
@@ -743,20 +744,20 @@ function errorMessage(caught) {
       </div>
       <div class="assistant-quick-grid" aria-label="预设问题">
         <button
-          v-for="(preset, index) in presets"
-          :key="preset"
+          v-for="(action, index) in quickActions"
+          :key="action.question"
           type="button"
           class="assistant-quick-card"
           :class="`accent-${index + 1}`"
-          :disabled="loading"
-          @click="choose(preset)"
+          :disabled="loading || stopping"
+          @click="choose(action.question)"
         >
           <span class="assistant-quick-card-top">
             <span class="assistant-quick-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13m-5-5 5 5-5 5" /></svg>
           </span>
-          <strong>{{ quickActionMeta[index].label }}</strong>
-          <span>{{ quickActionMeta[index].description }}</span>
+          <strong>{{ action.label }}</strong>
+          <span>{{ action.description }}</span>
         </button>
       </div>
     </section>
