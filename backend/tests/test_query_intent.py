@@ -112,6 +112,39 @@ def test_generic_hospital_ranking_is_inferred_without_question_specific_branch()
     assert intent.filters == ()
 
 
+def test_ranking_without_explicit_top_count_reads_at_least_three_rows():
+    model_plan = {
+        "version": "query_analytics-v1",
+        "dimensions": ["hospital"],
+        "measures": ["case_count"],
+        "filters": [],
+        "sort": [{"by": "case_count", "direction": "desc"}],
+        "limit": 1,
+    }
+
+    normalized = merge_query_plan_with_intent(
+        "美国哪个医院接诊的70岁以上老人最多？",
+        model_plan,
+    )
+
+    assert normalized["limit"] == 3
+
+
+def test_explicit_top_one_request_keeps_one_row_limit():
+    model_plan = {
+        "version": "query_analytics-v1",
+        "dimensions": ["hospital"],
+        "measures": ["case_count"],
+        "filters": [],
+        "sort": [{"by": "case_count", "direction": "desc"}],
+        "limit": 10,
+    }
+
+    normalized = merge_query_plan_with_intent("前1个医院病例量最高", model_plan)
+
+    assert normalized["limit"] == 1
+
+
 def test_generic_measure_and_filter_are_inferred_for_payment_question():
     intent = infer_natural_language_intent("Medicare患者平均费用是多少？")
 

@@ -69,6 +69,12 @@ def test_ranking_conversion_uses_query_rows():
         {"name": "Hospital A", "value": 50},
         {"name": "Hospital B", "value": 20},
     ]
+    ranking_fact = evidence["derived_facts"][0]
+    assert ranking_fact["runner_up_gap"] == 30
+    assert ranking_fact["returned_total"] == 70
+    assert ranking_fact["coverage"] == "top_k"
+    assert "total" not in ranking_fact
+    assert all("share" not in item for item in ranking_fact["top"])
     assert evidence["facts"] == evidence["derived_facts"]
 
 
@@ -172,6 +178,10 @@ def test_chart_compatibility_for_comparison_distribution_and_relationship():
     assert comparison["chart"]["type"] == "grouped_bar"
     assert distribution["chart"]["type"] == "pie"
     assert relationship["chart"]["type"] == "scatter"
+    distribution_fact = distribution["derived_facts"][0]
+    assert distribution_fact["coverage"] == "complete_distribution"
+    assert distribution_fact["total"] == 30
+    assert distribution_fact["top"][0]["share"] == pytest.approx(2 / 3, abs=1e-6)
 
 
 class StaticDiagnosisLabels:

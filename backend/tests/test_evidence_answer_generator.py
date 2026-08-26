@@ -107,6 +107,20 @@ def male_age_group_diagnosis_evidence() -> dict[str, object]:
 def older_hospital_ranking_evidence() -> dict[str, object]:
     return {
         "query_id": "query-older-hospital-ranking",
+        "query_plan": {
+            "version": "query_analytics-v1",
+            "dimensions": ["hospital"],
+            "measures": ["case_count"],
+            "filters": [
+                {
+                    "dimension": "age_group",
+                    "operator": "eq",
+                    "value": "70 or Older",
+                }
+            ],
+            "sort": [{"by": "case_count", "direction": "desc"}],
+            "limit": 3,
+        },
         "title": "Ranking by Hospital",
         "description": "Validated aggregate inpatient discharge record counts.",
         "metrics": [],
@@ -306,6 +320,7 @@ def test_deterministic_fallback_turns_hospital_ranking_into_client_answer():
     assert "16,330条" in result.answer_text
     assert "其次" in result.answer_text
     assert "15,200条" in result.answer_text
+    assert "比第二名多1,130条" in result.answer_text
     assert "住院出院记录" in result.answer_text
     assert "不等同于独立患者人数" in result.answer_text
     assert "70 or Older" not in result.answer_text

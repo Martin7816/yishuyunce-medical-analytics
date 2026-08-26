@@ -515,6 +515,16 @@ def merge_query_plan_with_intent(
             and item.get("by") in selected
         ]
     limit = intent.requested_limit or normalized.get("limit", 10)
+    if (
+        intent.ranking_requested
+        and intent.requested_limit is None
+        and isinstance(limit, int)
+        and not isinstance(limit, bool)
+    ):
+        # A single winner is technically correct but analytically weak. Read
+        # the top three aggregate rows so the answer can explain the runner-up
+        # and leading gap. An explicit "Top 1" request still remains one row.
+        limit = max(limit, 3)
     normalized["limit"] = (
         limit
         if isinstance(limit, int)

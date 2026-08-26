@@ -87,8 +87,9 @@ limitations, provenance, or any other key; provenance is attached by the server.
 
 Never invent or estimate a number, metric, category, ranking, or data version.
 For rankings, copy only the category/value pairs present in the supplied rows.
-Never calculate or add totals, shares, percentages, gaps, differences, or other
-derived numbers, even when they could be computed from the rows.
+Never calculate new totals, shares, percentages, gaps, differences, or other
+derived numbers yourself. You may quote a derived number only when it is
+explicitly present in the server-owned derived_facts supplied as evidence.
 When the evidence contains a filtered diagnosis ranking, answer that ranking
 directly instead of refusing merely because patient-level detail is absent.
 Write for the customer, not for the engineering team. Lead with a direct
@@ -197,6 +198,7 @@ _INTERNAL_PROCESS_MARKERS = (
     "思考过程",
     "分析计划",
 )
+from .ranking_analysis import RankingEvidenceAnalysis, analyze_evidence_ranking
 
 
 def _plain_diagnosis_name(label: str) -> str:
@@ -732,40 +734,19 @@ def _diagnosis_ranking_rows(
     return [], []
 
 
-def _ranking_rows_for_dimension(
+def _ranking_analysis_for_dimension(
     prepared: Sequence[Mapping[str, Any]],
     dimension: str,
-) -> tuple[list[tuple[str, str]], list[str]]:
-    """Read one validated ranking section without interpreting new facts."""
-
-    section_key = f"{dimension}_ranking"
+) -> tuple[RankingEvidenceAnalysis | None, list[str]]:
     for item in prepared:
         evidence_id = item.get("evidence_id")
         raw = item.get("evidence")
         if not isinstance(evidence_id, str) or not isinstance(raw, Mapping):
             continue
-        sections = raw.get("sections")
-        if not isinstance(sections, Sequence) or isinstance(sections, (str, bytes)):
-            continue
-        for section in sections:
-            if not isinstance(section, Mapping) or section.get("key") != section_key:
-                continue
-            section_items = section.get("items")
-            if not isinstance(section_items, Sequence) or isinstance(
-                section_items, (str, bytes)
-            ):
-                continue
-            rows: list[tuple[str, str]] = []
-            for section_item in section_items[:10]:
-                if not isinstance(section_item, Mapping):
-                    continue
-                label = section_item.get("name", section_item.get("category"))
-                value = _fallback_number(section_item.get("value"))
-                if isinstance(label, str) and label.strip() and value is not None:
-                    rows.append((label.strip(), value))
-            if rows:
-                return rows, [evidence_id]
-    return [], []
+        analysis = analyze_evidence_ranking(raw, dimension)
+        if analysis is not None:
+            return analysis, [evidence_id]
+    return None, []
 
 
 def _age_group_label(notes: Sequence[str], *, is_chinese: bool) -> str | None:
@@ -881,6 +862,11 @@ def _diagnosis_client_answer(
     remaining = localized[3:5]
     families = _diagnosis_families([label for label, _ in rows[:5]])
     insights: list[str] = []
+    ranking_analysis, _ = _ranking_analysis_for_dimension(prepared, "diagnosis")
+    if ranking_analysis is not None:
+        runner_up_gap = _fallback_number(ranking_analysis.runner_up_gap)
+        if runner_up_gap is not None:
+            insights.append(f"首位主诊断比第二位多{runner_up_gap}条记录")
     if remaining:
         insights.append(
             "前列主诊断还包括"
@@ -919,38 +905,60 @@ def _hospital_client_answer(
     question: str,
     prepared: Sequence[Mapping[str, Any]],
 ) -> tuple[str, list[str]] | None:
-    rows, used_ids = _ranking_rows_for_dimension(prepared, "hospital")
-    if not rows or not used_ids:
+    analysis, used_ids = _ranking_analysis_for_dimension(prepared, "hospital")
+    if analysis is None or not used_ids:
         return None
 
     is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
     notes = _evidence_scope_notes(prepared)
     group = _age_group_label(notes, is_chinese=is_chinese)
-    top = rows[:3]
+    top = [
+        (item.label, _fallback_number(item.value) or str(item.value))
+        for item in analysis.items[:3]
+    ]
 
     if not is_chinese:
         cohort = f"for patients {group}" if group else "in the selected cohort"
         findings = ", followed by ".join(
-            f"{label} ({value} inpatient discharge records)" for label, value in top
+            f"{label} ({value} {analysis.unit})" for label, value in top
         )
         return (
-            f"Conclusion: {cohort}, {findings}.\n\n"
-            "Statistical boundary: this ranks hospitals by inpatient discharge "
-            "records, not unique patients, total hospital capacity, or quality of care."
+            f"Conclusion: {cohort}, the highest {analysis.measure} ranking is "
+            f"{findings}.\n\n"
+            "Statistical boundary: this is a hospital-level aggregate comparison, "
+            "not a patient-level conclusion, causal explanation, or quality-of-care ranking."
         ), used_ids
 
     cohort = f"{group}人群" if group else "当前筛选人群"
     first_label, first_value = top[0]
+    comparative = "最多" if analysis.measure == "case_count" else "最高"
     answer = (
-        f"结论：在{cohort}的住院出院记录中，{first_label}最多，为{first_value}条。"
+        f"结论：在{cohort}的住院出院记录中，按医院汇总，"
+        f"{first_label}的{analysis.measure_label}{comparative}，"
+        f"为{first_value}{analysis.unit}。"
     )
     if len(top) > 1:
-        followers = "，".join(f"{label}（{value}条）" for label, value in top[1:])
+        followers = "，".join(
+            f"{label}（{value}{analysis.unit}）" for label, value in top[1:]
+        )
         answer += f"\n\n关键发现：其次依次为{followers}。"
-    answer += (
-        "\n\n统计边界：这里的“最多”按医院汇总的住院出院记录数判断，"
-        "不等同于独立患者人数、医院整体接诊能力或医疗质量排名。"
-    )
+        gap = _fallback_number(analysis.runner_up_gap)
+        if gap is not None:
+            gap_word = "多" if analysis.measure == "case_count" else "高"
+            answer += (
+                f"第一名的{analysis.measure_label}比第二名{gap_word}"
+                f"{gap}{analysis.unit}。"
+            )
+    if analysis.measure == "case_count":
+        answer += (
+            "\n\n统计边界：这里的“最多”按医院汇总的住院出院记录数判断，"
+            "不等同于独立患者人数、医院整体接诊能力或医疗质量排名。"
+        )
+    else:
+        answer += (
+            "\n\n统计边界：这是医院层面的聚合指标比较，不代表患者个体情况，"
+            "也不能据此推断原因或评价医疗质量。"
+        )
     return answer, used_ids
 
 
@@ -964,9 +972,9 @@ def _is_client_ready_answer(
         return False
     if not any("\u4e00" <= character <= "\u9fff" for character in question):
         return True
-    hospital_rows, _ = _ranking_rows_for_dimension(prepared, "hospital")
-    if hospital_rows:
-        top_label = hospital_rows[0][0]
+    hospital_analysis, _ = _ranking_analysis_for_dimension(prepared, "hospital")
+    if hospital_analysis is not None:
+        top_label = hospital_analysis.items[0].label
         if "结论" not in answer or top_label not in answer:
             return False
         notes = _evidence_scope_notes(prepared)

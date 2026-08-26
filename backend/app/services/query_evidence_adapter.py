@@ -406,6 +406,13 @@ class QueryEvidenceAdapter:
             section_title,
             label_resolvers=self.label_resolvers,
         )
+        visual = section.get("visual")
+        if isinstance(visual, dict):
+            visual["coverage"] = (
+                "complete_distribution"
+                if section_type == "distribution" and not validated.truncated
+                else "top_k"
+            )
         snapshot = {
             "title": section_title,
             "description": (

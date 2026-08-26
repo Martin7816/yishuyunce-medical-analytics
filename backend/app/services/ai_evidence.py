@@ -254,7 +254,7 @@ def _safe_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
 
 def _safe_visual(visual: Mapping[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for key in ("question", "x_label", "y_label", "unit"):
+    for key in ("question", "x_label", "y_label", "unit", "coverage"):
         text = _safe_text(visual.get(key), max_length=256)
         if text is not None:
             result[key] = text
@@ -472,7 +472,11 @@ def _ranking_fact(section: Mapping[str, Any]) -> dict[str, Any] | None:
     values = [float(item["value"]) for item in numeric_items]
     total = sum(values)
     maximum = ranked[0]["value"]
-    minimum = ranked[-1]["value"]
+    visual = section.get("visual")
+    complete_distribution = (
+        isinstance(visual, Mapping)
+        and visual.get("coverage") == "complete_distribution"
+    )
     top: list[dict[str, Any]] = []
     for rank, item in enumerate(ranked[:10], start=1):
         entry: dict[str, Any] = {
@@ -480,21 +484,41 @@ def _ranking_fact(section: Mapping[str, Any]) -> dict[str, Any] | None:
             "name": item["name"],
             "value": item["value"],
         }
-        if total > 0:
+        if complete_distribution and total > 0:
             entry["share"] = _rounded(float(item["value"]) / total, 6)
         top.append(entry)
 
-    return {
+    fact: dict[str, Any] = {
         "key": f"{section['key']}_ranking",
         "type": "ranking",
         "section_key": section["key"],
         "title": section["title"],
         "top": top,
         "maximum": maximum,
-        "minimum": minimum,
-        "gap": _rounded(float(maximum) - float(minimum), 6),
-        "total": _rounded(total, 6),
+        **(
+            {
+                "runner_up_gap": _rounded(
+                    float(ranked[0]["value"]) - float(ranked[1]["value"]),
+                    6,
+                )
+            }
+            if len(ranked) >= 2
+            else {}
+        ),
+        "returned_item_count": len(ranked),
+        "returned_total": _rounded(total, 6),
+        "coverage": "complete_distribution" if complete_distribution else "top_k",
     }
+    if complete_distribution:
+        minimum = ranked[-1]["value"]
+        fact.update(
+            {
+                "minimum": minimum,
+                "gap": _rounded(float(maximum) - float(minimum), 6),
+                "total": _rounded(total, 6),
+            }
+        )
+    return fact
 
 
 def _grouped_facts(section: Mapping[str, Any]) -> list[dict[str, Any]]:
