@@ -732,6 +732,42 @@ def _diagnosis_ranking_rows(
     return [], []
 
 
+def _ranking_rows_for_dimension(
+    prepared: Sequence[Mapping[str, Any]],
+    dimension: str,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Read one validated ranking section without interpreting new facts."""
+
+    section_key = f"{dimension}_ranking"
+    for item in prepared:
+        evidence_id = item.get("evidence_id")
+        raw = item.get("evidence")
+        if not isinstance(evidence_id, str) or not isinstance(raw, Mapping):
+            continue
+        sections = raw.get("sections")
+        if not isinstance(sections, Sequence) or isinstance(sections, (str, bytes)):
+            continue
+        for section in sections:
+            if not isinstance(section, Mapping) or section.get("key") != section_key:
+                continue
+            section_items = section.get("items")
+            if not isinstance(section_items, Sequence) or isinstance(
+                section_items, (str, bytes)
+            ):
+                continue
+            rows: list[tuple[str, str]] = []
+            for section_item in section_items[:10]:
+                if not isinstance(section_item, Mapping):
+                    continue
+                label = section_item.get("name", section_item.get("category"))
+                value = _fallback_number(section_item.get("value"))
+                if isinstance(label, str) and label.strip() and value is not None:
+                    rows.append((label.strip(), value))
+            if rows:
+                return rows, [evidence_id]
+    return [], []
+
+
 def _age_group_label(notes: Sequence[str], *, is_chinese: bool) -> str | None:
     note_text = " ".join(notes)
     range_match = re.search(
@@ -751,6 +787,24 @@ def _age_group_label(notes: Sequence[str], *, is_chinese: bool) -> str | None:
         age = upper_match.group(1)
         return f"{age}岁及以上" if is_chinese else f"age {age} or older"
     return None
+
+
+def _localized_scope_note(note: str, *, is_chinese: bool) -> str:
+    if not is_chinese:
+        return note
+    localized = re.sub(
+        r"(?<!\d)(\d{1,3})\s*or\s*older(?![a-z])",
+        lambda match: f"{match.group(1)}岁及以上",
+        note,
+        flags=re.IGNORECASE,
+    )
+    localized = re.sub(
+        r"(?<!\d)(\d{1,3})\s*to\s*(\d{1,3})(?!\d)",
+        lambda match: f"{match.group(1)}–{match.group(2)}岁",
+        localized,
+        flags=re.IGNORECASE,
+    )
+    return localized
 
 
 def _diagnosis_families(labels: Sequence[str]) -> list[str]:
@@ -861,6 +915,45 @@ def _diagnosis_client_answer(
     return answer, used_ids
 
 
+def _hospital_client_answer(
+    question: str,
+    prepared: Sequence[Mapping[str, Any]],
+) -> tuple[str, list[str]] | None:
+    rows, used_ids = _ranking_rows_for_dimension(prepared, "hospital")
+    if not rows or not used_ids:
+        return None
+
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    notes = _evidence_scope_notes(prepared)
+    group = _age_group_label(notes, is_chinese=is_chinese)
+    top = rows[:3]
+
+    if not is_chinese:
+        cohort = f"for patients {group}" if group else "in the selected cohort"
+        findings = ", followed by ".join(
+            f"{label} ({value} inpatient discharge records)" for label, value in top
+        )
+        return (
+            f"Conclusion: {cohort}, {findings}.\n\n"
+            "Statistical boundary: this ranks hospitals by inpatient discharge "
+            "records, not unique patients, total hospital capacity, or quality of care."
+        ), used_ids
+
+    cohort = f"{group}人群" if group else "当前筛选人群"
+    first_label, first_value = top[0]
+    answer = (
+        f"结论：在{cohort}的住院出院记录中，{first_label}最多，为{first_value}条。"
+    )
+    if len(top) > 1:
+        followers = "，".join(f"{label}（{value}条）" for label, value in top[1:])
+        answer += f"\n\n关键发现：其次依次为{followers}。"
+    answer += (
+        "\n\n统计边界：这里的“最多”按医院汇总的住院出院记录数判断，"
+        "不等同于独立患者人数、医院整体接诊能力或医疗质量排名。"
+    )
+    return answer, used_ids
+
+
 def _is_client_ready_answer(
     answer: str,
     question: str,
@@ -871,6 +964,18 @@ def _is_client_ready_answer(
         return False
     if not any("\u4e00" <= character <= "\u9fff" for character in question):
         return True
+    hospital_rows, _ = _ranking_rows_for_dimension(prepared, "hospital")
+    if hospital_rows:
+        top_label = hospital_rows[0][0]
+        if "结论" not in answer or top_label not in answer:
+            return False
+        notes = _evidence_scope_notes(prepared)
+        group = _age_group_label(notes, is_chinese=True)
+        if group and group not in answer:
+            return False
+        if "住院出院记录" not in answer:
+            return False
+
     diagnosis_rows, _ = _diagnosis_ranking_rows(question, prepared)
     if not diagnosis_rows:
         return True
@@ -899,6 +1004,16 @@ def _deterministic_fallback_result(
     diagnosis_answer = _diagnosis_client_answer(question, prepared)
     if diagnosis_answer is not None:
         answer, used_ids = diagnosis_answer
+        return AnswerResult(
+            status=ANSWER_STATUS_OK,
+            answer_text=answer,
+            used_evidence_ids=tuple(dict.fromkeys(used_ids)),
+            provenance=dict(provenance) if provenance is not None else None,
+        )
+
+    hospital_answer = _hospital_client_answer(question, prepared)
+    if hospital_answer is not None:
+        answer, used_ids = hospital_answer
         return AnswerResult(
             status=ANSWER_STATUS_OK,
             answer_text=answer,
@@ -955,10 +1070,13 @@ def _append_required_scope_notes(
             ):
                 notes.append(value.strip())
 
-    missing = [note for note in notes if note not in answer]
+    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
+    display_notes = [
+        _localized_scope_note(note, is_chinese=is_chinese) for note in notes
+    ]
+    missing = [note for note in display_notes if note not in answer]
     if not missing:
         return answer
-    is_chinese = any("\u4e00" <= character <= "\u9fff" for character in question)
     prefix = "口径说明：" if is_chinese else "Scope notes: "
     separator = "；" if is_chinese else "; "
     scoped_answer = f"{answer.rstrip()}\n\n{prefix}{separator.join(missing)}"

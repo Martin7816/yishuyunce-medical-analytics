@@ -32,6 +32,7 @@ from .services.evidence_answer_generator import EvidenceAnswerGenerator
 from .services.disease_top10 import DiseaseTop10Service
 from .services.analytics_snapshot import AnalyticsSnapshotService
 from .services.diagnosis_label_catalog import SnapshotDiagnosisLabelCatalog
+from .services.hospital_label_catalog import SnapshotHospitalLabelCatalog
 from .services.high_cost_model import HighCostModelService
 
 
@@ -88,6 +89,9 @@ def create_app(
     app.extensions["diagnosis_label_catalog"] = SnapshotDiagnosisLabelCatalog(
         app.extensions["analytics_snapshot_service"]
     )
+    app.extensions["hospital_label_catalog"] = SnapshotHospitalLabelCatalog(
+        app.extensions["analytics_snapshot_service"]
+    )
     app.extensions["aggregate_fact_repository"] = (
         aggregate_repository
         if aggregate_repository is not None
@@ -131,6 +135,7 @@ def create_app(
             DeepSeekPlannerAdapter(selected_ai_client),
             app.extensions["aggregate_query_repository"],
             diagnosis_label_resolver=app.extensions["diagnosis_label_catalog"],
+            hospital_label_resolver=app.extensions["hospital_label_catalog"],
         )
     )
     selected_answer_generator = (

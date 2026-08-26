@@ -21,7 +21,9 @@ from shared.query_result_contract import (
 
 from .ai_chart import build_chart_from_evidence
 from .ai_evidence import build_safe_evidence
+from .dimension_label_catalog import DimensionLabelResolver
 from .diagnosis_label_catalog import DiagnosisLabelResolver
+from .hospital_label_catalog import HospitalLabelResolver
 from .query_intent import query_scope_notes
 
 
@@ -85,20 +87,21 @@ def _display_dimension_value(
     dimension: str,
     value: object,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
     data_version: str,
 ) -> str:
     code = str(value)
-    if dimension != "diagnosis" or diagnosis_label_resolver is None:
+    resolver = label_resolvers.get(dimension)
+    if resolver is None:
         return code
     try:
-        label = diagnosis_label_resolver.resolve(code, data_version)
+        label = resolver.resolve(code, data_version)
     except Exception:
         # A label source is optional display metadata; the code is the safe
         # canonical fallback if it cannot be resolved.
-        return code
+        label = None
     if not isinstance(label, str):
-        return code
+        return f"医院 {code}" if dimension == "hospital" and code.isdigit() else code
     label = label.strip()
     if (
         not label
@@ -106,7 +109,9 @@ def _display_dimension_value(
         or len(label) > 255
         or any(ord(character) < 32 for character in label)
     ):
-        return code
+        return f"医院 {code}" if dimension == "hospital" and code.isdigit() else code
+    if dimension == "hospital":
+        return f"{label}（机构编码：{code}）"
     return f"{code} — {label}"
 
 
@@ -114,7 +119,7 @@ def _row_label(
     row: Mapping[str, Any],
     dimensions: tuple[str, ...],
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None = None,
+    label_resolvers: Mapping[str, DimensionLabelResolver] | None = None,
     data_version: str = "",
 ) -> str:
     if not dimensions:
@@ -123,7 +128,7 @@ def _row_label(
         _display_dimension_value(
             dimension,
             row[dimension],
-            diagnosis_label_resolver=diagnosis_label_resolver,
+            label_resolvers=label_resolvers or {},
             data_version=data_version,
         )
         for dimension in dimensions
@@ -165,7 +170,7 @@ def _ranking_section(
     result: QueryResultContract,
     title: str,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
 ) -> dict[str, Any]:
     measure = _ranking_measure(result)
     items: list[dict[str, Any]] = []
@@ -178,7 +183,7 @@ def _ranking_section(
                 "name": _row_label(
                     row,
                     result.dimensions,
-                    diagnosis_label_resolver=diagnosis_label_resolver,
+                    label_resolvers=label_resolvers,
                     data_version=result.data_version,
                 ),
                 "value": value,
@@ -202,7 +207,7 @@ def _comparison_section(
     result: QueryResultContract,
     title: str,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for row in result.rows:
@@ -223,7 +228,7 @@ def _comparison_section(
                 "category": _row_label(
                     row,
                     result.dimensions,
-                    diagnosis_label_resolver=diagnosis_label_resolver,
+                    label_resolvers=label_resolvers,
                     data_version=result.data_version,
                 ),
                 "series": series,
@@ -245,7 +250,7 @@ def _distribution_section(
     result: QueryResultContract,
     title: str,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
 ) -> dict[str, Any]:
     measure = _ranking_measure(result)
     items: list[dict[str, Any]] = []
@@ -258,7 +263,7 @@ def _distribution_section(
                 "name": _row_label(
                     row,
                     result.dimensions,
-                    diagnosis_label_resolver=diagnosis_label_resolver,
+                    label_resolvers=label_resolvers,
                     data_version=result.data_version,
                 ),
                 "value": value,
@@ -281,7 +286,7 @@ def _relationship_section(
     result: QueryResultContract,
     title: str,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
 ) -> dict[str, Any]:
     measures = result.measures[:2]
     items: list[dict[str, Any]] = []
@@ -295,7 +300,7 @@ def _relationship_section(
                 "name": _row_label(
                     row,
                     result.dimensions,
-                    diagnosis_label_resolver=diagnosis_label_resolver,
+                    label_resolvers=label_resolvers,
                     data_version=result.data_version,
                 ),
                 "x": x,
@@ -325,30 +330,30 @@ def _section(
     section_type: str,
     title: str,
     *,
-    diagnosis_label_resolver: DiagnosisLabelResolver | None,
+    label_resolvers: Mapping[str, DimensionLabelResolver],
 ) -> dict[str, Any]:
     if section_type == "ranking":
         return _ranking_section(
             result,
             title,
-            diagnosis_label_resolver=diagnosis_label_resolver,
+            label_resolvers=label_resolvers,
         )
     if section_type == "comparison":
         return _comparison_section(
             result,
             title,
-            diagnosis_label_resolver=diagnosis_label_resolver,
+            label_resolvers=label_resolvers,
         )
     if section_type == "distribution":
         return _distribution_section(
             result,
             title,
-            diagnosis_label_resolver=diagnosis_label_resolver,
+            label_resolvers=label_resolvers,
         )
     return _relationship_section(
         result,
         title,
-        diagnosis_label_resolver=diagnosis_label_resolver,
+        label_resolvers=label_resolvers,
     )
 
 
@@ -360,9 +365,14 @@ class QueryEvidenceAdapter:
         tool: str = "query_analytics",
         *,
         diagnosis_label_resolver: DiagnosisLabelResolver | None = None,
+        hospital_label_resolver: HospitalLabelResolver | None = None,
     ) -> None:
         self.tool = tool
-        self.diagnosis_label_resolver = diagnosis_label_resolver
+        self.label_resolvers: dict[str, DimensionLabelResolver] = {}
+        if diagnosis_label_resolver is not None:
+            self.label_resolvers["diagnosis"] = diagnosis_label_resolver
+        if hospital_label_resolver is not None:
+            self.label_resolvers["hospital"] = hospital_label_resolver
 
     def adapt(
         self,
@@ -394,7 +404,7 @@ class QueryEvidenceAdapter:
             validated,
             section_type,
             section_title,
-            diagnosis_label_resolver=self.diagnosis_label_resolver,
+            label_resolvers=self.label_resolvers,
         )
         snapshot = {
             "title": section_title,
@@ -459,11 +469,13 @@ def adapt_query_result(
     title: str | None = None,
     question: str | None = None,
     diagnosis_label_resolver: DiagnosisLabelResolver | None = None,
+    hospital_label_resolver: HospitalLabelResolver | None = None,
 ) -> dict[str, Any]:
     """Adapt a QueryResult through the existing Safe Evidence and chart code."""
 
     return QueryEvidenceAdapter(
-        diagnosis_label_resolver=diagnosis_label_resolver
+        diagnosis_label_resolver=diagnosis_label_resolver,
+        hospital_label_resolver=hospital_label_resolver,
     ).adapt(
         result,
         section_type,

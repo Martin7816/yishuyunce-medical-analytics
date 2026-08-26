@@ -104,6 +104,39 @@ def male_age_group_diagnosis_evidence() -> dict[str, object]:
     }
 
 
+def older_hospital_ranking_evidence() -> dict[str, object]:
+    return {
+        "query_id": "query-older-hospital-ranking",
+        "title": "Ranking by Hospital",
+        "description": "Validated aggregate inpatient discharge record counts.",
+        "metrics": [],
+        "sections": [
+            {
+                "key": "hospital_ranking",
+                "title": "Ranking by Hospital",
+                "type": "bar",
+                "items": [
+                    {
+                        "name": "North Shore University Hospital（机构编码：000541）",
+                        "value": 16330,
+                    },
+                    {
+                        "name": "NewYork-Presbyterian（机构编码：000002）",
+                        "value": 15200,
+                    },
+                ],
+            }
+        ],
+        "facts": [],
+        "derived_facts": [],
+        "query_scope_notes": [
+            "筛选口径：年龄筛选为发布年龄组70 or Older",
+            "病例量指住院出院记录数，不等同于一般人群患病率或个体患病风险",
+        ],
+        "provenance": PROVENANCE,
+    }
+
+
 class FakeStructuredAnswerClient:
     def __init__(self, response: object) -> None:
         self.response = response
@@ -257,6 +290,29 @@ def test_deterministic_fallback_turns_cohort_ranking_into_client_ready_analysis(
     assert client.calls == []
 
 
+def test_deterministic_fallback_turns_hospital_ranking_into_client_answer():
+    generator, client = make_generator(grounded_response())
+
+    result = generator.deterministic_fallback(
+        "美国哪个医院接诊的70岁以上老人最多？",
+        older_hospital_ranking_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.status == ANSWER_STATUS_OK
+    assert result.answer_text.startswith("结论：")
+    assert "70岁及以上" in result.answer_text
+    assert "North Shore University Hospital" in result.answer_text
+    assert "16,330条" in result.answer_text
+    assert "其次" in result.answer_text
+    assert "15,200条" in result.answer_text
+    assert "住院出院记录" in result.answer_text
+    assert "不等同于独立患者人数" in result.answer_text
+    assert "70 or Older" not in result.answer_text
+    assert result.used_evidence_ids == ("query-older-hospital-ranking",)
+    assert client.calls == []
+
+
 def test_low_quality_model_ranking_is_replaced_by_client_ready_grounded_answer():
     generator, client = make_generator(
         {
@@ -277,6 +333,31 @@ def test_low_quality_model_ranking_is_replaced_by_client_ready_grounded_answer()
     assert "败血症" in result.answer_text
     assert "50–69岁男性" in result.answer_text
     assert "不等同于50岁个人的患病概率或医学诊断" in result.answer_text
+    assert len(client.calls) == 1
+
+
+def test_low_quality_hospital_model_answer_is_replaced_by_client_ready_answer():
+    generator, client = make_generator(
+        {
+            "parsed": {
+                "answer_text": (
+                    "North Shore University Hospital（机构编码：000541）: 16,330."
+                ),
+                "used_evidence_ids": ["query-older-hospital-ranking"],
+            }
+        }
+    )
+
+    result = generator.generate(
+        "美国哪个医院接诊的70岁以上老人最多？",
+        older_hospital_ranking_evidence(),
+        evidence_type="ranking",
+    )
+
+    assert result.answer_text.startswith("结论：")
+    assert "North Shore University Hospital" in result.answer_text
+    assert "70岁及以上" in result.answer_text
+    assert "不等同于独立患者人数" in result.answer_text
     assert len(client.calls) == 1
 
 

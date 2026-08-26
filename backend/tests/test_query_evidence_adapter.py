@@ -185,6 +185,39 @@ class StaticDiagnosisLabels:
         return self.labels.get(code)
 
 
+class StaticHospitalLabels:
+    def __init__(self, labels, data_version):
+        self.labels = labels
+        self.data_version = data_version
+
+    def resolve(self, code, data_version):
+        if data_version != self.data_version:
+            return None
+        return self.labels.get(code)
+
+
+def test_hospital_display_adds_name_without_changing_query_values():
+    result = result_for(
+        rows=(
+            {"hospital": "000541", "case_count": 16330},
+            {"hospital": "000123", "case_count": 12000},
+        ),
+    )
+    evidence = QueryEvidenceAdapter(
+        hospital_label_resolver=StaticHospitalLabels(
+            {"000541": "North Shore University Hospital"},
+            PROVENANCE["data_version"],
+        )
+    ).adapt(result, "ranking")
+
+    assert evidence["sections"][0]["items"] == [
+        {"name": "North Shore University Hospital（机构编码：000541）", "value": 16330},
+        {"name": "医院 000123", "value": 12000},
+    ]
+    assert result.rows[0]["hospital"] == "000541"
+    assert evidence["provenance"] == PROVENANCE
+
+
 def test_diagnosis_display_adds_name_without_changing_query_values():
     result = result_for(
         dimensions=("diagnosis",),

@@ -373,7 +373,7 @@ def test_cross_filter_sse_discloses_gender_and_single_age_precision_limit():
     )
     assert "男性" in answer
     assert "无法提供精确到50岁" in answer
-    assert "50 to 69" in answer
+    assert "50–69岁" in answer
     assert events[-1][0] == "done"
     assert events[-1][1]["tool_trace"][0]["tool"] == "query_analytics"
 
@@ -402,7 +402,7 @@ def test_cross_filter_sse_keeps_scope_when_model_answer_omits_it():
     assert "D1 has 20 cases." in answer
     assert "男性" in answer
     assert "无法提供精确到50岁" in answer
-    assert "50 to 69" in answer
+    assert "50–69岁" in answer
     assert events[-1][0] == "done"
 
 

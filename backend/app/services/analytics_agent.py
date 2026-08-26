@@ -15,6 +15,7 @@ from shared.query_result_contract import QueryResultContract
 
 from .ai_evidence import assess_question_scope, is_simple_conversation
 from .diagnosis_label_catalog import DiagnosisLabelResolver
+from .hospital_label_catalog import HospitalLabelResolver
 from .query_evidence_adapter import QueryEvidenceAdapter
 from .query_plan_validator import QueryPlanValidationError, QueryPlanValidator
 from .safe_query_compiler import (
@@ -103,6 +104,7 @@ class AnalyticsAgentOrchestrator:
         compiler: SafeQueryCompiler | None = None,
         evidence_adapter: QueryEvidenceAdapter | None = None,
         diagnosis_label_resolver: DiagnosisLabelResolver | None = None,
+        hospital_label_resolver: HospitalLabelResolver | None = None,
         registry: SemanticRegistry | None = None,
         max_tool_calls: int = MAX_AGENT_TOOL_CALLS,
         evidence_type: str = "ranking",
@@ -117,7 +119,8 @@ class AnalyticsAgentOrchestrator:
         self.validator = validator or QueryPlanValidator(registry)
         self.compiler = compiler or SafeQueryCompiler(registry)
         self.evidence_adapter = evidence_adapter or QueryEvidenceAdapter(
-            diagnosis_label_resolver=diagnosis_label_resolver
+            diagnosis_label_resolver=diagnosis_label_resolver,
+            hospital_label_resolver=hospital_label_resolver,
         )
         self.max_tool_calls = max_tool_calls
         self.evidence_type = evidence_type
